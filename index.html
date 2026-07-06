@@ -143,8 +143,14 @@ let tasksLoaded = false;
 let dayState = {};
 let dayLoaded = false;
 let dayUnsubscribe = null;
+let dayListenerToken = 0;
 
-let celebratedKey = null;
+let celebratedDays = new Set();
+let loadError = null;
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 function dayIndex(d){
   const clean = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -191,9 +197,13 @@ onValue(ref(db, 'settings/tasks'), snap => {
     set(ref(db, 'settings/tasks'), DEFAULT_TASKS);
     return; // wacht op de her-fire van deze listener met de echte data
   }
+  loadError = null;
   const v = snap.val();
   tasksCache = { A: v.A || {}, B: v.B || {} };
   tasksLoaded = true;
+  render();
+}, () => {
+  loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
   render();
 });
 
@@ -201,18 +211,29 @@ onValue(ref(db, 'settings/tasks'), snap => {
 function attachDayListener(d){
   if (dayUnsubscribe){ dayUnsubscribe(); dayUnsubscribe = null; }
   const capturedKey = dayKey(d);
+  const myToken = ++dayListenerToken;
   dayLoaded = false;
   dayState = {};
   dayUnsubscribe = onValue(ref(db, `days/${capturedKey}`), snap => {
-    if (dayKey(current) !== capturedKey) return; // laat antwoord voor een verlaten dag: negeren
+    if (myToken !== dayListenerToken) return; // laat antwoord voor een inmiddels vervangen listener: negeren
+    loadError = null;
     dayState = snap.val() || {};
     dayLoaded = true;
+    render();
+  }, () => {
+    if (myToken !== dayListenerToken) return;
+    loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
     render();
   });
 }
 attachDayListener(current);
 
 function render(){
+  if (loadError){
+    document.getElementById('app').innerHTML = `<div class="loading">${escapeHtml(loadError)}</div>`;
+    return;
+  }
+
   if (screen === 'admin'){
     if (!tasksLoaded){
       document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
@@ -272,14 +293,14 @@ function render(){
     </div>
   `;
 
-  const cKey = `${dayKey(current)}:${doneCount}/${allTasks.length}`;
+  const cDay = dayKey(current);
   if (allTasks.length > 0 && doneCount === allTasks.length){
-    if (celebratedKey !== cKey){
-      celebratedKey = cKey;
+    if (!celebratedDays.has(cDay)){
+      celebratedDays.add(cDay);
       showCelebration();
     }
   } else {
-    celebratedKey = null;
+    celebratedDays.delete(cDay);
   }
 }
 
@@ -309,7 +330,7 @@ function taskRow(id, label, done, isVac){
   return `
     <div class="task" onclick="toggleTask('${id}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
-      <div class="task-label ${done ? 'done' : ''}">${label}${isVac ? '<span class=\"vac-tag\">week</span>' : ''}</div>
+      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}${isVac ? '<span class=\"vac-tag\">week</span>' : ''}</div>
     </div>
   `;
 }
@@ -402,7 +423,7 @@ function renderAdminRole(role, title){
   const rows = tasksArray(role).map(t => `
     <div class="admin-task-row">
       <span class="admin-tag">${t.recurring ? 'Terugkerend' : 'Eenmalig'}</span>
-      <div class="admin-task-label">${t.label}</div>
+      <div class="admin-task-label">${escapeHtml(t.label)}</div>
       <button class="admin-icon-btn" onclick="toggleRecurring('${role}','${t.id}')">🔁</button>
       <button class="admin-icon-btn" onclick="editTaskLabel('${role}','${t.id}')">✏️</button>
       <button class="admin-icon-btn" onclick="deleteTaskAdmin('${role}','${t.id}')">🗑</button>
