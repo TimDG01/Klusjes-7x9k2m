@@ -84,12 +84,18 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .admin-title{font-size:18px;font-weight:700;flex:1;}
 .admin-section{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;}
 .admin-role-title{font-size:15px;font-weight:700;margin-bottom:10px;}
-.admin-task-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);}
+.admin-task-row{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);}
 .admin-task-row:last-of-type{border-bottom:none;}
+.admin-task-top{display:flex;align-items:center;gap:8px;}
 .admin-task-label{flex:1;font-size:14px;}
 .admin-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;background:var(--track);color:var(--text2);}
 .admin-icon-btn{font-size:16px;padding:4px 6px;}
 .admin-add-btn{margin-top:8px;font-size:14px;font-weight:600;color:var(--blue);}
+.admin-weekday-row{display:flex;gap:4px;}
+.admin-day-btn{flex:1;height:30px;border-radius:7px;font-size:11px;font-weight:600;text-transform:capitalize;background:var(--track);color:var(--text2);display:flex;align-items:center;justify-content:center;}
+.admin-day-btn.active{background:var(--green);color:#fff;}
+.admin-never{font-size:11px;color:var(--red);}
+.admin-vacuum-note{font-size:12px;color:var(--text2);margin-top:6px;}
 </style>
 </head>
 <body>
@@ -115,7 +121,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v2';
+const VERSION = 'klusjes-pwa v3';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen'];
@@ -131,6 +137,9 @@ const DEFAULT_TASKS = {
   }
 };
 
+const ALL_WEEKDAYS = [0,1,2,3,4,5,6];
+const DEFAULT_VACUUM = { weekdays: [1,5] }; // huidige planning: maandag & vrijdag
+
 let current = new Date();
 if (current < START) current = new Date(START);
 
@@ -139,6 +148,9 @@ let adminUnlocked = false;
 
 let tasksCache = { A:{}, B:{} };
 let tasksLoaded = false;
+
+let vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays };
+let vacuumLoaded = false;
 
 let dayState = {};
 let dayLoaded = false;
@@ -164,14 +176,19 @@ function getRoles(idx){
     : { lies:'B', lenn:'A' };
 }
 
-function getVacuum(idx, d){
-  const dow = d.getDay(); // 1 = maandag, 5 = vrijdag
-  if (dow !== 1 && dow !== 5) return null;
-  // telt hoeveel stofzuigdagen er al geweest zijn t.e.m. deze dag
+function vacuumWeekdays(){
+  return Array.isArray(vacuumCache.weekdays) ? vacuumCache.weekdays : DEFAULT_VACUUM.weekdays;
+}
+
+function getVacuum(idx, d, vacDays){
+  const days = vacDays || vacuumWeekdays();
+  const dow = d.getDay();
+  if (!days.includes(dow)) return null;
+  // telt hoeveel geconfigureerde stofzuigdagen er al geweest zijn t.e.m. deze dag
   let count = 0;
   for (let i = 0; i <= idx; i++){
     const dd = new Date(START); dd.setDate(dd.getDate() + i);
-    if (dd.getDay() === 1 || dd.getDay() === 5) count++;
+    if (days.includes(dd.getDay())) count++;
   }
   const vacIdx = count - 1;
   return {
@@ -191,6 +208,14 @@ function tasksArray(role){
     .sort((a,b) => (a.order||0) - (b.order||0));
 }
 
+function taskWeekdays(t){
+  return Array.isArray(t.weekdays) ? t.weekdays : ALL_WEEKDAYS;
+}
+
+function tasksArrayForDay(role, dow){
+  return tasksArray(role).filter(t => taskWeekdays(t).includes(dow));
+}
+
 // --- Firebase: taakinstellingen (permanente listener, hele app-levensduur) ---
 onValue(ref(db, 'settings/tasks'), snap => {
   if (!snap.exists()){
@@ -201,6 +226,22 @@ onValue(ref(db, 'settings/tasks'), snap => {
   const v = snap.val();
   tasksCache = { A: v.A || {}, B: v.B || {} };
   tasksLoaded = true;
+  render();
+}, () => {
+  loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
+  render();
+});
+
+// --- Firebase: stofzuiginstellingen (permanente listener, hele app-levensduur) ---
+onValue(ref(db, 'settings/vacuum'), snap => {
+  if (!snap.exists()){
+    set(ref(db, 'settings/vacuum'), DEFAULT_VACUUM);
+    return; // wacht op de her-fire van deze listener met de echte data
+  }
+  loadError = null;
+  const v = snap.val();
+  vacuumCache = { weekdays: v.weekdays || DEFAULT_VACUUM.weekdays.slice() };
+  vacuumLoaded = true;
   render();
 }, () => {
   loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
@@ -235,7 +276,7 @@ function render(){
   }
 
   if (screen === 'admin'){
-    if (!tasksLoaded){
+    if (!tasksLoaded || !vacuumLoaded){
       document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
       return;
     }
@@ -243,24 +284,25 @@ function render(){
     return;
   }
 
-  if (!tasksLoaded || !dayLoaded){
+  if (!tasksLoaded || !dayLoaded || !vacuumLoaded){
     document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
     return;
   }
 
   const idx = dayIndex(current);
   const roles = getRoles(idx);
-  const vac = getVacuum(idx, current);
+  const dow = current.getDay();
+  const vac = getVacuum(idx, current, vacuumWeekdays());
   const state = dayState;
 
   const kids = [
-    { key:'lies', name:'Lies', color:'--lies', bg:'--lies-bg', role: roles.lies },
-    { key:'lenn', name:'Lenn', color:'--lenn', bg:'--lenn-bg', role: roles.lenn }
+    { key:'lies', name:'Lies', color:'--lies', bg:'--lies-bg', role: roles.lies, tasks: tasksArrayForDay(roles.lies, dow) },
+    { key:'lenn', name:'Lenn', color:'--lenn', bg:'--lenn-bg', role: roles.lenn, tasks: tasksArrayForDay(roles.lenn, dow) }
   ];
 
   let allTasks = [];
   kids.forEach(k => {
-    tasksArray(k.role).forEach(t => allTasks.push(`${k.key}-${t.id}`));
+    k.tasks.forEach(t => allTasks.push(`${k.key}-${t.id}`));
     if (vac && vac.kid === k.key) allTasks.push(`${k.key}-vac`);
   });
   const doneCount = allTasks.filter(id => state[id]).length;
@@ -305,7 +347,7 @@ function render(){
 }
 
 function renderCard(k, vac, state){
-  const tasks = tasksArray(k.role).map(t => {
+  const tasks = k.tasks.map(t => {
     const id = `${k.key}-${t.id}`;
     const done = !!state[id];
     return taskRow(id, t.label, done);
@@ -415,26 +457,59 @@ function renderAdmin(){
     </div>
     ${renderAdminRole('A', 'Rol A')}
     ${renderAdminRole('B', 'Rol B')}
+    ${renderAdminVacuum()}
     <div class="version">${VERSION}</div>
   `;
 }
 
-function renderAdminRole(role, title){
-  const rows = tasksArray(role).map(t => `
-    <div class="admin-task-row">
-      <span class="admin-tag">${t.recurring ? 'Terugkerend' : 'Eenmalig'}</span>
-      <div class="admin-task-label">${escapeHtml(t.label)}</div>
-      <button class="admin-icon-btn" onclick="toggleRecurring('${role}','${t.id}')">🔁</button>
-      <button class="admin-icon-btn" onclick="editTaskLabel('${role}','${t.id}')">✏️</button>
-      <button class="admin-icon-btn" onclick="deleteTaskAdmin('${role}','${t.id}')">🗑</button>
+function renderWeekdayPicker(activeDays, role, id){
+  const handler = role
+    ? `toggleWeekday('${role}','${id}',`
+    : `toggleVacuumWeekday(`;
+  return `
+    <div class="admin-weekday-row">
+      ${WD.map((name, i) => `
+        <button class="admin-day-btn ${activeDays.includes(i) ? 'active' : ''}" onclick="${handler}${i})">${name.slice(0,2)}</button>
+      `).join('')}
     </div>
-  `).join('');
+  `;
+}
+
+function renderAdminRole(role, title){
+  const rows = tasksArray(role).map(t => {
+    const days = taskWeekdays(t);
+    return `
+    <div class="admin-task-row">
+      <div class="admin-task-top">
+        <span class="admin-tag">${t.recurring ? 'Terugkerend' : 'Eenmalig'}</span>
+        <div class="admin-task-label">${escapeHtml(t.label)}</div>
+        <button class="admin-icon-btn" onclick="toggleRecurring('${role}','${t.id}')">🔁</button>
+        <button class="admin-icon-btn" onclick="editTaskLabel('${role}','${t.id}')">✏️</button>
+        <button class="admin-icon-btn" onclick="deleteTaskAdmin('${role}','${t.id}')">🗑</button>
+      </div>
+      ${renderWeekdayPicker(days, role, t.id)}
+      ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
+    </div>
+  `;
+  }).join('');
 
   return `
     <div class="admin-section">
       <div class="admin-role-title">${title}</div>
       ${rows}
       <button class="admin-add-btn" onclick="addTaskAdmin('${role}')">+ Taak toevoegen</button>
+    </div>
+  `;
+}
+
+function renderAdminVacuum(){
+  const days = vacuumWeekdays();
+  return `
+    <div class="admin-section">
+      <div class="admin-role-title">Stofzuigen</div>
+      ${renderWeekdayPicker(days, null, null)}
+      ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
+      <div class="admin-vacuum-note">Kind en verdieping wisselen automatisch.</div>
     </div>
   `;
 }
@@ -465,9 +540,24 @@ function addTaskAdmin(role){
   push(ref(db, `settings/tasks/${role}`), { label, recurring, order: Date.now() });
 }
 
+function toggleWeekday(role, id, dayNum){
+  const t = tasksCache[role] && tasksCache[role][id];
+  if (!t) return;
+  const days = taskWeekdays(t);
+  const next = days.includes(dayNum) ? days.filter(d => d !== dayNum) : [...days, dayNum].sort((a,b) => a-b);
+  update(ref(db, `settings/tasks/${role}/${id}`), { weekdays: next });
+}
+
+function toggleVacuumWeekday(dayNum){
+  const days = vacuumWeekdays();
+  const next = days.includes(dayNum) ? days.filter(d => d !== dayNum) : [...days, dayNum].sort((a,b) => a-b);
+  update(ref(db, 'settings/vacuum'), { weekdays: next });
+}
+
 Object.assign(window, {
   toggleTask, changeDay, goToday, openAdmin, backToDay,
-  editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin
+  editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
+  toggleWeekday, toggleVacuumWeekday
 });
 
 render();
