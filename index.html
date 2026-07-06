@@ -72,6 +72,8 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .celebration-title{font-size:20px;font-weight:700;margin-bottom:6px;}
 .celebration-sub{font-size:14px;color:var(--text2);margin-bottom:20px;}
 .celebration-close{background:var(--green);color:white;font-weight:600;padding:11px 28px;border-radius:12px;font-size:15px;}
+
+.version{text-align:center;font-size:11px;color:var(--text3);margin-top:20px;}
 </style>
 </head>
 <body>
@@ -80,6 +82,7 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 <script>
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
+const VERSION = 'klusjes-pwa v1';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['Gelijksvloer','Verdiep ouders','Verdiep kinderen'];
@@ -121,8 +124,8 @@ function getVacuum(idx, d){
   }
   const vacIdx = count - 1;
   return {
-    lies: FLOORS[vacIdx % 3],
-    lenn: FLOORS[(vacIdx + 1) % 3]
+    kid: vacIdx % 2 === 0 ? 'lies' : 'lenn',
+    floor: FLOORS[vacIdx % 3]
   };
 }
 
@@ -155,7 +158,7 @@ function render(){
   let allTasks = [];
   kids.forEach(k => {
     TASKS[k.role].forEach(t => allTasks.push(`${k.key}-${t.id}`));
-    if (vac) allTasks.push(`${k.key}-vac`);
+    if (vac && vac.kid === k.key) allTasks.push(`${k.key}-vac`);
   });
   const doneCount = allTasks.filter(id => state[id]).length;
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
@@ -180,6 +183,7 @@ function render(){
     </div>
 
     ${kids.map(k => renderCard(k, vac, state)).join('')}
+    <div class="version">${VERSION}</div>
   `;
 
   if (allTasks.length > 0 && doneCount === allTasks.length){
@@ -194,7 +198,7 @@ function renderCard(k, vac, state){
     return taskRow(id, t.label, done);
   }).join('');
 
-  const vacRow = vac ? taskRow(`${k.key}-vac`, `Stofzuigen: ${vac[k.key]}`, !!state[`${k.key}-vac`], true) : '';
+  const vacRow = (vac && vac.kid === k.key) ? taskRow(`${k.key}-vac`, `🧹 Stofzuigen: ${vac.floor}`, !!state[`${k.key}-vac`], true) : '';
 
   return `
     <div class="card">
