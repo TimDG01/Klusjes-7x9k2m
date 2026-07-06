@@ -1,1 +1,250 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Klusjes">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1C1C1E" media="(prefers-color-scheme: dark)">
+<title>Klusjesschema</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#F2F2F7;--card:#FFFFFF;--text:#1C1C1E;
+  --text2:#6C6C70;--text3:#AEAEB2;
+  --border:rgba(0,0,0,0.12);--track:#E5E5EA;
+  --lies:#B5006E;--lies-bg:#F9D0E8;
+  --lenn:#185FA5;--lenn-bg:#E6F1FB;
+  --vac:#946200;--vac-bg:#FBEFD2;
+  --green:#1D9E75;--blue:#378ADD;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1C1C1E;--card:#2C2C2E;--text:#FFFFFF;
+    --text2:#AEAEB2;--text3:#636366;
+    --border:rgba(255,255,255,0.14);--track:#3A3A3C;
+    --lies-bg:#4A0E2A;--lenn-bg:#0D2B45;--vac-bg:#3D2E08;
+  }
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;
+  background:var(--bg);color:var(--text);
+  min-height:100vh;min-height:100dvh;
+  padding-top:max(16px,env(safe-area-inset-top));
+  padding-bottom:max(16px,env(safe-area-inset-bottom));
+}
+#app{max-width:420px;margin:0 auto;padding:0 14px 40px;}
+button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transparent;border:none;background:none;cursor:pointer;}
 
+.nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.nav button{width:38px;height:38px;border-radius:50%;background:var(--card);font-size:18px;display:flex;align-items:center;justify-content:center;}
+.nav .date{text-align:center;flex:1;}
+.nav .weekday{font-size:13px;color:var(--text2);text-transform:capitalize;}
+.nav .fulldate{font-size:17px;font-weight:600;}
+
+.progress-wrap{background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:14px;}
+.progress-label{display:flex;justify-content:space-between;font-size:13px;color:var(--text2);margin-bottom:8px;}
+.progress-track{height:8px;border-radius:4px;background:var(--track);overflow:hidden;}
+.progress-fill{height:100%;background:var(--green);border-radius:4px;transition:width .3s ease;}
+
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;}
+.card-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.dot{width:10px;height:10px;border-radius:50%;}
+.name{font-size:16px;font-weight:700;}
+.role-badge{margin-left:auto;font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;}
+
+.task{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+.task:last-child{border-bottom:none;}
+.check{width:24px;height:24px;border-radius:7px;border:2px solid var(--track);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:white;transition:all .15s ease;}
+.check.done{background:var(--green);border-color:var(--green);}
+.task-label{font-size:15px;flex:1;}
+.task-label.done{color:var(--text3);text-decoration:line-through;}
+.vac-tag{font-size:11px;font-weight:600;color:var(--vac);background:var(--vac-bg);padding:2px 7px;border-radius:6px;margin-left:6px;}
+
+.celebration{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
+.celebration-card{background:var(--card);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;}
+.celebration-emoji{font-size:56px;margin-bottom:12px;}
+.celebration-title{font-size:20px;font-weight:700;margin-bottom:6px;}
+.celebration-sub{font-size:14px;color:var(--text2);margin-bottom:20px;}
+.celebration-close{background:var(--green);color:white;font-weight:600;padding:11px 28px;border-radius:12px;font-size:15px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+const START = new Date(2026, 5, 26); // 26 juni 2026
+const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
+const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
+const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+const FLOORS = ['Gelijksvloer','Verdiep ouders','Verdiep kinderen'];
+
+const TASKS = {
+  A: [
+    { id:'a1', label:'Tafel afruimen' },
+    { id:'a2', label:'Vaatwas vullen & starten' }
+  ],
+  B: [
+    { id:'b1', label:'Tafel afkuisen' },
+    { id:'b2', label:'Vaatwas legen' }
+  ]
+};
+
+let current = new Date();
+if (current < START) current = new Date(START);
+
+function dayIndex(d){
+  const clean = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((clean - START) / 86400000);
+}
+
+function getRoles(idx){
+  // wisselt elke dag: even index -> Lies=A, oneven -> Lies=B
+  return idx % 2 === 0
+    ? { lies:'A', lenn:'B' }
+    : { lies:'B', lenn:'A' };
+}
+
+function getVacuum(idx, d){
+  const dow = d.getDay(); // 1 = maandag, 5 = vrijdag
+  if (dow !== 1 && dow !== 5) return null;
+  // telt hoeveel stofzuigdagen er al geweest zijn t.e.m. deze dag
+  let count = 0;
+  for (let i = 0; i <= idx; i++){
+    const dd = new Date(START); dd.setDate(dd.getDate() + i);
+    if (dd.getDay() === 1 || dd.getDay() === 5) count++;
+  }
+  const vacIdx = count - 1;
+  return {
+    lies: FLOORS[vacIdx % 3],
+    lenn: FLOORS[(vacIdx + 1) % 3]
+  };
+}
+
+function storageKey(d){
+  return `klusjes-${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+}
+
+function loadState(d){
+  try {
+    const raw = localStorage.getItem(storageKey(d));
+    return raw ? JSON.parse(raw) : {};
+  } catch(e){ return {}; }
+}
+
+function saveState(d, state){
+  localStorage.setItem(storageKey(d), JSON.stringify(state));
+}
+
+function render(){
+  const idx = dayIndex(current);
+  const roles = getRoles(idx);
+  const vac = getVacuum(idx, current);
+  const state = loadState(current);
+
+  const kids = [
+    { key:'lies', name:'Lies', color:'--lies', bg:'--lies-bg', role: roles.lies },
+    { key:'lenn', name:'Lenn', color:'--lenn', bg:'--lenn-bg', role: roles.lenn }
+  ];
+
+  let allTasks = [];
+  kids.forEach(k => {
+    TASKS[k.role].forEach(t => allTasks.push(`${k.key}-${t.id}`));
+    if (vac) allTasks.push(`${k.key}-vac`);
+  });
+  const doneCount = allTasks.filter(id => state[id]).length;
+  const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
+
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="nav">
+      <button onclick="changeDay(-1)">‹</button>
+      <div class="date">
+        <div class="weekday">${WD[current.getDay()]}</div>
+        <div class="fulldate">${current.getDate()} ${MN[current.getMonth()]}</div>
+      </div>
+      <button onclick="changeDay(1)">›</button>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-label"><span>Voortgang</span><span>${doneCount}/${allTasks.length}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+    </div>
+
+    ${kids.map(k => renderCard(k, vac, state)).join('')}
+  `;
+
+  if (allTasks.length > 0 && doneCount === allTasks.length){
+    showCelebration();
+  }
+}
+
+function renderCard(k, vac, state){
+  const tasks = TASKS[k.role].map(t => {
+    const id = `${k.key}-${t.id}`;
+    const done = !!state[id];
+    return taskRow(id, t.label, done);
+  }).join('');
+
+  const vacRow = vac ? taskRow(`${k.key}-vac`, `Stofzuigen: ${vac[k.key]}`, !!state[`${k.key}-vac`], true) : '';
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <div class="dot" style="background:var(${k.color})"></div>
+        <div class="name">${k.name}</div>
+        <div class="role-badge" style="color:var(${k.color});background:var(${k.bg})">Rol ${k.role}</div>
+      </div>
+      ${tasks}
+      ${vacRow}
+    </div>
+  `;
+}
+
+function taskRow(id, label, done, isVac){
+  return `
+    <div class="task" onclick="toggleTask('${id}')">
+      <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
+      <div class="task-label ${done ? 'done' : ''}">${label}${isVac ? '<span class=\"vac-tag\">week</span>' : ''}</div>
+    </div>
+  `;
+}
+
+function toggleTask(id){
+  const state = loadState(current);
+  state[id] = !state[id];
+  saveState(current, state);
+  render();
+}
+
+function changeDay(delta){
+  const next = new Date(current);
+  next.setDate(next.getDate() + delta);
+  const idx = dayIndex(next);
+  if (idx < 0 || idx >= TOTAL_DAYS) return;
+  current = next;
+  render();
+}
+
+function showCelebration(){
+  if (document.getElementById('celebration')) return;
+  const div = document.createElement('div');
+  div.id = 'celebration';
+  div.className = 'celebration';
+  div.innerHTML = `
+    <div class="celebration-card">
+      <div class="celebration-emoji">🎉</div>
+      <div class="celebration-title">Proper!</div>
+      <div class="celebration-sub">Alle klusjes van vandaag zijn gedaan.</div>
+      <button class="celebration-close" onclick="document.getElementById('celebration').remove()">Toppie</button>
+    </div>
+  `;
+  document.body.appendChild(div);
+}
+
+render();
+</script>
+</body>
+</html>
