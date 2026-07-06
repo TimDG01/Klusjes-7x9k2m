@@ -38,6 +38,9 @@ body{
 #app{max-width:420px;margin:0 auto;padding:0 14px 40px;}
 button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transparent;border:none;background:none;cursor:pointer;}
 
+.today-row{display:flex;justify-content:center;margin-bottom:10px;}
+.today-btn{font-size:13px;font-weight:600;color:var(--blue);background:var(--card);padding:6px 16px;border-radius:10px;}
+
 .nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
 .nav button{width:38px;height:38px;border-radius:50%;background:var(--card);font-size:18px;display:flex;align-items:center;justify-content:center;}
 .nav .date{text-align:center;flex:1;}
@@ -157,8 +160,11 @@ function render(){
   const doneCount = allTasks.filter(id => state[id]).length;
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
 
+  const isToday = dayIndex(current) === dayIndex(new Date());
+
   const app = document.getElementById('app');
   app.innerHTML = `
+    ${isToday ? '' : `<div class="today-row"><button class="today-btn" onclick="goToday()">Ga naar vandaag</button></div>`}
     <div class="nav">
       <button onclick="changeDay(-1)">‹</button>
       <div class="date">
@@ -225,6 +231,15 @@ function changeDay(delta){
   const idx = dayIndex(next);
   if (idx < 0 || idx >= TOTAL_DAYS) return;
   current = next;
+  render();
+}
+
+function goToday(){
+  let today = new Date();
+  const idx = dayIndex(today);
+  if (idx < 0) today = new Date(START);
+  if (idx >= TOTAL_DAYS) today = new Date(START.getTime() + (TOTAL_DAYS - 1) * 86400000);
+  current = today;
   render();
 }
 
