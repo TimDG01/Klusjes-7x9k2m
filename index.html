@@ -531,7 +531,7 @@ function vacuumRow(kidKey, vac, state){
       (vac.mode === 'pending' && pIdx != null && pIdx > todayIdx) ||
       (vac.mode === 'legacy' && dayIndex(current) < todayIdx);
     if (canPull){
-      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();pullVacuumToToday('${vac.kid}',${vac.floorIdx})" title="Haal deze beurt naar vandaag">⏪</button>`;
+      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();pullVacuumToToday('${vac.kid}',${vac.floorIdx})" title="Haal deze beurt naar vandaag">📥</button>`;
     }
     if (vac.mode === 'pending'){
       buttons += `<button class="postpone-btn" onclick="event.stopPropagation();postponeVacuum()" title="Doorschuiven naar de volgende dag">⏭</button>`;
