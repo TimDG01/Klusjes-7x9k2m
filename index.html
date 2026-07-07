@@ -136,7 +136,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v8';
+const VERSION = 'klusjes-pwa v9';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -457,14 +457,17 @@ function render(){
   const state = dayState;
 
   const kids = [
-    { key:'lies', name:'Lies', color:'--lies', bg:'--lies-bg', role: roles.lies,
-      tasks: tasksArrayForDay(roles.lies, dow).concat(tasksArrayForDay('lies', dow).map(t => ({ ...t, fixed:true }))) },
-    { key:'lenn', name:'Lenn', color:'--lenn', bg:'--lenn-bg', role: roles.lenn,
-      tasks: tasksArrayForDay(roles.lenn, dow).concat(tasksArrayForDay('lenn', dow).map(t => ({ ...t, fixed:true }))) }
-  ];
+    ['lies', 'Lies', '--lies', '--lies-bg'],
+    ['lenn', 'Lenn', '--lenn', '--lenn-bg']
+  ].map(([key, name, color, bg]) => ({
+    key, name, color, bg, role: roles[key],
+    // roterende roltaken eerst, daarna de vaste kind-taken (👤)
+    tasks: tasksArrayForDay(roles[key], dow).concat(tasksArrayForDay(key, dow).map(t => ({ ...t, fixed:true })))
+  }));
 
   const cDay = dayKey(current);
   let allTasks = [];
+  let doneCount = 0;
   const newlyDone = []; // kinderen die déze render al hun klusjes af kregen
   kids.forEach(k => {
     // bevroren eenmalige taken van deze dag die niet (meer) in de levende lijst zitten
@@ -474,17 +477,21 @@ function render(){
     allTasks = allTasks.concat(ids);
 
     const kidDone = ids.filter(id => state[id]).length;
+    doneCount += kidDone;
     const gKey = `${cDay}:${k.key}`;
     if (ids.length > 0 && kidDone === ids.length){
       if (!celebratedDays.has(gKey)){
         celebratedDays.add(gKey);
         newlyDone.push(k.name);
       }
-    } else {
+    } else if (kidDone < ids.length){
+      // alleen herwapenen bij écht onafgewerkt werk — een tijdelijk lege id-lijst
+      // (listener-race rond het bevriezen van een eenmalige taak: definitie al weg,
+      // snapshot nog niet binnen) mag de guard niet wissen, anders viert de
+      // volgende render dezelfde voltooiing een tweede keer
       celebratedDays.delete(gKey);
     }
   });
-  const doneCount = allTasks.filter(id => state[id]).length;
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
 
   const isToday = dayIndex(current) === dayIndex(new Date());
@@ -674,8 +681,6 @@ function toggleTask(id){
   const sep = id.indexOf('-');
   const kidKey = id.slice(0, sep);
   const taskId = id.slice(sep + 1);
-  if (newVal) playChime();
-  set(ref(db, `days/${key}/${id}`), newVal);
 
   if (newVal){
     const role = getRoles(dayIndex(current))[kidKey];
@@ -684,22 +689,40 @@ function toggleTask(id){
     if (!task && tasksCache[kidKey] && tasksCache[kidKey][taskId]){
       bucket = kidKey; task = tasksCache[kidKey][taskId];
     }
+    if (!task && !(dayState.snap && dayState.snap[id])){
+      // rij bestaat niet meer (bv. net in een andere sessie verwijderd): geen
+      // wees-vinkje schrijven voor iets dat de volgende render toch verdwijnt
+      return;
+    }
+    playChime();
     if (task && task.recurring === false){
-      // eerst bevriezen in de dag (zoals days/{key}/vac), dán pas verwijderen —
-      // zo blijft de rij afgevinkt zichtbaar in plaats van meteen te verdwijnen
+      // bevriezen in de dag (zoals days/{key}/vac) + definitie verwijderen + afvinken,
+      // atomisch in één multi-path update: een gedeeltelijk gelande write zou anders
+      // de rij doen verdwijnen (snap kwijt) of de taak elders laten terugkeren
       const snap = { label: task.label, bucket, order: task.order || 0 };
       if (Array.isArray(task.weekdays)) snap.weekdays = task.weekdays;
-      set(ref(db, `days/${key}/snap/${id}`), snap);
-      remove(ref(db, `settings/tasks/${bucket}/${taskId}`));
+      update(ref(db), {
+        [`days/${key}/${id}`]: true,
+        [`days/${key}/snap/${id}`]: snap,
+        [`settings/tasks/${bucket}/${taskId}`]: null
+      });
+    } else {
+      set(ref(db, `days/${key}/${id}`), true);
     }
   } else {
-    // uitvinken van een bevroren eenmalige taak: definitie herstellen uit de snapshot
+    // uitvinken van een bevroren eenmalige taak: definitie herstellen uit de
+    // snapshot, atomisch samen met het uitvinken en het opruimen van de snapshot
     const snap = dayState.snap && dayState.snap[id];
     if (snap){
       const rec = { label: snap.label, recurring: false, order: snap.order || 0 };
       if (Array.isArray(snap.weekdays)) rec.weekdays = snap.weekdays;
-      set(ref(db, `settings/tasks/${snap.bucket}/${taskId}`), rec);
-      remove(ref(db, `days/${key}/snap/${id}`));
+      update(ref(db), {
+        [`days/${key}/${id}`]: false,
+        [`days/${key}/snap/${id}`]: null,
+        [`settings/tasks/${snap.bucket}/${taskId}`]: rec
+      });
+    } else {
+      set(ref(db, `days/${key}/${id}`), false);
     }
   }
 }
@@ -724,66 +747,64 @@ function goToday(){
   render();
 }
 
-// Kort belletje bij het afvinken. Gesynthetiseerd via Web Audio (geen extern
-// geluidsbestand — de app moet één zelfstandig bestand blijven). De AudioContext
-// wordt lazy aangemaakt binnen de klik zelf, wat op iOS vereist is om geluid te mogen spelen.
+// Geluid: gesynthetiseerd via Web Audio (geen extern geluidsbestand — de app moet
+// één zelfstandig bestand blijven). De AudioContext wordt lazy aangemaakt binnen de
+// klik zelf, wat op iOS vereist is om geluid te mogen spelen. Alle audio zit in
+// try/catch: geluid is nice-to-have en mag nooit een state-write of popup blokkeren.
 let audioCtx = null;
+let lastChimeAt = 0;
+
+// één toon met zachte fade-in/uit — abrupte starts/stops zijn precies wat tikken/kraken geeft
+function tone(t0, freq, start, dur, vol, type){
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'triangle';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t0 + start);
+  gain.gain.exponentialRampToValueAtTime(vol, t0 + start + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t0 + start);
+  osc.stop(t0 + start + dur + 0.05);
+}
+
+// Kort belletje bij het afvinken: twee zachte sinustonen, een vriendelijk "ding-ding".
 function playChime(){
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
+    lastChimeAt = Date.now();
     const t0 = audioCtx.currentTime;
-    // twee zachte sinustonen kort na elkaar: een vriendelijk "ding-ding"
-    [[880, 0], [1174.66, 0.07]].forEach(([freq, dt]) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, t0 + dt);
-      gain.gain.exponentialRampToValueAtTime(0.2, t0 + dt + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.45);
-      osc.connect(gain).connect(audioCtx.destination);
-      osc.start(t0 + dt);
-      osc.stop(t0 + dt + 0.5);
-    });
+    tone(t0, 880,     0,    0.45, 0.2, 'sine');
+    tone(t0, 1174.66, 0.07, 0.45, 0.2, 'sine');
   } catch (e) {
-    // geluid is nice-to-have: mag nooit het afvinken zelf blokkeren
+    // zie audio-opmerking hierboven
   }
 }
 
 // Vrolijke "ta-da-da-daaa!"-fanfare bij de proficiat-popup: stijgende do-mi-sol
 // gevolgd door een gedragen C-majeurakkoord met een sprankeltje erbovenop.
-// Zuivere toonsynthese (geen ruis: die kraakt op telefoonspeakers) en geen extern
-// geluidsbestand — de app blijft één bestand. Speelt alleen als de AudioContext al
-// draait, d.w.z. na een eerdere afvink-tik — dat is op iOS toch vereist, en het
-// voorkomt dat een stil "opgespaarde" fanfare (popup zonder tik, bv. een vers
-// geopende afgewerkte dag) later plots alsnog afgaat.
+// Zuivere toonsynthese — geen ruis, die kraakt op telefoonspeakers.
 function playFanfare(){
   try {
-    if (!audioCtx || audioCtx.state !== 'running') return;
+    if (!audioCtx) return; // nog geen enkele tik deze sessie (bv. vers geopende afgewerkte dag): stil
+    if (audioCtx.state !== 'running'){
+      // net getikt maar de (iOS-)resume is nog async onderweg: toch inplannen, hij
+      // start zodra de context loopt. Zónder recente tik overslaan — anders zou een
+      // opgespaarde fanfare bij de eerstvolgende tik plots alsnog afgaan.
+      if (Date.now() - lastChimeAt > 3000) return;
+      audioCtx.resume();
+    }
     const t0 = audioCtx.currentTime;
-    const note = (freq, start, dur, vol, type) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = type || 'triangle';
-      osc.frequency.value = freq;
-      // altijd in- en uitfaden: abrupte starts/stops zijn precies wat tikken/kraken geeft
-      gain.gain.setValueAtTime(0.0001, t0 + start);
-      gain.gain.exponentialRampToValueAtTime(vol, t0 + start + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
-      osc.connect(gain).connect(audioCtx.destination);
-      osc.start(t0 + start);
-      osc.stop(t0 + start + dur + 0.05);
-    };
-    note(523.25, 0,    0.20, 0.22); // C5  ta-
-    note(659.25, 0.12, 0.20, 0.22); // E5  da-
-    note(783.99, 0.24, 0.20, 0.22); // G5  da-
-    note(1046.5, 0.36, 1.10, 0.26); // C6  daaa! (slotakkoord)
-    note(1318.5, 0.36, 1.10, 0.16); // E6
-    note(783.99, 0.36, 1.10, 0.14); // G5
-    note(2093.0, 0.46, 0.90, 0.07, 'sine'); // sprankel (C7)
+    tone(t0, 523.25, 0,    0.20, 0.22); // C5  ta-
+    tone(t0, 659.25, 0.12, 0.20, 0.22); // E5  da-
+    tone(t0, 783.99, 0.24, 0.20, 0.22); // G5  da-
+    tone(t0, 1046.5, 0.36, 1.10, 0.26); // C6  daaa! (slotakkoord)
+    tone(t0, 1318.5, 0.36, 1.10, 0.16); // E6
+    tone(t0, 783.99, 0.36, 1.10, 0.14); // G5
+    tone(t0, 2093.0, 0.46, 0.90, 0.07, 'sine'); // sprankel (C7)
   } catch (e) {
-    // geluid is nice-to-have: mag nooit de popup zelf blokkeren
+    // zie audio-opmerking hierboven
   }
 }
 
