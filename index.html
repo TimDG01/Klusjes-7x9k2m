@@ -65,6 +65,9 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .task-label{font-size:15px;flex:1;}
 .task-label.done{color:var(--text3);text-decoration:line-through;}
 .vac-tag{font-size:11px;font-weight:600;color:var(--vac);background:var(--vac-bg);padding:2px 7px;border-radius:6px;margin-left:6px;}
+.task.projected{opacity:.55;}
+.task.projected .check{border-style:dashed;}
+.postpone-btn{font-size:15px;padding:2px 4px;flex-shrink:0;}
 
 .celebration{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
 .celebration-card{background:var(--card);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;}
@@ -96,6 +99,9 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .admin-day-btn.active{background:var(--green);color:#fff;}
 .admin-never{font-size:11px;color:var(--red);}
 .admin-vacuum-note{font-size:12px;color:var(--text2);margin-top:6px;}
+.admin-next-row{display:flex;align-items:center;gap:6px;font-size:14px;padding:10px 0 6px;border-bottom:1px solid var(--border);}
+.admin-next-row span{flex:1;}
+.admin-next-row small{color:var(--text2);}
 </style>
 </head>
 <body>
@@ -121,10 +127,11 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v3';
+const VERSION = 'klusjes-pwa v4';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
-const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen'];
+const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
+const KID_NAMES = { lies:'Lies', lenn:'Lenn' };
 
 const DEFAULT_TASKS = {
   A: {
@@ -149,7 +156,7 @@ let adminUnlocked = false;
 let tasksCache = { A:{}, B:{} };
 let tasksLoaded = false;
 
-let vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays };
+let vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
 let vacuumLoaded = false;
 
 let dayState = {};
@@ -180,6 +187,13 @@ function vacuumWeekdays(){
   return Array.isArray(vacuumCache.weekdays) ? vacuumCache.weekdays : DEFAULT_VACUUM.weekdays;
 }
 
+function vacuumFloors(){
+  const f = vacuumCache.floors;
+  return (Array.isArray(f) && f.length > 0) ? f : FLOORS;
+}
+
+// Legacy-formule: kalendergebaseerde rotatie van vóór het pointer-systeem.
+// Alleen nog gebruikt als fallback (historiek en databases zonder `next`).
 function getVacuum(idx, d, vacDays){
   const days = vacDays || vacuumWeekdays();
   const dow = d.getDay();
@@ -193,8 +207,108 @@ function getVacuum(idx, d, vacDays){
   const vacIdx = count - 1;
   return {
     kid: vacIdx % 2 === 0 ? 'lies' : 'lenn',
-    floor: FLOORS[vacIdx % 3]
+    floorIdx: vacIdx % vacuumFloors().length
   };
+}
+
+function parseDayKey(key){
+  const [y, m, d] = String(key).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function clampedToday(){
+  const t = new Date();
+  return t < START ? new Date(START) : t;
+}
+
+function nextScheduledDayFrom(d){
+  const days = vacuumWeekdays();
+  if (!days.length) return null;
+  for (let i = Math.max(0, dayIndex(d)); i < TOTAL_DAYS; i++){
+    const dd = new Date(START); dd.setDate(dd.getDate() + i);
+    if (days.includes(dd.getDay())) return dd;
+  }
+  return null;
+}
+
+// De dag waarop de openstaande beurt staat: de override-dag als die vandaag of
+// later valt, anders de eerstvolgende geplande stofzuigdag vanaf vandaag.
+// Een gemiste beurt schuift zo vanzelf door — zelfde kind, zelfde verdieping.
+function pendingVacuumDay(){
+  const today = clampedToday();
+  if (dayIndex(today) >= TOTAL_DAYS) return null;
+  const ov = vacuumCache.override;
+  if (ov){
+    const od = parseDayKey(ov);
+    if (od && dayIndex(od) >= dayIndex(today) && dayIndex(od) < TOTAL_DAYS) return dayKey(od);
+  }
+  const nd = nextScheduledDayFrom(today);
+  return nd ? dayKey(nd) : null;
+}
+
+// De openstaande beurt: de pointer uit de database, of (zolang die er nog niet
+// is) de legacy-formule toegepast op de pending-dag — naadloze overname.
+function effectiveNext(){
+  const floors = vacuumFloors();
+  const n = vacuumCache.next;
+  if (n && (n.kid === 'lies' || n.kid === 'lenn') && Number.isInteger(n.floorIdx)){
+    return { kid: n.kid, floorIdx: ((n.floorIdx % floors.length) + floors.length) % floors.length };
+  }
+  const nd = nextScheduledDayFrom(clampedToday());
+  return nd ? getVacuum(dayIndex(nd), nd) : null;
+}
+
+function advanceCombo(c, steps){
+  const len = vacuumFloors().length;
+  const flip = steps % 2 !== 0;
+  return {
+    kid: flip ? (c.kid === 'lies' ? 'lenn' : 'lies') : c.kid,
+    floorIdx: ((c.floorIdx + steps) % len + len) % len
+  };
+}
+
+// Bepaalt wat de stofzuigrij voor een dag toont:
+//  'done'      – snapshot uit days/{key}/vac (bevroren historiek)
+//  'pending'   – de ene openstaande beurt (interactief, met doorschuifknop)
+//  'legacy'    – historiek via de oude formule, van vóór het pointer-systeem
+//  'projected' – vooruitblik alsof elke beurt gedaan wordt, niet interactief
+function vacuumForDay(d){
+  const floors = vacuumFloors();
+  const snap = dayState && dayState.vac;
+  if (snap && snap.kid) return { kid: snap.kid, floor: snap.floor, mode: 'done' };
+
+  const key = dayKey(d);
+  const pKey = pendingVacuumDay();
+  if (pKey && key === pKey){
+    const n = effectiveNext();
+    return n ? { kid: n.kid, floorIdx: n.floorIdx, floor: floors[n.floorIdx], mode: 'pending' } : null;
+  }
+
+  const idx = dayIndex(d);
+  if (idx < dayIndex(clampedToday())){
+    // Verleden zonder snapshot: vóór het pointer-systeem toont de formule de
+    // historiek. Mét pointer is een niet-gedane beurt doorgeschoven en toont de
+    // dag niets — tenzij er nog een oud vinkje van vóór de snapshots staat.
+    if (!vacuumCache.next || dayState['lies-vac'] || dayState['lenn-vac']){
+      const lv = getVacuum(idx, d, vacuumWeekdays());
+      if (lv) return { kid: lv.kid, floorIdx: lv.floorIdx, floor: floors[lv.floorIdx], mode: 'legacy' };
+    }
+    return null;
+  }
+
+  if (pKey && idx > dayIndex(parseDayKey(pKey)) && vacuumWeekdays().includes(d.getDay())){
+    const base = effectiveNext();
+    if (!base) return null;
+    let steps = 0;
+    for (let i = dayIndex(parseDayKey(pKey)) + 1; i <= idx; i++){
+      const dd = new Date(START); dd.setDate(dd.getDate() + i);
+      if (vacuumWeekdays().includes(dd.getDay())) steps++;
+    }
+    const c = advanceCombo(base, steps);
+    return { kid: c.kid, floorIdx: c.floorIdx, floor: floors[c.floorIdx], mode: 'projected' };
+  }
+  return null;
 }
 
 function dayKey(d){
@@ -240,7 +354,13 @@ onValue(ref(db, 'settings/vacuum'), snap => {
   }
   loadError = null;
   const v = snap.val();
-  vacuumCache = { weekdays: v.weekdays || DEFAULT_VACUUM.weekdays.slice() };
+  vacuumCache = {
+    weekdays: v.weekdays || DEFAULT_VACUUM.weekdays.slice(),
+    floors: Array.isArray(v.floors) ? v.floors : null,
+    next: v.next || null,
+    override: typeof v.override === 'string' ? v.override : null,
+    lastDone: typeof v.lastDone === 'string' ? v.lastDone : null
+  };
   vacuumLoaded = true;
   render();
 }, () => {
@@ -292,7 +412,7 @@ function render(){
   const idx = dayIndex(current);
   const roles = getRoles(idx);
   const dow = current.getDay();
-  const vac = getVacuum(idx, current, vacuumWeekdays());
+  const vac = vacuumForDay(current);
   const state = dayState;
 
   const kids = [
@@ -303,7 +423,7 @@ function render(){
   let allTasks = [];
   kids.forEach(k => {
     k.tasks.forEach(t => allTasks.push(`${k.key}-${t.id}`));
-    if (vac && vac.kid === k.key) allTasks.push(`${k.key}-vac`);
+    if (vac && vac.kid === k.key && vac.mode !== 'projected') allTasks.push(`${k.key}-vac`);
   });
   const doneCount = allTasks.filter(id => state[id]).length;
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
@@ -353,7 +473,7 @@ function renderCard(k, vac, state){
     return taskRow(id, t.label, done);
   }).join('');
 
-  const vacRow = (vac && vac.kid === k.key) ? taskRow(`${k.key}-vac`, `🧹 Stofzuigen: ${vac.floor}`, !!state[`${k.key}-vac`], true) : '';
+  const vacRow = (vac && vac.kid === k.key) ? vacuumRow(k.key, vac, state) : '';
 
   return `
     <div class="card">
@@ -368,20 +488,81 @@ function renderCard(k, vac, state){
   `;
 }
 
-function taskRow(id, label, done, isVac){
+function taskRow(id, label, done){
   return `
     <div class="task" onclick="toggleTask('${id}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
-      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}${isVac ? '<span class=\"vac-tag\">week</span>' : ''}</div>
+      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}</div>
     </div>
   `;
 }
 
+function vacuumRow(kidKey, vac, state){
+  const id = `${kidKey}-vac`;
+  const done = !!state[id];
+  const label = `🧹 Stofzuigen: ${escapeHtml(vac.floor)}`;
+  if (vac.mode === 'projected'){
+    return `
+    <div class="task projected">
+      <div class="check"></div>
+      <div class="task-label">${label}<span class="vac-tag">verwacht</span></div>
+    </div>
+  `;
+  }
+  const postpone = (vac.mode === 'pending' && !done)
+    ? `<button class="postpone-btn" onclick="event.stopPropagation();postponeVacuum()" title="Doorschuiven naar de volgende dag">⏭</button>`
+    : '';
+  return `
+    <div class="task" onclick="toggleTask('${id}')">
+      <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
+      <div class="task-label ${done ? 'done' : ''}">${label}<span class="vac-tag">week</span></div>
+      ${postpone}
+    </div>
+  `;
+}
+
+function postponeVacuum(){
+  const pKey = pendingVacuumDay();
+  const n = effectiveNext();
+  if (!pKey || !n) return;
+  const nd = parseDayKey(pKey);
+  nd.setDate(nd.getDate() + 1);
+  if (dayIndex(nd) >= TOTAL_DAYS){ alert('Kan niet voorbij het einde van het schema.'); return; }
+  // pointer meteen vastleggen zodat de beurt ook op een niet-stofzuigdag blijft kloppen
+  update(ref(db, 'settings/vacuum'), { override: dayKey(nd), next: { kid: n.kid, floorIdx: n.floorIdx } });
+}
+
 function toggleTask(id){
+  if (id.endsWith('-vac')){
+    const info = vacuumForDay(current);
+    const kidKey = id.slice(0, id.indexOf('-'));
+    if (!info || info.kid !== kidKey || info.mode === 'projected') return;
+    const key = dayKey(current);
+    const newVal = !dayState[id];
+    set(ref(db, `days/${key}/${id}`), newVal);
+    if (newVal){
+      // historiek bevriezen: wie het was en welke verdieping, los van latere instellingen
+      set(ref(db, `days/${key}/vac`), { kid: info.kid, floor: info.floor });
+      if (info.mode === 'pending'){
+        // beurt afgewerkt: pointer één stap door, eventuele override is opgebruikt
+        update(ref(db, 'settings/vacuum'), {
+          next: advanceCombo({ kid: info.kid, floorIdx: info.floorIdx }, 1),
+          override: null,
+          lastDone: key
+        });
+      }
+    } else {
+      remove(ref(db, `days/${key}/vac`));
+      if (vacuumCache.lastDone === key && vacuumCache.next){
+        // het net-afgevinkte ongedaan maken: pointer één stap terug
+        update(ref(db, 'settings/vacuum'), { next: advanceCombo(vacuumCache.next, -1), lastDone: null });
+      }
+    }
+    return;
+  }
+
   const newVal = !dayState[id];
   set(ref(db, `days/${dayKey(current)}/${id}`), newVal);
-
-  if (id.endsWith('-vac')) return; // stofzuigtaak blijft buiten deze logica
 
   if (newVal){
     const sep = id.indexOf('-');
@@ -504,14 +685,82 @@ function renderAdminRole(role, title){
 
 function renderAdminVacuum(){
   const days = vacuumWeekdays();
+  const floors = vacuumFloors();
+  const n = effectiveNext();
+  const pKey = pendingVacuumDay();
+  const pd = pKey ? parseDayKey(pKey) : null;
+  const nextRow = (n && pd) ? `
+    <div class="admin-next-row">
+      <span>Volgende beurt: <b>${KID_NAMES[n.kid]}</b> — ${escapeHtml(floors[n.floorIdx])}<br>
+      <small>op ${WD[pd.getDay()]} ${pd.getDate()} ${MN[pd.getMonth()]}${vacuumCache.override ? ' (doorgeschoven)' : ''}</small></span>
+      <button class="admin-icon-btn" onclick="rewindVacuumTurn()" title="Beurt terugdraaien">⏮</button>
+      <button class="admin-icon-btn" onclick="advanceVacuumTurn()" title="Beurt doorschuiven">⏭</button>
+    </div>
+  ` : '';
+  const floorRows = floors.map((f, i) => `
+    <div class="admin-task-row">
+      <div class="admin-task-top">
+        <div class="admin-task-label">${escapeHtml(f)}</div>
+        <button class="admin-icon-btn" onclick="editFloor(${i})">✏️</button>
+        <button class="admin-icon-btn" onclick="deleteFloor(${i})">🗑</button>
+      </div>
+    </div>
+  `).join('');
   return `
     <div class="admin-section">
       <div class="admin-role-title">Stofzuigen</div>
       ${renderWeekdayPicker(days, null, null)}
       ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
-      <div class="admin-vacuum-note">Kind en verdieping wisselen automatisch.</div>
+      ${nextRow}
+      ${floorRows}
+      <button class="admin-add-btn" onclick="addFloor()">+ Verdieping toevoegen</button>
+      <div class="admin-vacuum-note">Een niet-afgevinkte beurt schuift automatisch door naar de volgende stofzuigdag, voor hetzelfde kind.</div>
     </div>
   `;
+}
+
+function advanceVacuumTurn(){
+  const n = effectiveNext();
+  if (!n) return;
+  update(ref(db, 'settings/vacuum'), { next: advanceCombo(n, 1) });
+}
+
+function rewindVacuumTurn(){
+  const n = effectiveNext();
+  if (!n) return;
+  update(ref(db, 'settings/vacuum'), { next: advanceCombo(n, -1) });
+}
+
+function addFloor(){
+  const label = prompt('Nieuwe verdieping:');
+  if (!label) return;
+  update(ref(db, 'settings/vacuum'), { floors: [...vacuumFloors(), label] });
+}
+
+function editFloor(i){
+  const floors = vacuumFloors();
+  if (!floors[i]) return;
+  const label = prompt('Naam van de verdieping:', floors[i]);
+  if (!label) return;
+  const nf = floors.slice(); nf[i] = label;
+  update(ref(db, 'settings/vacuum'), { floors: nf });
+}
+
+function deleteFloor(i){
+  const floors = vacuumFloors();
+  if (!floors[i]) return;
+  if (floors.length <= 1){ alert('Er moet minstens één verdieping blijven.'); return; }
+  if (!confirm(`Verdieping "${floors[i]}" verwijderen?`)) return;
+  const nf = floors.slice(); nf.splice(i, 1);
+  const upd = { floors: nf };
+  const n = vacuumCache.next;
+  if (n && Number.isInteger(n.floorIdx)){
+    let fi = n.floorIdx;
+    if (fi > i) fi -= 1;
+    if (fi >= nf.length) fi = 0;
+    if (fi !== n.floorIdx) upd.next = { kid: n.kid, floorIdx: fi };
+  }
+  update(ref(db, 'settings/vacuum'), upd);
 }
 
 function editTaskLabel(role, id){
@@ -557,7 +806,9 @@ function toggleVacuumWeekday(dayNum){
 Object.assign(window, {
   toggleTask, changeDay, goToday, openAdmin, backToDay,
   editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
-  toggleWeekday, toggleVacuumWeekday
+  toggleWeekday, toggleVacuumWeekday,
+  postponeVacuum, advanceVacuumTurn, rewindVacuumTurn,
+  addFloor, editFloor, deleteFloor
 });
 
 render();
