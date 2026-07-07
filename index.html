@@ -236,14 +236,20 @@ function nextScheduledDayFrom(d){
 // later valt, anders de eerstvolgende geplande stofzuigdag vanaf vandaag.
 // Een gemiste beurt schuift zo vanzelf door — zelfde kind, zelfde verdieping.
 function pendingVacuumDay(){
-  const today = clampedToday();
-  if (dayIndex(today) >= TOTAL_DAYS) return null;
+  let from = clampedToday();
+  const ld = vacuumCache.lastDone ? parseDayKey(vacuumCache.lastDone) : null;
+  if (ld && dayIndex(ld) >= dayIndex(from)){
+    // de beurt van vandaag (of vooruitgewerkt: later) is al gedaan — de
+    // volgende beurt begint pas op de eerste geplande dag daarna
+    from = new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1);
+  }
+  if (dayIndex(from) >= TOTAL_DAYS) return null;
   const ov = vacuumCache.override;
   if (ov){
     const od = parseDayKey(ov);
-    if (od && dayIndex(od) >= dayIndex(today) && dayIndex(od) < TOTAL_DAYS) return dayKey(od);
+    if (od && dayIndex(od) >= dayIndex(from) && dayIndex(od) < TOTAL_DAYS) return dayKey(od);
   }
-  const nd = nextScheduledDayFrom(today);
+  const nd = nextScheduledDayFrom(from);
   return nd ? dayKey(nd) : null;
 }
 
@@ -509,16 +515,39 @@ function vacuumRow(kidKey, vac, state){
     </div>
   `;
   }
-  const postpone = (vac.mode === 'pending' && !done)
-    ? `<button class="postpone-btn" onclick="event.stopPropagation();postponeVacuum()" title="Doorschuiven naar de volgende dag">⏭</button>`
-    : '';
+  let buttons = '';
+  if (!done && vac.floorIdx != null){
+    const todayIdx = dayIndex(clampedToday());
+    const pKey = pendingVacuumDay();
+    const pIdx = pKey ? dayIndex(parseDayKey(pKey)) : null;
+    const canPull =
+      (vac.mode === 'pending' && pIdx != null && pIdx > todayIdx) ||
+      (vac.mode === 'legacy' && dayIndex(current) < todayIdx);
+    if (canPull){
+      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();pullVacuumToToday('${vac.kid}',${vac.floorIdx})" title="Haal deze beurt naar vandaag">⏪</button>`;
+    }
+    if (vac.mode === 'pending'){
+      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();postponeVacuum()" title="Doorschuiven naar de volgende dag">⏭</button>`;
+    }
+  }
   return `
     <div class="task" onclick="toggleTask('${id}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="task-label ${done ? 'done' : ''}">${label}<span class="vac-tag">week</span></div>
-      ${postpone}
+      ${buttons}
     </div>
   `;
+}
+
+// Haalt een beurt naar vandaag: de openstaande beurt (die verderop wacht) of
+// een gemiste legacy-beurt uit het verleden. De combo van de aangeklikte rij
+// wordt de pointer, zodat de rotatie daarna gewoon vanaf die beurt verdergaat.
+function pullVacuumToToday(kid, floorIdx){
+  const len = vacuumFloors().length;
+  update(ref(db, 'settings/vacuum'), {
+    override: dayKey(clampedToday()),
+    next: { kid, floorIdx: ((floorIdx % len) + len) % len }
+  });
 }
 
 function postponeVacuum(){
@@ -807,7 +836,7 @@ Object.assign(window, {
   toggleTask, changeDay, goToday, openAdmin, backToDay,
   editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleVacuumWeekday,
-  postponeVacuum, advanceVacuumTurn, rewindVacuumTurn,
+  postponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
   addFloor, editFloor, deleteFloor
 });
 
