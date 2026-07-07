@@ -136,7 +136,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v5';
+const VERSION = 'klusjes-pwa v6';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -359,6 +359,18 @@ function tasksArrayForDay(role, dow){
   return tasksArray(role).filter(t => taskWeekdays(t).includes(dow));
 }
 
+// Bevroren eenmalige taken van deze dag (days/{key}/snap/{kid}-{taskId}) voor één kind.
+// Zo'n snapshot wordt geschreven op het moment dat een eenmalige taak wordt afgevinkt
+// (de definitie wordt dan uit settings/tasks verwijderd) — zonder snapshot zou de rij
+// meteen verdwijnen in plaats van afgevinkt te blijven staan. Zelfde idee als days/{key}/vac.
+function daySnapsFor(kidKey, state){
+  const snap = state.snap || {};
+  return Object.keys(snap)
+    .filter(k => k.startsWith(kidKey + '-'))
+    .map(k => ({ id: k.slice(kidKey.length + 1), ...snap[k] }))
+    .sort((a,b) => (a.order||0) - (b.order||0));
+}
+
 // --- Firebase: taakinstellingen (permanente listener, hele app-levensduur) ---
 onValue(ref(db, 'settings/tasks'), snap => {
   if (!snap.exists()){
@@ -451,10 +463,26 @@ function render(){
       tasks: tasksArrayForDay(roles.lenn, dow).concat(tasksArrayForDay('lenn', dow).map(t => ({ ...t, fixed:true }))) }
   ];
 
+  const cDay = dayKey(current);
   let allTasks = [];
+  const newlyDone = []; // kinderen die déze render al hun klusjes af kregen
   kids.forEach(k => {
-    k.tasks.forEach(t => allTasks.push(`${k.key}-${t.id}`));
-    if (vac && vac.kid === k.key && vac.mode !== 'projected') allTasks.push(`${k.key}-vac`);
+    // bevroren eenmalige taken van deze dag die niet (meer) in de levende lijst zitten
+    k.snaps = daySnapsFor(k.key, state).filter(s => !k.tasks.some(t => t.id === s.id));
+    const ids = k.tasks.map(t => `${k.key}-${t.id}`).concat(k.snaps.map(s => `${k.key}-${s.id}`));
+    if (vac && vac.kid === k.key && vac.mode !== 'projected') ids.push(`${k.key}-vac`);
+    allTasks = allTasks.concat(ids);
+
+    const kidDone = ids.filter(id => state[id]).length;
+    const gKey = `${cDay}:${k.key}`;
+    if (ids.length > 0 && kidDone === ids.length){
+      if (!celebratedDays.has(gKey)){
+        celebratedDays.add(gKey);
+        newlyDone.push(k.name);
+      }
+    } else {
+      celebratedDays.delete(gKey);
+    }
   });
   const doneCount = allTasks.filter(id => state[id]).length;
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
@@ -486,15 +514,7 @@ function render(){
     </div>
   `;
 
-  const cDay = dayKey(current);
-  if (allTasks.length > 0 && doneCount === allTasks.length){
-    if (!celebratedDays.has(cDay)){
-      celebratedDays.add(cDay);
-      showCelebration();
-    }
-  } else {
-    celebratedDays.delete(cDay);
-  }
+  if (newlyDone.length) showCelebration(newlyDone);
 }
 
 function renderCard(k, vac, state){
@@ -502,7 +522,11 @@ function renderCard(k, vac, state){
     const id = `${k.key}-${t.id}`;
     const done = !!state[id];
     return taskRow(id, t.label, done, t.fixed);
-  }).join('');
+  }).concat((k.snaps || []).map(s => {
+    // bevroren eenmalige taak: blijft afgevinkt zichtbaar; terug aanklikken herstelt ze
+    const id = `${k.key}-${s.id}`;
+    return taskRow(id, s.label, !!state[id], s.bucket === k.key);
+  })).join('');
 
   const vacRow = (vac && vac.kid === k.key) ? vacuumRow(k.key, vac, state) : '';
 
@@ -616,6 +640,7 @@ function toggleTask(id){
     const key = dayKey(current);
     const newVal = !dayState[id];
     if (info.mode === 'projected' && !newVal) return; // kan niet: projectie is per definitie onaangevinkt
+    if (newVal) playChime();
     set(ref(db, `days/${key}/${id}`), newVal);
     if (newVal){
       // historiek bevriezen: wie het was en welke verdieping, los van latere instellingen
@@ -645,12 +670,14 @@ function toggleTask(id){
   }
 
   const newVal = !dayState[id];
-  set(ref(db, `days/${dayKey(current)}/${id}`), newVal);
+  const key = dayKey(current);
+  const sep = id.indexOf('-');
+  const kidKey = id.slice(0, sep);
+  const taskId = id.slice(sep + 1);
+  if (newVal) playChime();
+  set(ref(db, `days/${key}/${id}`), newVal);
 
   if (newVal){
-    const sep = id.indexOf('-');
-    const kidKey = id.slice(0, sep);
-    const taskId = id.slice(sep + 1);
     const role = getRoles(dayIndex(current))[kidKey];
     // taak kan in de roterende rol-bucket zitten óf in de vaste kind-bucket
     let bucket = role, task = tasksCache[role] && tasksCache[role][taskId];
@@ -658,7 +685,21 @@ function toggleTask(id){
       bucket = kidKey; task = tasksCache[kidKey][taskId];
     }
     if (task && task.recurring === false){
+      // eerst bevriezen in de dag (zoals days/{key}/vac), dán pas verwijderen —
+      // zo blijft de rij afgevinkt zichtbaar in plaats van meteen te verdwijnen
+      const snap = { label: task.label, bucket, order: task.order || 0 };
+      if (Array.isArray(task.weekdays)) snap.weekdays = task.weekdays;
+      set(ref(db, `days/${key}/snap/${id}`), snap);
       remove(ref(db, `settings/tasks/${bucket}/${taskId}`));
+    }
+  } else {
+    // uitvinken van een bevroren eenmalige taak: definitie herstellen uit de snapshot
+    const snap = dayState.snap && dayState.snap[id];
+    if (snap){
+      const rec = { label: snap.label, recurring: false, order: snap.order || 0 };
+      if (Array.isArray(snap.weekdays)) rec.weekdays = snap.weekdays;
+      set(ref(db, `settings/tasks/${snap.bucket}/${taskId}`), rec);
+      remove(ref(db, `days/${key}/snap/${id}`));
     }
   }
 }
@@ -683,16 +724,50 @@ function goToday(){
   render();
 }
 
-function showCelebration(){
-  if (document.getElementById('celebration')) return;
+// Kort belletje bij het afvinken. Gesynthetiseerd via Web Audio (geen extern
+// geluidsbestand — de app moet één zelfstandig bestand blijven). De AudioContext
+// wordt lazy aangemaakt binnen de klik zelf, wat op iOS vereist is om geluid te mogen spelen.
+let audioCtx = null;
+function playChime(){
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime;
+    // twee zachte sinustonen kort na elkaar: een vriendelijk "ding-ding"
+    [[880, 0], [1174.66, 0.07]].forEach(([freq, dt]) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + dt);
+      gain.gain.exponentialRampToValueAtTime(0.2, t0 + dt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.45);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + dt);
+      osc.stop(t0 + dt + 0.5);
+    });
+  } catch (e) {
+    // geluid is nice-to-have: mag nooit het afvinken zelf blokkeren
+  }
+}
+
+function showCelebration(names){
+  // per kind gevierd; als beide kinderen in dezelfde render klaar zijn (bv. bij het
+  // openen van een al volledig afgewerkte dag) komt er één gezamenlijke popup
+  const old = document.getElementById('celebration');
+  if (old) old.remove();
+  const title = `Proficiat ${names.join(' & ')}!`;
+  const sub = names.length === 1
+    ? `Alle klusjes van ${names[0]} zijn gedaan.`
+    : 'Alle klusjes van vandaag zijn gedaan.';
   const div = document.createElement('div');
   div.id = 'celebration';
   div.className = 'celebration';
   div.innerHTML = `
     <div class="celebration-card">
       <div class="celebration-emoji">🎉</div>
-      <div class="celebration-title">Proper!</div>
-      <div class="celebration-sub">Alle klusjes van vandaag zijn gedaan.</div>
+      <div class="celebration-title">${title}</div>
+      <div class="celebration-sub">${sub}</div>
       <button class="celebration-close" onclick="document.getElementById('celebration').remove()">Toppie</button>
     </div>
   `;
