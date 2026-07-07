@@ -620,8 +620,11 @@ function toggleTask(id){
     } else {
       remove(ref(db, `days/${key}/vac`));
       if (vacuumCache.lastDone === key && vacuumCache.next){
-        // het net-afgevinkte ongedaan maken: pointer één stap terug
-        update(ref(db, 'settings/vacuum'), { next: advanceCombo(vacuumCache.next, -1), lastDone: null });
+        // het net-afgevinkte ongedaan maken: pointer één stap terug, en de beurt
+        // keert terug naar déze dag — afvinken wiste de override, dus zonder dit
+        // herstel zou een met 📥/⏮/⏭ verplaatste beurt terugspringen naar de
+        // eerstvolgende geplande dag en van deze dag lijken te verdwijnen
+        update(ref(db, 'settings/vacuum'), { next: advanceCombo(vacuumCache.next, -1), lastDone: null, override: key });
       }
     }
     return;
