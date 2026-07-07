@@ -74,6 +74,12 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .celebration-title{font-size:20px;font-weight:700;margin-bottom:6px;}
 .celebration-sub{font-size:14px;color:var(--text2);margin-bottom:20px;}
 .celebration-close{background:var(--green);color:white;font-weight:600;padding:11px 28px;border-radius:12px;font-size:15px;}
+.pw-input{width:100%;font-size:16px;padding:11px 12px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin:6px 0 4px;text-align:center;}
+.pw-error{font-size:12px;color:var(--red);min-height:16px;margin-bottom:12px;}
+.pw-actions{display:flex;gap:10px;}
+.pw-actions button{flex:1;font-weight:600;padding:11px 0;border-radius:12px;font-size:15px;}
+.pw-cancel{background:var(--track);color:var(--text);}
+.pw-ok{background:var(--green);color:#fff;}
 
 .footer-row{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;}
 .admin-link{font-size:13px;font-weight:600;color:var(--text2);background:var(--card);padding:8px 16px;border-radius:10px;}
@@ -687,14 +693,55 @@ function showCelebration(){
 
 // --- Admin ---
 function openAdmin(){
-  if (!adminUnlocked){
-    const pw = prompt('Wachtwoord:');
-    if (pw === null) return;
-    if (pw !== ADMIN_PASSWORD){ alert('Fout wachtwoord'); return; }
-    adminUnlocked = true;
-  }
+  if (!adminUnlocked){ showPasswordPrompt(); return; }
   screen = 'admin';
   render();
+}
+
+// Gemaskeerd wachtwoordvenster i.p.v. prompt() (die de tekens leesbaar toont).
+function showPasswordPrompt(){
+  if (document.getElementById('pwmodal')) return;
+  const div = document.createElement('div');
+  div.id = 'pwmodal';
+  div.className = 'celebration';
+  div.innerHTML = `
+    <div class="celebration-card">
+      <div class="celebration-title">Wachtwoord</div>
+      <input id="pwinput" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="pw-input" placeholder="Wachtwoord">
+      <div id="pwerror" class="pw-error"></div>
+      <div class="pw-actions">
+        <button class="pw-cancel" onclick="closePasswordPrompt()">Annuleren</button>
+        <button class="pw-ok" onclick="submitPassword()">OK</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(div);
+  const inp = document.getElementById('pwinput');
+  inp.focus();
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter'){ e.preventDefault(); submitPassword(); }
+    else if (e.key === 'Escape'){ e.preventDefault(); closePasswordPrompt(); }
+  });
+}
+
+function submitPassword(){
+  const inp = document.getElementById('pwinput');
+  if (!inp) return;
+  if (inp.value !== ADMIN_PASSWORD){
+    document.getElementById('pwerror').textContent = 'Fout wachtwoord';
+    inp.value = '';
+    inp.focus();
+    return;
+  }
+  adminUnlocked = true;
+  closePasswordPrompt();
+  screen = 'admin';
+  render();
+}
+
+function closePasswordPrompt(){
+  const m = document.getElementById('pwmodal');
+  if (m) m.remove();
 }
 
 function backToDay(){
@@ -881,7 +928,8 @@ Object.assign(window, {
   editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleVacuumWeekday,
   postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
-  addFloor, editFloor, deleteFloor
+  addFloor, editFloor, deleteFloor,
+  submitPassword, closePasswordPrompt
 });
 
 render();
