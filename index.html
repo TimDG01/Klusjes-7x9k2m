@@ -18,14 +18,14 @@
   --lies:#B5006E;--lies-bg:#F9D0E8;
   --lenn:#185FA5;--lenn-bg:#E6F1FB;
   --vac:#946200;--vac-bg:#FBEFD2;
-  --green:#1D9E75;--blue:#378ADD;--red:#D5493A;
+  --green:#1D9E75;--blue:#378ADD;--red:#D5493A;--red-bg:#FBDFDB;
 }
 @media(prefers-color-scheme:dark){
   :root{
     --bg:#1C1C1E;--card:#2C2C2E;--text:#FFFFFF;
     --text2:#AEAEB2;--text3:#636366;
     --border:rgba(255,255,255,0.14);--track:#3A3A3C;
-    --lies-bg:#4A0E2A;--lenn-bg:#0D2B45;--vac-bg:#3D2E08;
+    --lies-bg:#4A0E2A;--lenn-bg:#0D2B45;--vac-bg:#3D2E08;--red-bg:#4A211D;
   }
 }
 body{
@@ -92,7 +92,8 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .admin-task-top{display:flex;align-items:center;gap:8px;}
 .admin-task-label{flex:1;font-size:14px;}
 .admin-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;background:var(--track);color:var(--text2);}
-.admin-icon-btn{font-size:16px;padding:4px 6px;}
+.admin-icon-btn{font-size:16px;padding:4px 6px;border-radius:8px;}
+.admin-icon-btn.danger{background:var(--red-bg);}
 .admin-add-btn{margin-top:8px;font-size:14px;font-weight:600;color:var(--blue);}
 .admin-weekday-row{display:flex;gap:4px;}
 .admin-day-btn{flex:1;height:30px;border-radius:7px;font-size:11px;font-weight:600;text-transform:capitalize;background:var(--track);color:var(--text2);display:flex;align-items:center;justify-content:center;}
@@ -695,7 +696,7 @@ function renderAdminRole(role, title){
         <div class="admin-task-label">${escapeHtml(t.label)}</div>
         <button class="admin-icon-btn" onclick="toggleRecurring('${role}','${t.id}')">🔁</button>
         <button class="admin-icon-btn" onclick="editTaskLabel('${role}','${t.id}')">✏️</button>
-        <button class="admin-icon-btn" onclick="deleteTaskAdmin('${role}','${t.id}')">🗑</button>
+        <button class="admin-icon-btn danger" onclick="deleteTaskAdmin('${role}','${t.id}')">🗑</button>
       </div>
       ${renderWeekdayPicker(days, role, t.id)}
       ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
@@ -731,7 +732,7 @@ function renderAdminVacuum(){
       <div class="admin-task-top">
         <div class="admin-task-label">${escapeHtml(f)}</div>
         <button class="admin-icon-btn" onclick="editFloor(${i})">✏️</button>
-        <button class="admin-icon-btn" onclick="deleteFloor(${i})">🗑</button>
+        <button class="admin-icon-btn danger" onclick="deleteFloor(${i})">🗑</button>
       </div>
     </div>
   `).join('');
