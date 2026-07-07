@@ -136,7 +136,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v7';
+const VERSION = 'klusjes-pwa v8';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -751,40 +751,37 @@ function playChime(){
   }
 }
 
-// Applaus bij de proficiat-popup: gesynthetiseerd als tientallen korte ruis-"klapjes"
-// door een bandpass-filter (geen extern geluidsbestand — de app blijft één bestand).
-// Speelt alleen als de AudioContext al draait, d.w.z. na een eerdere afvink-tik —
-// dat is op iOS toch vereist, en het voorkomt dat een stil "opgespaard" applaus
-// (popup zonder tik, bv. een vers geopende afgewerkte dag) later plots alsnog afgaat.
-function playApplause(){
+// Vrolijke "ta-da-da-daaa!"-fanfare bij de proficiat-popup: stijgende do-mi-sol
+// gevolgd door een gedragen C-majeurakkoord met een sprankeltje erbovenop.
+// Zuivere toonsynthese (geen ruis: die kraakt op telefoonspeakers) en geen extern
+// geluidsbestand — de app blijft één bestand. Speelt alleen als de AudioContext al
+// draait, d.w.z. na een eerdere afvink-tik — dat is op iOS toch vereist, en het
+// voorkomt dat een stil "opgespaarde" fanfare (popup zonder tik, bv. een vers
+// geopende afgewerkte dag) later plots alsnog afgaat.
+function playFanfare(){
   try {
     if (!audioCtx || audioCtx.state !== 'running') return;
-    const sr = audioCtx.sampleRate;
-    const dur = 2.2;
-    const buf = audioCtx.createBuffer(1, Math.floor(sr * dur), sr);
-    const data = buf.getChannelData(0);
-    for (let c = 0; c < 70; c++){
-      // Math.random()*Math.random() clustert de klapjes vooraan: applaus dat uitdooft
-      const start = Math.floor(Math.random() * Math.random() * sr * (dur - 0.06));
-      const amp = 0.25 + Math.random() * 0.35;
-      const clapLen = Math.floor(sr * 0.02);
-      for (let i = 0; i < clapLen; i++){
-        data[start + i] += (Math.random() * 2 - 1) * amp * Math.exp(-i / (sr * 0.004));
-      }
-    }
-    const src = audioCtx.createBufferSource();
-    src.buffer = buf;
-    const filt = audioCtx.createBiquadFilter();
-    filt.type = 'bandpass';
-    filt.frequency.value = 1800;
-    filt.Q.value = 0.8;
-    const gain = audioCtx.createGain();
     const t0 = audioCtx.currentTime;
-    gain.gain.setValueAtTime(0.5, t0);
-    gain.gain.setValueAtTime(0.5, t0 + dur - 0.5);
-    gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    src.connect(filt).connect(gain).connect(audioCtx.destination);
-    src.start();
+    const note = (freq, start, dur, vol, type) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type || 'triangle';
+      osc.frequency.value = freq;
+      // altijd in- en uitfaden: abrupte starts/stops zijn precies wat tikken/kraken geeft
+      gain.gain.setValueAtTime(0.0001, t0 + start);
+      gain.gain.exponentialRampToValueAtTime(vol, t0 + start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + start);
+      osc.stop(t0 + start + dur + 0.05);
+    };
+    note(523.25, 0,    0.20, 0.22); // C5  ta-
+    note(659.25, 0.12, 0.20, 0.22); // E5  da-
+    note(783.99, 0.24, 0.20, 0.22); // G5  da-
+    note(1046.5, 0.36, 1.10, 0.26); // C6  daaa! (slotakkoord)
+    note(1318.5, 0.36, 1.10, 0.16); // E6
+    note(783.99, 0.36, 1.10, 0.14); // G5
+    note(2093.0, 0.46, 0.90, 0.07, 'sine'); // sprankel (C7)
   } catch (e) {
     // geluid is nice-to-have: mag nooit de popup zelf blokkeren
   }
@@ -793,7 +790,7 @@ function playApplause(){
 function showCelebration(names){
   // per kind gevierd; als beide kinderen in dezelfde render klaar zijn (bv. bij het
   // openen van een al volledig afgewerkte dag) komt er één gezamenlijke popup
-  playApplause();
+  playFanfare();
   const old = document.getElementById('celebration');
   if (old) old.remove();
   const title = `Proficiat ${names.join(' & ')}!`;
