@@ -299,8 +299,11 @@ function vacuumForDay(d){
   if (idx < dayIndex(clampedToday())){
     // Verleden zonder snapshot: vóór het pointer-systeem toont de formule de
     // historiek. Mét pointer is een niet-gedane beurt doorgeschoven en toont de
-    // dag niets — tenzij er nog een oud vinkje van vóór de snapshots staat.
-    if (!vacuumCache.next || dayState['lies-vac'] || dayState['lenn-vac']){
+    // dag niets — tenzij deze dag ooit een vinkje had (`!== undefined`, niet
+    // waarheids-check: uitvinken schrijft `false` weg, geen verwijdering — een
+    // truthy-check zou de taak dan laten verdwijnen in plaats van onaangevinkt
+    // te blijven staan).
+    if (!vacuumCache.next || dayState['lies-vac'] !== undefined || dayState['lenn-vac'] !== undefined){
       const lv = getVacuum(idx, d, vacuumWeekdays());
       if (lv) return { kid: lv.kid, floorIdx: lv.floorIdx, floor: floors[lv.floorIdx], mode: 'legacy' };
     }
