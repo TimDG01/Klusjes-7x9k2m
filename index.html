@@ -538,17 +538,19 @@ function vacuumRow(kidKey, vac, state){
     const todayIdx = dayIndex(clampedToday());
     const pKey = pendingVacuumDay();
     const pIdx = pKey ? dayIndex(parseDayKey(pKey)) : null;
-    const canPull =
-      (vac.mode === 'pending' && pIdx != null && pIdx > todayIdx) ||
-      ((vac.mode === 'legacy' || vac.mode === 'done') && dayIndex(current) < todayIdx);
-    if (canPull){
+    if (vac.mode === 'pending'){
+      // drietal: vorige dag, naar vandaag, volgende dag — de eerste twee alleen
+      // als de beurt in de toekomst staat (eerder dan vandaag kan niet)
+      if (pIdx != null && pIdx > todayIdx){
+        buttons += `<button class="postpone-btn" onclick="event.stopPropagation();preponeVacuum()" title="Een dag eerder">${SKIP_BACK_ICON}</button>`;
+        buttons += `<button class="postpone-btn" onclick="event.stopPropagation();pullVacuumToToday('${vac.kid}',${vac.floorIdx},null)" title="Haal deze beurt naar vandaag">📥</button>`;
+      }
+      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();postponeVacuum()" title="Doorschuiven naar de volgende dag">${SKIP_FWD_ICON}</button>`;
+    } else if ((vac.mode === 'legacy' || vac.mode === 'done') && dayIndex(current) < todayIdx){
       // bij een snapshot-rij ('done') moet de momentopname mee verhuizen, anders
       // blijft de beurt dubbel staan — vandaar de dag-key als derde argument
       const fromKey = vac.mode === 'done' ? `'${dayKey(current)}'` : 'null';
       buttons += `<button class="postpone-btn" onclick="event.stopPropagation();pullVacuumToToday('${vac.kid}',${vac.floorIdx},${fromKey})" title="Haal deze beurt naar vandaag">📥</button>`;
-    }
-    if (vac.mode === 'pending'){
-      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();postponeVacuum()" title="Doorschuiven naar de volgende dag">${SKIP_FWD_ICON}</button>`;
     }
   }
   return `
@@ -571,6 +573,18 @@ function pullVacuumToToday(kid, floorIdx, fromKey){
   });
   // beurt verhuisd: de bevroren momentopname van de oorspronkelijke dag opruimen
   if (fromKey) remove(ref(db, `days/${fromKey}/vac`));
+}
+
+// Zet de openstaande beurt één dag vroeger, maar nooit vroeger dan vandaag.
+function preponeVacuum(){
+  const pKey = pendingVacuumDay();
+  const n = effectiveNext();
+  if (!pKey || !n) return;
+  const nd = parseDayKey(pKey);
+  nd.setDate(nd.getDate() - 1);
+  if (dayIndex(nd) < dayIndex(clampedToday())) return;
+  // pointer meteen vastleggen zodat de beurt ook op een niet-stofzuigdag blijft kloppen
+  update(ref(db, 'settings/vacuum'), { override: dayKey(nd), next: { kid: n.kid, floorIdx: n.floorIdx } });
 }
 
 function postponeVacuum(){
@@ -859,7 +873,7 @@ Object.assign(window, {
   toggleTask, changeDay, goToday, openAdmin, backToDay,
   editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleVacuumWeekday,
-  postponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
+  postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
   addFloor, editFloor, deleteFloor
 });
 
