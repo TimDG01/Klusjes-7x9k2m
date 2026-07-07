@@ -526,8 +526,10 @@ function vacuumRow(kidKey, vac, state){
   const done = !!state[id];
   const label = `🧹 Stofzuigen: ${escapeHtml(vac.floor)}`;
   if (vac.mode === 'projected'){
+    // wél aanklikbaar: vooruitwerken (of een blijven-liggen-beurt door een ouder
+    // laten vervallen) moet kunnen — zie de projected-tak in toggleTask
     return `
-    <div class="task projected">
+    <div class="task projected" onclick="toggleTask('${id}')">
       <div class="check"></div>
       <div class="task-label">${label}<span class="vac-tag">verwacht</span></div>
     </div>
@@ -602,15 +604,19 @@ function toggleTask(id){
   if (id.endsWith('-vac')){
     const info = vacuumForDay(current);
     const kidKey = id.slice(0, id.indexOf('-'));
-    if (!info || info.kid !== kidKey || info.mode === 'projected') return;
+    if (!info || info.kid !== kidKey) return;
     const key = dayKey(current);
     const newVal = !dayState[id];
+    if (info.mode === 'projected' && !newVal) return; // kan niet: projectie is per definitie onaangevinkt
     set(ref(db, `days/${key}/${id}`), newVal);
     if (newVal){
       // historiek bevriezen: wie het was en welke verdieping, los van latere instellingen
       set(ref(db, `days/${key}/vac`), { kid: info.kid, floor: info.floor });
-      if (info.mode === 'pending'){
-        // beurt afgewerkt: pointer één stap door, eventuele override is opgebruikt
+      if (info.mode === 'pending' || info.mode === 'projected'){
+        // beurt afgewerkt: pointer één stap voorbij déze combo, eventuele override
+        // is opgebruikt. Bij een projectie (vooruitwerken) betekent dit ook dat een
+        // nog openstaande eerdere beurt stilzwijgend vervalt — bewust: "de kids
+        // deden het niet, een ouder nam het over" mag de rotatie niet blokkeren.
         update(ref(db, 'settings/vacuum'), {
           next: advanceCombo({ kid: info.kid, floorIdx: info.floorIdx }, 1),
           override: null,
