@@ -64,6 +64,7 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .check.done{background:var(--green);border-color:var(--green);}
 .task-label{font-size:15px;flex:1;}
 .task-label.done{color:var(--text3);text-decoration:line-through;}
+.fixed-mark{font-size:12px;opacity:.55;flex-shrink:0;margin-left:2px;}
 .vac-tag{font-size:11px;font-weight:600;color:var(--vac);background:var(--vac-bg);padding:2px 7px;border-radius:6px;margin-left:6px;}
 .postpone-btn{font-size:15px;padding:2px 4px;flex-shrink:0;color:var(--blue);}
 .postpone-btn svg{display:block;}
@@ -135,7 +136,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v4';
+const VERSION = 'klusjes-pwa v5';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -166,7 +167,7 @@ if (current < START) current = new Date(START);
 let screen = 'day'; // 'day' | 'admin'
 let adminUnlocked = false;
 
-let tasksCache = { A:{}, B:{} };
+let tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
 let tasksLoaded = false;
 
 let vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
@@ -366,7 +367,7 @@ onValue(ref(db, 'settings/tasks'), snap => {
   }
   loadError = null;
   const v = snap.val();
-  tasksCache = { A: v.A || {}, B: v.B || {} };
+  tasksCache = { A: v.A || {}, B: v.B || {}, lies: v.lies || {}, lenn: v.lenn || {} };
   tasksLoaded = true;
   render();
 }, () => {
@@ -444,8 +445,10 @@ function render(){
   const state = dayState;
 
   const kids = [
-    { key:'lies', name:'Lies', color:'--lies', bg:'--lies-bg', role: roles.lies, tasks: tasksArrayForDay(roles.lies, dow) },
-    { key:'lenn', name:'Lenn', color:'--lenn', bg:'--lenn-bg', role: roles.lenn, tasks: tasksArrayForDay(roles.lenn, dow) }
+    { key:'lies', name:'Lies', color:'--lies', bg:'--lies-bg', role: roles.lies,
+      tasks: tasksArrayForDay(roles.lies, dow).concat(tasksArrayForDay('lies', dow).map(t => ({ ...t, fixed:true }))) },
+    { key:'lenn', name:'Lenn', color:'--lenn', bg:'--lenn-bg', role: roles.lenn,
+      tasks: tasksArrayForDay(roles.lenn, dow).concat(tasksArrayForDay('lenn', dow).map(t => ({ ...t, fixed:true }))) }
   ];
 
   let allTasks = [];
@@ -498,7 +501,7 @@ function renderCard(k, vac, state){
   const tasks = k.tasks.map(t => {
     const id = `${k.key}-${t.id}`;
     const done = !!state[id];
-    return taskRow(id, t.label, done);
+    return taskRow(id, t.label, done, t.fixed);
   }).join('');
 
   const vacRow = (vac && vac.kid === k.key) ? vacuumRow(k.key, vac, state) : '';
@@ -516,11 +519,12 @@ function renderCard(k, vac, state){
   `;
 }
 
-function taskRow(id, label, done){
+function taskRow(id, label, done, fixed){
   return `
     <div class="task" onclick="toggleTask('${id}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}</div>
+      ${fixed ? '<span class="fixed-mark" title="Vaste taak">👤</span>' : ''}
     </div>
   `;
 }
@@ -648,9 +652,13 @@ function toggleTask(id){
     const kidKey = id.slice(0, sep);
     const taskId = id.slice(sep + 1);
     const role = getRoles(dayIndex(current))[kidKey];
-    const task = tasksCache[role] && tasksCache[role][taskId];
+    // taak kan in de roterende rol-bucket zitten óf in de vaste kind-bucket
+    let bucket = role, task = tasksCache[role] && tasksCache[role][taskId];
+    if (!task && tasksCache[kidKey] && tasksCache[kidKey][taskId]){
+      bucket = kidKey; task = tasksCache[kidKey][taskId];
+    }
     if (task && task.recurring === false){
-      remove(ref(db, `settings/tasks/${role}/${taskId}`));
+      remove(ref(db, `settings/tasks/${bucket}/${taskId}`));
     }
   }
 }
@@ -758,6 +766,8 @@ function renderAdmin(){
     </div>
     ${renderAdminRole('A', 'Rol A')}
     ${renderAdminRole('B', 'Rol B')}
+    ${renderAdminRole('lies', 'Vaste taken — Lies')}
+    ${renderAdminRole('lenn', 'Vaste taken — Lenn')}
     ${renderAdminVacuum()}
     <div class="version">${VERSION}</div>
   `;
