@@ -136,7 +136,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v9';
+const VERSION = 'klusjes-pwa v10';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -261,7 +261,13 @@ function pendingVacuumDay(){
   const ov = vacuumCache.override;
   if (ov){
     const od = parseDayKey(ov);
-    if (od && dayIndex(od) >= dayIndex(from) && dayIndex(od) < TOTAL_DAYS) return dayKey(od);
+    if (od && dayIndex(od) < TOTAL_DAYS){
+      // Een override in het verleden (een verplaatste/naar-vandaag-gehaalde beurt
+      // die is blijven liggen) niet weggooien maar mee-schuiven naar vandaag, zodat
+      // de beurt zichtbaar en aanklikbaar blijft i.p.v. door te springen naar de
+      // eerstvolgende geplande dag en te lijken verdwijnen.
+      return dayIndex(od) >= dayIndex(from) ? dayKey(od) : dayKey(from);
+    }
   }
   const nd = nextScheduledDayFrom(from);
   return nd ? dayKey(nd) : null;
