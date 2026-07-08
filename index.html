@@ -136,7 +136,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026
 const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v10';
+const VERSION = 'klusjes-pwa v11';
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -471,6 +471,7 @@ function render(){
     tasks: tasksArrayForDay(roles[key], dow).concat(tasksArrayForDay(key, dow).map(t => ({ ...t, fixed:true })))
   }));
 
+  const isToday = dayIndex(current) === dayIndex(new Date());
   const cDay = dayKey(current);
   let allTasks = [];
   let doneCount = 0;
@@ -484,6 +485,9 @@ function render(){
 
     const kidDone = ids.filter(id => state[id]).length;
     doneCount += kidDone;
+    // De proficiat-viering hoort enkel op de dag zelf (vandaag) — nooit terugbladeren
+    // naar een oude, al afgewerkte dag opnieuw laten vieren.
+    if (!isToday) return;
     const gKey = `${cDay}:${k.key}`;
     if (ids.length > 0 && kidDone === ids.length){
       if (!celebratedDays.has(gKey)){
@@ -499,8 +503,6 @@ function render(){
     }
   });
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
-
-  const isToday = dayIndex(current) === dayIndex(new Date());
 
   const app = document.getElementById('app');
   app.innerHTML = `
