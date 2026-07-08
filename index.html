@@ -201,7 +201,7 @@ const BADGES = [
   { name:'Raket',             c1:'#5C677D', c2:'#E5383B' },
   { name:'Schild',            c1:'#2B8A3E', c2:'#8CE99A' },
   { name:'Ster van de Zomer', c1:'#F06595', c2:'#FFA94D' },
-  { name:'Legende',           c1:'#845EF7', c2:'#FF8787' }
+  { name:'Legende',           c1:'#845EF7', c2:'#FF8787', c3:'#22B8CF' } // iriserend: extra tussenstop
 ];
 
 function roman(n){
@@ -210,22 +210,132 @@ function roman(n){
 }
 
 function badgeDesign(rank){
-  const d = BADGES[rank % BADGES.length];
-  return { ...d, level: Math.floor(rank / BADGES.length) + 1 };
+  const idx = rank % BADGES.length;
+  return { ...BADGES[idx], idx, level: Math.floor(rank / BADGES.length) + 1 };
 }
 
-// Voorlopige medaille (kleurverloop-schijf) — wordt in de artwork-pass vervangen
-// door de echte, per ontwerp getekende SVG-medailles. Gradient-id per instantie
-// uniek, anders vervuilen meerdere medailles op één scherm elkaars kleuren.
+// donkerder/lichter maken van een #rrggbb-kleur (f<1 = donkerder)
+function shade(hex, f){
+  const n = parseInt(hex.slice(1), 16);
+  const c = v => Math.max(0, Math.min(255, Math.round(v * f)));
+  return '#' + [c((n >> 16) & 255), c((n >> 8) & 255), c(n & 255)]
+    .map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+function starPath(cx, cy, R, r, rot = -90){
+  const pts = [];
+  for (let i = 0; i < 10; i++){
+    const a = (rot + i * 36) * Math.PI / 180;
+    const rad = i % 2 === 0 ? R : r;
+    pts.push(`${(cx + rad * Math.cos(a)).toFixed(1)} ${(cy + rad * Math.sin(a)).toFixed(1)}`);
+  }
+  return `M${pts.join(' L')} Z`;
+}
+
+function sunRays(cx, cy, r1, r2, n){
+  let s = '';
+  for (let i = 0; i < n; i++){
+    const a = (i * 360 / n - 90) * Math.PI / 180;
+    s += `<line x1="${(cx + r1 * Math.cos(a)).toFixed(1)}" y1="${(cy + r1 * Math.sin(a)).toFixed(1)}" x2="${(cx + r2 * Math.cos(a)).toFixed(1)}" y2="${(cy + r2 * Math.sin(a)).toFixed(1)}"/>`;
+  }
+  return `<g stroke="#fff" stroke-width="3.6" stroke-linecap="round">${s}</g>`;
+}
+
+// Het middenstuk van elke medaille, getekend rond (50,58) binnen straal ~26.
+// Volgorde loopt gelijk met BADGES (badgeDesign geeft de index mee). Vette,
+// simpele silhouetten in wit: ook op 40px nog herkenbaar, en zonder tekst.
+const MOTIFS = [
+  // Ster — vijfpuntige ster
+  d => `<path d="${starPath(50, 58, 20, 8.4)}" fill="#fff"/>`,
+  // Komeet — sterkop met drie vaartstrepen
+  d => `<path d="${starPath(59, 49, 9.5, 4)}" fill="#fff"/>
+    <g fill="none" stroke="#fff" stroke-linecap="round">
+      <path d="M52 55 Q43 62 33 71" stroke-width="5.5" opacity=".85"/>
+      <path d="M50 48 Q39 53 28 60" stroke-width="3.6" opacity=".5"/>
+      <path d="M57 61 Q50 68 43 77" stroke-width="3" opacity=".35"/>
+    </g>`,
+  // Medaille — lauwertakken rond een 7 (het cijfer van de reeks)
+  d => `<g fill="none" stroke="#fff" stroke-linecap="round">
+      <path d="M36 76 Q28 60 36 44" stroke-width="2.4" opacity=".9"/>
+      <path d="M64 76 Q72 60 64 44" stroke-width="2.4" opacity=".9"/>
+      <path d="M42 47 H59 L48 74" stroke-width="6.4" stroke-linejoin="round"/>
+    </g>
+    <g fill="#fff" opacity=".9">
+      <ellipse cx="33.5" cy="49" rx="4.4" ry="1.9" transform="rotate(-55 33.5 49)"/>
+      <ellipse cx="30.5" cy="59" rx="4.4" ry="1.9" transform="rotate(-85 30.5 59)"/>
+      <ellipse cx="32.5" cy="69" rx="4.4" ry="1.9" transform="rotate(-115 32.5 69)"/>
+      <ellipse cx="66.5" cy="49" rx="4.4" ry="1.9" transform="rotate(55 66.5 49)"/>
+      <ellipse cx="69.5" cy="59" rx="4.4" ry="1.9" transform="rotate(85 69.5 59)"/>
+      <ellipse cx="67.5" cy="69" rx="4.4" ry="1.9" transform="rotate(115 67.5 69)"/>
+    </g>`,
+  // Bliksem — schicht
+  d => `<path d="M55 35 L37 62 H48 L44 81 L63 55 H51 Z" fill="#fff"/>`,
+  // Trofee — beker met oren, voet en sokkel
+  d => `<g fill="#fff">
+      <path d="M36 42 H64 V50 A14 14 0 0 1 36 50 Z"/>
+      <path d="M46 62 H54 L56 71 H44 Z"/>
+      <rect x="40" y="71" width="20" height="5.5" rx="1.5"/>
+    </g>
+    <g fill="none" stroke="#fff" stroke-width="3.4">
+      <path d="M36 45 Q27 47 33 56"/>
+      <path d="M64 45 Q73 47 67 56"/>
+    </g>`,
+  // Diamant — geslepen steen, facetten in wit-tinten
+  d => `<g fill="#fff">
+      <polygon points="42,45 58,45 66,55 34,55" opacity=".95"/>
+      <polygon points="34,55 66,55 50,77" opacity=".5"/>
+      <polygon points="43,55 57,55 50,77" opacity=".8"/>
+      <polygon points="42,45 58,45 50,55" opacity=".7"/>
+    </g>`,
+  // Vlam — buitenvlam met binnentong in de ringkleur
+  d => `<path d="M50 35 C54 44 62 48 62 60 C62 70 57 77 50 79 C43 77 38 70 38 60 C38 48 46 44 50 35 Z" fill="#fff"/>
+    <path d="M50 53 C52.5 58 56 59 56 65 C56 70.5 53.5 74 50 75 C46.5 74 44 70.5 44 65 C44 59 47.5 58 50 53 Z" fill="${d.c1}" opacity=".9"/>`,
+  // Kroon — met band en drie edelstenen
+  d => `<path d="M33 69 V51 L42 59 L50 44 L58 59 L67 51 V69 Z" fill="#fff"/>
+    <rect x="33" y="71.5" width="34" height="5" rx="1.6" fill="#fff" opacity=".9"/>
+    <g fill="${d.c1}">
+      <circle cx="41" cy="63.5" r="2.5"/><circle cx="50" cy="61.5" r="2.5"/><circle cx="59" cy="63.5" r="2.5"/>
+    </g>`,
+  // Raket — romp, venster, vinnen en uitlaatvlam
+  d => `<g fill="#fff">
+      <path d="M50 33 C57 40 59 52 56 65 H44 C41 52 43 40 50 33 Z"/>
+      <path d="M44 55 L34 68 L44 66 Z" opacity=".85"/>
+      <path d="M56 55 L66 68 L56 66 Z" opacity=".85"/>
+    </g>
+    <circle cx="50" cy="49" r="4.6" fill="${shade(d.c1, .82)}" stroke="#fff" stroke-width="1.6"/>
+    <path d="M50 68 C53 72 52 77 50 81 C48 77 47 72 50 68 Z" fill="#fff" opacity=".7"/>`,
+  // Schild — heraldisch schild met ster-umbo
+  d => `<path d="M50 37 C55 41 61 43 66 43 V58 C66 69 59 76 50 81 C41 76 34 69 34 58 V43 C39 43 45 41 50 37 Z" fill="#fff" opacity=".95"/>
+    <path d="${starPath(50, 58, 8.5, 3.6)}" fill="${shade(d.c1, .85)}"/>`,
+  // Ster van de Zomer — zon met twaalf stralen
+  d => `<circle cx="50" cy="58" r="10" fill="#fff"/>${sunRays(50, 58, 14.5, 20, 12)}`,
+  // Legende — omkranste ster met banier
+  d => `<circle cx="50" cy="58" r="20" fill="none" stroke="#fff" stroke-width="2" opacity=".6"/>
+    <path d="${starPath(50, 56, 13.5, 5.6)}" fill="#fff"/>
+    <g fill="#fff"><rect x="37" y="72" width="26" height="8" rx="1.2"/>
+      <path d="M37 72 H30 L33.5 76 L30 80 H37 Z" opacity=".75"/>
+      <path d="M63 72 H70 L66.5 76 L70 80 H63 Z" opacity=".75"/></g>`
+];
+
+// Bouwt één medaille op: lint-uiteinden achteraan, ring met kleurverloop,
+// donkerder binnenschijf, het motief, en een glans-accent. Gradient-id per
+// instantie uniek, anders vervuilen meerdere medailles op één scherm elkaars
+// kleuren.
 let svgUid = 0;
 function badgeSVG(design, size){
   const uid = 'bgrad' + (++svgUid);
+  const stops = design.c3
+    ? `<stop offset="0" stop-color="${design.c1}"/><stop offset=".5" stop-color="${design.c3}"/><stop offset="1" stop-color="${design.c2}"/>`
+    : `<stop offset="0" stop-color="${design.c1}"/><stop offset="1" stop-color="${design.c2}"/>`;
   return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
-    <defs><linearGradient id="${uid}" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="${design.c1}"/><stop offset="1" stop-color="${design.c2}"/>
-    </linearGradient></defs>
-    <circle cx="50" cy="50" r="45" fill="url(#${uid})"/>
-    <circle cx="50" cy="50" r="34" fill="rgba(255,255,255,.28)"/>
+    <defs><linearGradient id="${uid}" x1="0" y1="0" x2="1" y2="1">${stops}</linearGradient></defs>
+    <path d="M33 0 L47 0 L45 32 L30 27 Z" fill="${shade(design.c1, .62)}"/>
+    <path d="M67 0 L53 0 L55 32 L70 27 Z" fill="${shade(design.c1, .48)}"/>
+    <circle cx="50" cy="58" r="37" fill="url(#${uid})" stroke="${shade(design.c1, .6)}" stroke-width="1.5"/>
+    <circle cx="50" cy="58" r="28" fill="${shade(design.c1, .8)}"/>
+    <circle cx="50" cy="58" r="28" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.6"/>
+    ${MOTIFS[design.idx](design)}
+    <ellipse cx="38" cy="41" rx="14" ry="7" fill="#fff" opacity=".14" transform="rotate(-32 38 41)"/>
   </svg>`;
 }
 
