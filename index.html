@@ -912,7 +912,7 @@ function streakStrip(k){
   const badgeCount = Object.keys(streaksCache[k.key].badges).length;
   const dots = [0,1,2,3,4,5,6].map(i => `<span class="sdot${i < filled ? ' on' : ''}"></span>`).join('');
   return `
-    <button class="streak-strip" onclick="openBadges()" title="Bekijk je badges">
+    <button class="streak-strip" onclick="openBadges('${k.key}')" title="Bekijk de badges van ${k.name}">
       <span class="streak-flame${st.count ? '' : ' off'}">🔥 ${st.count}</span>
       <span class="streak-dots">${dots}</span>
       <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? '💔' : '❤️'}</span>
@@ -1215,7 +1215,13 @@ function showCelebration(entries){
 }
 
 // --- Badge-galerij ---
-function openBadges(){
+// badgesFilter bepaalt wiens badges getoond worden: een kind-key (via de streak-
+// strook op die kaart) toont enkel dat kind; null (via de 🏆-voettekstknop) toont
+// beide kinderen. Elke openBadges-aanroep zet de filter opnieuw, dus een oude
+// waarde kan nooit blijven hangen.
+let badgesFilter = null;
+function openBadges(kidKey){
+  badgesFilter = (kidKey === 'lies' || kidKey === 'lenn') ? kidKey : null;
   screen = 'badges';
   render();
 }
@@ -1224,11 +1230,12 @@ function renderBadges(){
   const kids = [
     ['lies', 'Lies', '--lies', '--lies-bg'],
     ['lenn', 'Lenn', '--lenn', '--lenn-bg']
-  ];
+  ].filter(([key]) => !badgesFilter || key === badgesFilter);
+  const title = badgesFilter ? `🏆 Badges van ${KID_NAMES[badgesFilter]}` : '🏆 Badges';
   document.getElementById('app').innerHTML = `
     <div class="admin-header">
       <button class="admin-back" onclick="backToDay()">‹ Terug</button>
-      <div class="admin-title">🏆 Badges</div>
+      <div class="admin-title">${title}</div>
     </div>
     ${kids.map(([key, name, color, bg]) => renderBadgeSection(key, name, color)).join('')}
     ${versionLine()}
