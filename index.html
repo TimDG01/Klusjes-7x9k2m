@@ -165,7 +165,7 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026 — het schema loopt vanaf hier onbeperkt door
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v12';
+const VERSION = 'klusjes-pwa v13';
 
 // Testmodus: met ?test in de URL leeft de héle app onder /test/... in de database,
 // zodat je vrij kunt experimenteren zonder de echte gezinsdata te raken. De
@@ -187,8 +187,9 @@ const SKIP_FWD_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="non
 const SKIP_BACK_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 4 9 12 19 20 19 4"/><line x1="5" y1="5" x2="5" y2="19"/></svg>';
 
 // De badge-ladder: het n-de verdiende badge (chronologisch) krijgt ontwerp n.
-// Na #12 begint de ladder opnieuw op een hoger niveau ("Ster II", …) zodat de
-// verzameling nooit ophoudt. c1/c2 = kleurverloop van medaille én kaart.
+// Na de laatste (13 ontwerpen) begint de ladder opnieuw op een hoger niveau
+// ("Ster II", …) zodat de verzameling nooit ophoudt. c1/c2 = kleurverloop van
+// medaille én kaart; c3 (optioneel) = extra tussenstop voor een iriserend verloop.
 const BADGES = [
   { name:'Ster',              c1:'#F5B301', c2:'#FFE083' },
   { name:'Komeet',            c1:'#0FA3A3', c2:'#7FE3DC' },
@@ -201,7 +202,8 @@ const BADGES = [
   { name:'Raket',             c1:'#5C677D', c2:'#E5383B' },
   { name:'Schild',            c1:'#2B8A3E', c2:'#8CE99A' },
   { name:'Ster van de Zomer', c1:'#F06595', c2:'#FFA94D' },
-  { name:'Legende',           c1:'#845EF7', c2:'#FF8787', c3:'#22B8CF' } // iriserend: extra tussenstop
+  { name:'Legende',           c1:'#845EF7', c2:'#FF8787', c3:'#22B8CF' }, // iriserend: extra tussenstop
+  { name:'Trots op jou',      c1:'#E64980', c2:'#FF9FB3' } // warm hart als slot van de ladder
 ];
 
 function roman(n){
@@ -314,28 +316,58 @@ const MOTIFS = [
     <path d="${starPath(50, 56, 13.5, 5.6)}" fill="#fff"/>
     <g fill="#fff"><rect x="37" y="72" width="26" height="8" rx="1.2"/>
       <path d="M37 72 H30 L33.5 76 L30 80 H37 Z" opacity=".75"/>
-      <path d="M63 72 H70 L66.5 76 L70 80 H63 Z" opacity=".75"/></g>`
+      <path d="M63 72 H70 L66.5 76 L70 80 H63 Z" opacity=".75"/></g>`,
+  // Trots op jou — hart
+  d => `<path d="M50 74 C35 63 32 56 32 50 C32 45 36 42 40.5 43 C44.5 44 48 47 50 50 C52 47 55.5 44 59.5 43 C64 42 68 45 68 50 C68 56 65 63 50 74 Z" fill="#fff"/>
+    <ellipse cx="43" cy="51" rx="3.2" ry="4.6" fill="#fff" opacity=".55" transform="rotate(-20 43 51)"/>`
 ];
 
 // Bouwt één medaille op: lint-uiteinden achteraan, ring met kleurverloop,
 // donkerder binnenschijf, het motief, en een glans-accent. Gradient-id per
 // instantie uniek, anders vervuilen meerdere medailles op één scherm elkaars
 // kleuren.
+// Golvende (scalloped) rand rond de medaille — de klassieke medaille-look: n
+// bultjes tussen binnenstraal rIn en buitenstraal rOut, als vloeiende bogen.
+function scallopPath(cx, cy, rIn, rOut, n){
+  const p = (r, a) => `${(cx + r * Math.cos(a)).toFixed(1)} ${(cy + r * Math.sin(a)).toFixed(1)}`;
+  let d = '';
+  for (let i = 0; i < n; i++){
+    const a0 = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const a1 = ((i + 1) / n) * 2 * Math.PI - Math.PI / 2;
+    const am = (a0 + a1) / 2;
+    d += (i === 0 ? `M${p(rIn, a0)}` : '') + ` Q${p(rOut, am)} ${p(rIn, a1)}`;
+  }
+  return d + ' Z';
+}
+
+// Eén medaille: lint-uiteinden achteraan, een golvende metaalrand, de ring met
+// kleurverloop, een glans-radiant erover, een verdiepte binnenschijf, het motief
+// en een subtiele glans-ellips. Gradient-ids per instantie uniek (svgUid), anders
+// vervuilen meerdere medailles op één scherm elkaars kleuren.
 let svgUid = 0;
 function badgeSVG(design, size){
-  const uid = 'bgrad' + (++svgUid);
+  const uid = ++svgUid;
   const stops = design.c3
     ? `<stop offset="0" stop-color="${design.c1}"/><stop offset=".5" stop-color="${design.c3}"/><stop offset="1" stop-color="${design.c2}"/>`
     : `<stop offset="0" stop-color="${design.c1}"/><stop offset="1" stop-color="${design.c2}"/>`;
   return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
-    <defs><linearGradient id="${uid}" x1="0" y1="0" x2="1" y2="1">${stops}</linearGradient></defs>
-    <path d="M33 0 L47 0 L45 32 L30 27 Z" fill="${shade(design.c1, .62)}"/>
-    <path d="M67 0 L53 0 L55 32 L70 27 Z" fill="${shade(design.c1, .48)}"/>
-    <circle cx="50" cy="58" r="37" fill="url(#${uid})" stroke="${shade(design.c1, .6)}" stroke-width="1.5"/>
-    <circle cx="50" cy="58" r="28" fill="${shade(design.c1, .8)}"/>
-    <circle cx="50" cy="58" r="28" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.6"/>
+    <defs>
+      <linearGradient id="r${uid}" x1="0" y1="0" x2="1" y2="1">${stops}</linearGradient>
+      <radialGradient id="g${uid}" cx="0.36" cy="0.28" r="0.72">
+        <stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".62" stop-color="#fff" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <path d="M32 1 L42 1 L46 28 L36 28 Z" fill="${shade(design.c1, .5)}"/>
+    <path d="M68 1 L58 1 L54 28 L64 28 Z" fill="${shade(design.c1, .36)}"/>
+    <path d="M34 1 L37.5 1 L41 28 L37.5 28 Z" fill="#fff" opacity=".16"/>
+    <path d="${scallopPath(50, 58, 34.5, 39.5, 16)}" fill="${shade(design.c1, .7)}"/>
+    <circle cx="50" cy="58" r="35" fill="url(#r${uid})"/>
+    <circle cx="50" cy="58" r="35" fill="url(#g${uid})"/>
+    <circle cx="50" cy="58" r="35" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1.3"/>
+    <circle cx="50" cy="58" r="26.5" fill="${shade(design.c1, .82)}"/>
+    <circle cx="50" cy="58" r="26.5" fill="none" stroke="rgba(0,0,0,.12)" stroke-width="1.4"/>
     ${MOTIFS[design.idx](design)}
-    <ellipse cx="38" cy="41" rx="14" ry="7" fill="#fff" opacity=".14" transform="rotate(-32 38 41)"/>
+    <ellipse cx="40" cy="43" rx="15" ry="7.5" fill="#fff" opacity=".13" transform="rotate(-28 40 43)"/>
   </svg>`;
 }
 
@@ -631,36 +663,55 @@ function simulateStreak(kidKey, extraDayKey){
   return { count, jokerUsed, earnDays };
 }
 
-// Verdiende badges van een kind, chronologisch, met afgeleide rang (= ontwerp).
+// Verdiende badges van een kind, op volgorde van hun volgnummer (b1, b2, …).
+// De sleutel is bewust het volgnummer — NIET de verdiendag. De verdiendag is
+// niet stabiel: wie een vergeten dag in het verleden alsnog afvinkt, verschuift
+// de dag waarop de reeks een 7-veelvoud raakt, en met een dagkey-sleutel kwam er
+// dan telkens een nieuwe badge bij terwijl de oude bleef staan → elke dag een
+// badge i.p.v. om de 7. Met een volgnummer is het aantal badges = earnDays.length
+// en groeit dat enkel als er écht 7 dagen bijkomen. De rang (= ontwerp-index)
+// volgt uit het volgnummer; de waarde bewaart de verdiendag, enkel om te tonen.
 function kidBadgeList(kidKey){
-  return Object.keys(streaksCache[kidKey].badges)
-    .map(k => ({ key: k, date: parseDayKey(k) }))
-    .filter(b => b.date)
-    .sort((a, b) => a.date - b.date)
-    .map((b, i) => ({ ...b, rank: i }));
+  const badges = streaksCache[kidKey].badges || {};
+  return Object.keys(badges)
+    .filter(k => /^b\d+$/.test(k))
+    .map(k => ({ rank: parseInt(k.slice(1), 10) - 1, date: parseDayKey(badges[k]) }))
+    .sort((a, b) => a.rank - b.rank);
 }
 
-// Rang (= ontwerp-index) van een badge met deze dagkey: het aantal éérder
-// verdiende badges. Werkt ook voor een badge die net geschreven is maar nog
-// niet in de cache zit — die telt zichzelf immers niet mee.
-function badgeRankFor(kidKey, key){
-  const t = parseDayKey(key).getTime();
-  return Object.keys(streaksCache[kidKey].badges)
-    .filter(k2 => k2 !== key && parseDayKey(k2) && parseDayKey(k2).getTime() < t).length;
+// Aantal reeds opgeslagen badges (enkel de b<n>-sleutels tellen mee).
+function badgeCountOf(kidKey){
+  return Object.keys(streaksCache[kidKey].badges || {}).filter(k => /^b\d+$/.test(k)).length;
+}
+
+// Rang (= ontwerp-index) van de badge die op deze dag verdiend werd, of null.
+// Nodig zodat een tweede toestel — dat de voltooiing via de listener ziet i.p.v.
+// zelf te schrijven — toch de juiste medaille in de viering kan tonen.
+function badgeRankEarnedOn(kidKey, dayK){
+  const badges = streaksCache[kidKey].badges || {};
+  const hit = Object.keys(badges).find(k => /^b\d+$/.test(k) && badges[k] === dayK);
+  return hit ? parseInt(hit.slice(1), 10) - 1 : null;
 }
 
 // Schrijft de voltooiingsvlag voor een dag, atomisch samen met eventuele nieuw
-// verdiende badges (één multi-path update, zelfde conventie als het bevriezen
-// van eenmalige taken). Geeft de nieuw geschreven badge-dagkeys terug zodat de
-// aanroepende render de viering het juiste badge-ontwerp kan meegeven.
+// verdiende badges (één multi-path update, zelfde conventie als het bevriezen van
+// eenmalige taken). Het aantal badges = earnDays.length en groeit enkel; we vullen
+// aan tot dat aantal met opeenvolgende b<n>-sleutels en verwijderen nooit iets, dus
+// een verschoven verdiendag of een uitgevinkte dag kan geen dubbele badges geven.
+// Geeft de rangen van de nieuw geschreven badges terug zodat de viering de juiste
+// medaille kan tonen.
 function writeCompletionFlag(kidKey, key){
   const sim = simulateStreak(kidKey, key);
-  const owned = streaksCache[kidKey].badges;
+  const have = badgeCountOf(kidKey);
+  const want = sim.earnDays.length;
   const upd = { [`streaks/${kidKey}/days/${key}`]: true };
-  const newBadges = sim.earnDays.filter(dk => !owned[dk]);
-  newBadges.forEach(dk => { upd[`streaks/${kidKey}/badges/${dk}`] = true; });
+  const newRanks = [];
+  for (let n = have + 1; n <= want; n++){
+    upd[`streaks/${kidKey}/badges/b${n}`] = sim.earnDays[n - 1]; // waarde = verdiendag
+    newRanks.push(n - 1);
+  }
   rootUpdate(upd);
-  return newBadges;
+  return newRanks;
 }
 
 // --- Firebase: taakinstellingen (permanente listener, hele app-levensduur) ---
@@ -833,10 +884,13 @@ function render(){
     if (ids.length > 0 && kidDone === ids.length){
       if (!celebratedDays.has(gKey)){
         celebratedDays.add(gKey);
-        // badge van vandaag erbij: net geschreven op dit toestel, of (op een ander
-        // toestel dat de voltooiing via de listener ziet) al aanwezig in de cache
-        const badgeKey = ((k.newBadges && k.newBadges.includes(cDay)) || streaksCache[k.key].badges[cDay]) ? cDay : null;
-        newlyDone.push({ name: k.name, kid: k.key, badgeKey });
+        // badge van vandaag erbij: net geschreven op dit toestel (de teruggegeven
+        // rangen), of — op een ander toestel dat de voltooiing via de listener ziet
+        // — de badge waarvan de verdiendag vandaag is
+        const newRank = (k.newBadges && k.newBadges.length)
+          ? k.newBadges[k.newBadges.length - 1]
+          : badgeRankEarnedOn(k.key, cDay);
+        newlyDone.push({ name: k.name, kid: k.key, badgeRank: newRank });
       }
     } else if (kidDone < ids.length){
       // alleen herwapenen bij écht onafgewerkt werk — een tijdelijk lege id-lijst
@@ -913,14 +967,14 @@ function renderCard(k, vac, state){
 function streakStrip(k){
   const st = k.streak || simulateStreak(k.key);
   const filled = st.count === 0 ? 0 : ((st.count - 1) % 7) + 1; // op badge-dag: 7/7 vol
-  const badgeCount = Object.keys(streaksCache[k.key].badges).length;
+  const nBadges = badgeCountOf(k.key);
   const dots = [0,1,2,3,4,5,6].map(i => `<span class="sdot${i < filled ? ' on' : ''}"></span>`).join('');
   return `
     <button class="streak-strip" onclick="openBadges('${k.key}')" title="Bekijk de badges van ${k.name}">
       <span class="streak-flame${st.count ? '' : ' off'}">🔥 ${st.count}</span>
       <span class="streak-dots">${dots}</span>
       <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? '💔' : '❤️'}</span>
-      <span class="streak-chip">🏆 ${badgeCount}</span>
+      <span class="streak-chip">🏆 ${nBadges}</span>
     </button>
   `;
 }
@@ -1183,7 +1237,7 @@ function playFanfare(){
 function showCelebration(entries){
   // per kind gevierd; als beide kinderen in dezelfde render klaar zijn (bv. bij het
   // openen van een al volledig afgewerkte dag) komt er één gezamenlijke popup.
-  // entries: [{ name, kid, badgeKey }] — badgeKey gezet als deze voltooiing ook
+  // entries: [{ name, kid, badgeRank }] — badgeRank gezet als deze voltooiing ook
   // een badge opleverde, dan pronkt die medaille in de popup.
   playFanfare();
   const old = document.getElementById('celebration');
@@ -1193,8 +1247,8 @@ function showCelebration(entries){
   const sub = names.length === 1
     ? `Alle klusjes van ${names[0]} zijn gedaan.`
     : 'Alle klusjes van vandaag zijn gedaan.';
-  const badgeHtml = entries.filter(e => e.badgeKey).map(e => {
-    const design = badgeDesign(badgeRankFor(e.kid, e.badgeKey));
+  const badgeHtml = entries.filter(e => e.badgeRank != null).map(e => {
+    const design = badgeDesign(e.badgeRank);
     const lvl = design.level > 1 ? ` ${roman(design.level)}` : '';
     return `
       <div class="celebration-badge">
@@ -1255,11 +1309,12 @@ function renderBadgeSection(kidKey, name, color){
 
   const earnedCards = earned.map(b => {
     const design = badgeDesign(b.rank);
+    const isNew = b.date && dayKey(b.date) === todayKey;
     return `
-      <div class="badge-card${b.key === todayKey ? ' new' : ''}" style="--bc1:${design.c1};--bc2:${design.c2}">
+      <div class="badge-card${isNew ? ' new' : ''}" style="--bc1:${design.c1};--bc2:${design.c2}">
         ${badgeSVG(design, 92)}
         <div class="badge-name">${design.name}${design.level > 1 ? ` <span class="badge-level">${roman(design.level)}</span>` : ''}</div>
-        <div class="badge-date">${b.date.getDate()} ${MN[b.date.getMonth()]}</div>
+        <div class="badge-date">${b.date ? `${b.date.getDate()} ${MN[b.date.getMonth()]}` : ''}</div>
       </div>
     `;
   }).join('');
