@@ -714,7 +714,11 @@ onValue(dbRef('streaks'), snap => {
   streaksLoaded = true;
   render();
 }, () => {
-  loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
+  // Streaks/badges zijn een extra laag bovenop de klusjes — een leesfout hier
+  // (bv. een ontbrekende /streaks-regel) mag de kernapp nooit platleggen: toon
+  // dan gewoon "nog geen badges" i.p.v. de app te laten vasthangen op "Laden…".
+  streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
+  streaksLoaded = true;
   render();
 });
 
