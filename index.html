@@ -85,8 +85,37 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .footer-row{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;}
 .admin-link{font-size:13px;font-weight:600;color:var(--text2);background:var(--card);padding:8px 16px;border-radius:10px;}
 .version{text-align:center;font-size:11px;color:var(--text3);}
+.testmode{text-align:center;font-size:12px;font-weight:700;color:#fff;background:var(--red);padding:4px 12px;border-radius:8px;letter-spacing:1px;}
 
 .loading{text-align:center;padding:60px 20px;color:var(--text2);font-size:15px;}
+
+.footer-btns{display:flex;gap:10px;}
+.streak-strip{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;margin:2px 0 8px;border-radius:10px;background:var(--track);font-size:13px;text-align:left;}
+.streak-flame{font-weight:700;white-space:nowrap;}
+.streak-flame.off{opacity:.45;filter:grayscale(1);}
+.streak-dots{display:flex;gap:4px;flex:1;justify-content:center;}
+.sdot{width:9px;height:9px;border-radius:50%;background:var(--border);}
+.sdot.on{background:var(--green);}
+.streak-joker{font-size:12px;}
+.streak-chip{font-weight:600;white-space:nowrap;}
+
+.badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+.badge-card{position:relative;overflow:hidden;border-radius:14px;padding:14px 10px 12px;text-align:center;background:linear-gradient(150deg,var(--bc1),var(--bc2));color:#fff;}
+.badge-card svg{display:block;margin:0 auto;}
+.badge-name{font-weight:700;font-size:14px;margin-top:6px;text-shadow:0 1px 2px rgba(0,0,0,.3);}
+.badge-date{font-size:11px;opacity:.85;margin-top:2px;}
+.badge-level{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;background:rgba(0,0,0,.28);vertical-align:middle;}
+.badge-card.locked{background:var(--track);color:var(--text2);}
+.badge-card.locked svg{filter:grayscale(1);opacity:.35;}
+.badge-card.locked .badge-name{text-shadow:none;}
+.badge-card:not(.locked)::after{content:'';position:absolute;inset:0;background:linear-gradient(115deg,transparent 38%,rgba(255,255,255,.4) 48%,transparent 58%);transform:translateX(-130%);animation:shine 4s ease-in-out 1s infinite;pointer-events:none;}
+@keyframes shine{0%{transform:translateX(-130%);}45%,100%{transform:translateX(130%);}}
+.badge-card.new{animation:pop-in .55s cubic-bezier(.2,1.4,.4,1);}
+@keyframes pop-in{from{transform:scale(.3);opacity:0;}to{transform:scale(1);opacity:1;}}
+
+.celebration-badge{margin:2px 0 18px;}
+.celebration-badge svg{display:block;margin:0 auto;animation:pop-in .6s cubic-bezier(.2,1.4,.4,1);}
+.celebration-badge-name{font-size:15px;margin-top:8px;}
 
 .admin-header{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
 .admin-back{font-size:14px;font-weight:600;color:var(--blue);background:var(--card);padding:8px 14px;border-radius:10px;}
@@ -134,9 +163,19 @@ const db = getDatabase(firebaseApp);
 
 const ADMIN_PASSWORD = 'Klusjes.01';
 
-const START = new Date(2026, 5, 26); // 26 juni 2026
-const TOTAL_DAYS = 67; // t.e.m. 31 augustus 2026
-const VERSION = 'klusjes-pwa v11';
+const START = new Date(2026, 5, 26); // 26 juni 2026 — het schema loopt vanaf hier onbeperkt door
+const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
+const VERSION = 'klusjes-pwa v12';
+
+// Testmodus: met ?test in de URL leeft de héle app onder /test/... in de database,
+// zodat je vrij kunt experimenteren zonder de echte gezinsdata te raken. De
+// settings-listeners zaaien de defaults daar vanzelf. Opruimen = /test verwijderen.
+const DB_ROOT = new URLSearchParams(location.search).has('test') ? 'test/' : '';
+const dbRef = path => ref(db, DB_ROOT + path);
+// multi-path updates op de root moeten hun sleutels óók prefixen
+const rootUpdate = obj => update(ref(db), Object.fromEntries(
+  Object.entries(obj).map(([k, v]) => [DB_ROOT + k, v])
+));
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -146,6 +185,49 @@ const KID_NAMES = { lies:'Lies', lenn:'Lenn' };
 const TRASH_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M18 7l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
 const SKIP_FWD_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>';
 const SKIP_BACK_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 4 9 12 19 20 19 4"/><line x1="5" y1="5" x2="5" y2="19"/></svg>';
+
+// De badge-ladder: het n-de verdiende badge (chronologisch) krijgt ontwerp n.
+// Na #12 begint de ladder opnieuw op een hoger niveau ("Ster II", …) zodat de
+// verzameling nooit ophoudt. c1/c2 = kleurverloop van medaille én kaart.
+const BADGES = [
+  { name:'Ster',              c1:'#F5B301', c2:'#FFE083' },
+  { name:'Komeet',            c1:'#0FA3A3', c2:'#7FE3DC' },
+  { name:'Medaille',          c1:'#B4693B', c2:'#E8A87C' },
+  { name:'Bliksem',           c1:'#1F6FEB', c2:'#7CB8FF' },
+  { name:'Trofee',            c1:'#D98E04', c2:'#FFC94D' },
+  { name:'Diamant',           c1:'#22C1DC', c2:'#8E7CF3' },
+  { name:'Vlam',              c1:'#E8590C', c2:'#FFC078' },
+  { name:'Kroon',             c1:'#7048E8', c2:'#FFD43B' },
+  { name:'Raket',             c1:'#5C677D', c2:'#E5383B' },
+  { name:'Schild',            c1:'#2B8A3E', c2:'#8CE99A' },
+  { name:'Ster van de Zomer', c1:'#F06595', c2:'#FFA94D' },
+  { name:'Legende',           c1:'#845EF7', c2:'#FF8787' }
+];
+
+function roman(n){
+  const R = ['','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+  return R[n] || String(n);
+}
+
+function badgeDesign(rank){
+  const d = BADGES[rank % BADGES.length];
+  return { ...d, level: Math.floor(rank / BADGES.length) + 1 };
+}
+
+// Voorlopige medaille (kleurverloop-schijf) — wordt in de artwork-pass vervangen
+// door de echte, per ontwerp getekende SVG-medailles. Gradient-id per instantie
+// uniek, anders vervuilen meerdere medailles op één scherm elkaars kleuren.
+let svgUid = 0;
+function badgeSVG(design, size){
+  const uid = 'bgrad' + (++svgUid);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
+    <defs><linearGradient id="${uid}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${design.c1}"/><stop offset="1" stop-color="${design.c2}"/>
+    </linearGradient></defs>
+    <circle cx="50" cy="50" r="45" fill="url(#${uid})"/>
+    <circle cx="50" cy="50" r="34" fill="rgba(255,255,255,.28)"/>
+  </svg>`;
+}
 
 const DEFAULT_TASKS = {
   A: {
@@ -172,6 +254,9 @@ let tasksLoaded = false;
 
 let vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
 let vacuumLoaded = false;
+
+let streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
+let streaksLoaded = false;
 
 let dayState = {};
 let dayLoaded = false;
@@ -239,7 +324,8 @@ function clampedToday(){
 function nextScheduledDayFrom(d){
   const days = vacuumWeekdays();
   if (!days.length) return null;
-  for (let i = Math.max(0, dayIndex(d)); i < TOTAL_DAYS; i++){
+  const from = Math.max(0, dayIndex(d));
+  for (let i = from; i < from + SEARCH_HORIZON; i++){
     const dd = new Date(START); dd.setDate(dd.getDate() + i);
     if (days.includes(dd.getDay())) return dd;
   }
@@ -257,11 +343,10 @@ function pendingVacuumDay(){
     // volgende beurt begint pas op de eerste geplande dag daarna
     from = new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1);
   }
-  if (dayIndex(from) >= TOTAL_DAYS) return null;
   const ov = vacuumCache.override;
   if (ov){
     const od = parseDayKey(ov);
-    if (od && dayIndex(od) < TOTAL_DAYS){
+    if (od){
       // Een override in het verleden (een verplaatste/naar-vandaag-gehaalde beurt
       // die is blijven liggen) niet weggooien maar mee-schuiven naar vandaag, zodat
       // de beurt zichtbaar en aanklikbaar blijft i.p.v. door te springen naar de
@@ -350,6 +435,12 @@ function dayKey(d){
   return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
 }
 
+// versieregel onderaan elk scherm; in testmodus met een duidelijk niet te
+// missen marker zodat een testtoestel nooit voor de echte app wordt aanzien
+function versionLine(){
+  return `${DB_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}<div class="version">${VERSION}</div>`;
+}
+
 function tasksArray(role){
   const obj = tasksCache[role] || {};
   return Object.keys(obj)
@@ -377,10 +468,95 @@ function daySnapsFor(kidKey, state){
     .sort((a,b) => (a.order||0) - (b.order||0));
 }
 
+// --- Reeksen (streaks) & badges ---
+// Datamodel: streaks/{kind}/days/{dagkey}: true  = die dag alles afgewerkt
+//            streaks/{kind}/badges/{dagkey}: true = badge verdiend op die dag
+// Een badge is voorgoed verdiend — hij wordt nooit automatisch verwijderd, ook
+// niet als vinkjes later weer uitgaan. Welk ontwerp een badge krijgt, wordt bij
+// het renderen afgeleid uit de chronologische volgorde (nooit opgeslagen), zodat
+// een later teruggevonden oudere badge de nummering niet in de war stuurt.
+
+// Aantal ingeplande taken (rol + vast) voor een kind op een dag. Benadering voor
+// het verleden: gebruikt de húidige instellingen. Stofzuigen telt bewust niet mee
+// — een doorgeschoven beurt mag een oude reeks niet achteraf breken.
+function kidScheduledCount(kidKey, d){
+  const dow = d.getDay();
+  const role = getRoles(dayIndex(d))[kidKey];
+  return tasksArrayForDay(role, dow).length + tasksArrayForDay(kidKey, dow).length;
+}
+
+// Loopt de hele historiek (START → vandaag) voorwaarts door de vlaggen en bepaalt:
+//  count    – huidige reeks (dagen op rij, met jokerregel)
+//  jokerUsed– is de joker van de lopende badge-cyclus al opgebruikt?
+//  earnDays – élke dagkey waarop een badge verdiend werd (alle reeksen, ook oude)
+// Regels: een dag zonder ingeplande taken telt niet mee én breekt niet; vandaag
+// (nog niet voorbij) breekt nooit; één gemiste taakdag per cyclus wordt vergeven
+// (de joker), een tweede breekt de reeks. De joker vernieuwt bij elke badge.
+// Puur lees-pad (zoals pendingVacuumDay): elke render herrekent, schrijft niets.
+// extraDayKey: een vlag die net geschreven wordt maar nog niet in de cache zit.
+function simulateStreak(kidKey, extraDayKey){
+  const flags = streaksCache[kidKey].days;
+  const todayIdx = dayIndex(new Date());
+  let count = 0, jokerUsed = false;
+  const earnDays = [];
+  for (let i = 0; i <= todayIdx; i++){
+    const dd = new Date(START); dd.setDate(dd.getDate() + i);
+    const key = dayKey(dd);
+    if (flags[key] || key === extraDayKey){
+      count++;
+      if (count % 7 === 0){ earnDays.push(key); jokerUsed = false; }
+    } else if (kidScheduledCount(kidKey, dd) === 0){
+      // vrije dag: geen taken ingepland — telt niet, breekt niet
+    } else if (i === todayIdx){
+      // vandaag is nog bezig — niet-af betekent nog niets
+    } else if (count === 0){
+      // er loopt geen reeks — een gemiste dag heeft niets te breken en mag
+      // ook de joker van een nog te beginnen reeks niet opsouperen
+    } else if (!jokerUsed){
+      jokerUsed = true; // joker: één gemiste dag per badge-cyclus wordt vergeven
+    } else {
+      count = 0; jokerUsed = false; // tweede misser: reeks gebroken, verse start
+    }
+  }
+  return { count, jokerUsed, earnDays };
+}
+
+// Verdiende badges van een kind, chronologisch, met afgeleide rang (= ontwerp).
+function kidBadgeList(kidKey){
+  return Object.keys(streaksCache[kidKey].badges)
+    .map(k => ({ key: k, date: parseDayKey(k) }))
+    .filter(b => b.date)
+    .sort((a, b) => a.date - b.date)
+    .map((b, i) => ({ ...b, rank: i }));
+}
+
+// Rang (= ontwerp-index) van een badge met deze dagkey: het aantal éérder
+// verdiende badges. Werkt ook voor een badge die net geschreven is maar nog
+// niet in de cache zit — die telt zichzelf immers niet mee.
+function badgeRankFor(kidKey, key){
+  const t = parseDayKey(key).getTime();
+  return Object.keys(streaksCache[kidKey].badges)
+    .filter(k2 => k2 !== key && parseDayKey(k2) && parseDayKey(k2).getTime() < t).length;
+}
+
+// Schrijft de voltooiingsvlag voor een dag, atomisch samen met eventuele nieuw
+// verdiende badges (één multi-path update, zelfde conventie als het bevriezen
+// van eenmalige taken). Geeft de nieuw geschreven badge-dagkeys terug zodat de
+// aanroepende render de viering het juiste badge-ontwerp kan meegeven.
+function writeCompletionFlag(kidKey, key){
+  const sim = simulateStreak(kidKey, key);
+  const owned = streaksCache[kidKey].badges;
+  const upd = { [`streaks/${kidKey}/days/${key}`]: true };
+  const newBadges = sim.earnDays.filter(dk => !owned[dk]);
+  newBadges.forEach(dk => { upd[`streaks/${kidKey}/badges/${dk}`] = true; });
+  rootUpdate(upd);
+  return newBadges;
+}
+
 // --- Firebase: taakinstellingen (permanente listener, hele app-levensduur) ---
-onValue(ref(db, 'settings/tasks'), snap => {
+onValue(dbRef('settings/tasks'), snap => {
   if (!snap.exists()){
-    set(ref(db, 'settings/tasks'), DEFAULT_TASKS);
+    set(dbRef('settings/tasks'), DEFAULT_TASKS);
     return; // wacht op de her-fire van deze listener met de echte data
   }
   loadError = null;
@@ -394,9 +570,9 @@ onValue(ref(db, 'settings/tasks'), snap => {
 });
 
 // --- Firebase: stofzuiginstellingen (permanente listener, hele app-levensduur) ---
-onValue(ref(db, 'settings/vacuum'), snap => {
+onValue(dbRef('settings/vacuum'), snap => {
   if (!snap.exists()){
-    set(ref(db, 'settings/vacuum'), DEFAULT_VACUUM);
+    set(dbRef('settings/vacuum'), DEFAULT_VACUUM);
     return; // wacht op de her-fire van deze listener met de echte data
   }
   loadError = null;
@@ -415,6 +591,23 @@ onValue(ref(db, 'settings/vacuum'), snap => {
   render();
 });
 
+// --- Firebase: reeksen & badges (permanente listener, hele app-levensduur) ---
+// Geen seeding zoals bij settings/*: een ontbrekende tak betekent gewoon "nog
+// niets verdiend" (zelfde behandeling als afwezige kind-buckets in tasks).
+onValue(dbRef('streaks'), snap => {
+  loadError = null;
+  const v = snap.val() || {};
+  streaksCache = {
+    lies: { days: (v.lies && v.lies.days) || {}, badges: (v.lies && v.lies.badges) || {} },
+    lenn: { days: (v.lenn && v.lenn.days) || {}, badges: (v.lenn && v.lenn.badges) || {} }
+  };
+  streaksLoaded = true;
+  render();
+}, () => {
+  loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
+  render();
+});
+
 // --- Firebase: dagstatus (opnieuw aangesloten bij elke dagwissel) ---
 function attachDayListener(d){
   if (dayUnsubscribe){ dayUnsubscribe(); dayUnsubscribe = null; }
@@ -422,7 +615,7 @@ function attachDayListener(d){
   const myToken = ++dayListenerToken;
   dayLoaded = false;
   dayState = {};
-  dayUnsubscribe = onValue(ref(db, `days/${capturedKey}`), snap => {
+  dayUnsubscribe = onValue(dbRef(`days/${capturedKey}`), snap => {
     if (myToken !== dayListenerToken) return; // laat antwoord voor een inmiddels vervangen listener: negeren
     loadError = null;
     dayState = snap.val() || {};
@@ -451,7 +644,17 @@ function render(){
     return;
   }
 
-  if (!tasksLoaded || !dayLoaded || !vacuumLoaded){
+  if (screen === 'badges'){
+    // taken zijn nodig omdat simulateStreak vrije dagen herkent via het taakschema
+    if (!streaksLoaded || !tasksLoaded){
+      document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
+      return;
+    }
+    renderBadges();
+    return;
+  }
+
+  if (!tasksLoaded || !dayLoaded || !vacuumLoaded || !streaksLoaded){
     document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
     return;
   }
@@ -485,6 +688,30 @@ function render(){
 
     const kidDone = ids.filter(id => state[id]).length;
     doneCount += kidDone;
+
+    // Voltooiingsvlag voor de reeks bijhouden. Bewust een schrijf op het lees-pad,
+    // maar strak bewaakt: idempotent (vaste sleutel, waarde true) en alleen bij een
+    // échte overgang — een aanwezige vlag wordt nooit herschreven, dus de her-render
+    // via de streaks-listener kan geen schrijf-lus starten. Op een dag in het
+    // verleden alleen toevoegen (een ouder die een vergeten vinkje herstelt, of
+    // historiek van vóór deze feature, repareert zo de reeks); alleen op vandaag
+    // ook weer weghalen — later toegevoegde taken mogen oude dagen niet achteraf
+    // "onaf" maken. Toekomstige dagen krijgen nooit een vlag (vooruit klikken mag
+    // de reeks niet kunnen foppen).
+    const complete = ids.length > 0 && kidDone === ids.length;
+    if (dayIndex(current) <= dayIndex(new Date())){
+      const flagged = !!streaksCache[k.key].days[cDay];
+      if (complete && !flagged){
+        k.newBadges = writeCompletionFlag(k.key, cDay);
+      } else if (!complete && flagged && isToday && ids.length > 0){
+        remove(dbRef(`streaks/${k.key}/days/${cDay}`));
+      }
+    }
+
+    // Reeks voor de streak-strook; mét de eventueel net geschreven vlag, zodat de
+    // strook niet één render lang achterloopt op de write hierboven.
+    k.streak = simulateStreak(k.key, complete ? cDay : undefined);
+
     // De proficiat-viering hoort enkel op de dag zelf (vandaag) — nooit terugbladeren
     // naar een oude, al afgewerkte dag opnieuw laten vieren.
     if (!isToday) return;
@@ -492,7 +719,10 @@ function render(){
     if (ids.length > 0 && kidDone === ids.length){
       if (!celebratedDays.has(gKey)){
         celebratedDays.add(gKey);
-        newlyDone.push(k.name);
+        // badge van vandaag erbij: net geschreven op dit toestel, of (op een ander
+        // toestel dat de voltooiing via de listener ziet) al aanwezig in de cache
+        const badgeKey = ((k.newBadges && k.newBadges.includes(cDay)) || streaksCache[k.key].badges[cDay]) ? cDay : null;
+        newlyDone.push({ name: k.name, kid: k.key, badgeKey });
       }
     } else if (kidDone < ids.length){
       // alleen herwapenen bij écht onafgewerkt werk — een tijdelijk lege id-lijst
@@ -524,8 +754,11 @@ function render(){
     ${kids.map(k => renderCard(k, vac, state)).join('')}
 
     <div class="footer-row">
-      <button class="admin-link" onclick="openAdmin()">⚙️ Beheer</button>
-      <div class="version">${VERSION}</div>
+      <div class="footer-btns">
+        <button class="admin-link" onclick="openBadges()">🏆 Badges</button>
+        <button class="admin-link" onclick="openAdmin()">⚙️ Beheer</button>
+      </div>
+      ${versionLine()}
     </div>
   `;
 
@@ -552,9 +785,29 @@ function renderCard(k, vac, state){
         <div class="name">${k.name}</div>
         <div class="role-badge" style="color:var(${k.color});background:var(${k.bg})">Rol ${k.role}</div>
       </div>
+      ${streakStrip(k)}
       ${tasks}
       ${vacRow}
     </div>
+  `;
+}
+
+// Compacte reeks-strook op de kind-kaart: vlam + aantal dagen op rij, zeven
+// bolletjes die vollopen richting de volgende badge, de joker (❤️ = nog één
+// gemiste dag wordt vergeven, 💔 = joker deze cyclus al gebruikt) en het aantal
+// verdiende badges. Bewust beeldtaal, nauwelijks tekst. Tikken opent de galerij.
+function streakStrip(k){
+  const st = k.streak || simulateStreak(k.key);
+  const filled = st.count === 0 ? 0 : ((st.count - 1) % 7) + 1; // op badge-dag: 7/7 vol
+  const badgeCount = Object.keys(streaksCache[k.key].badges).length;
+  const dots = [0,1,2,3,4,5,6].map(i => `<span class="sdot${i < filled ? ' on' : ''}"></span>`).join('');
+  return `
+    <button class="streak-strip" onclick="openBadges()" title="Bekijk je badges">
+      <span class="streak-flame${st.count ? '' : ' off'}">🔥 ${st.count}</span>
+      <span class="streak-dots">${dots}</span>
+      <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? '💔' : '❤️'}</span>
+      <span class="streak-chip">🏆 ${badgeCount}</span>
+    </button>
   `;
 }
 
@@ -616,12 +869,12 @@ function vacuumRow(kidKey, vac, state){
 // wordt de pointer, zodat de rotatie daarna gewoon vanaf die beurt verdergaat.
 function pullVacuumToToday(kid, floorIdx, fromKey){
   const len = vacuumFloors().length;
-  update(ref(db, 'settings/vacuum'), {
+  update(dbRef('settings/vacuum'), {
     override: dayKey(clampedToday()),
     next: { kid, floorIdx: ((floorIdx % len) + len) % len }
   });
   // beurt verhuisd: de bevroren momentopname van de oorspronkelijke dag opruimen
-  if (fromKey) remove(ref(db, `days/${fromKey}/vac`));
+  if (fromKey) remove(dbRef(`days/${fromKey}/vac`));
 }
 
 // Zet de openstaande beurt één dag vroeger, maar nooit vroeger dan vandaag.
@@ -633,7 +886,7 @@ function preponeVacuum(){
   nd.setDate(nd.getDate() - 1);
   if (dayIndex(nd) < dayIndex(clampedToday())) return;
   // pointer meteen vastleggen zodat de beurt ook op een niet-stofzuigdag blijft kloppen
-  update(ref(db, 'settings/vacuum'), { override: dayKey(nd), next: { kid: n.kid, floorIdx: n.floorIdx } });
+  update(dbRef('settings/vacuum'), { override: dayKey(nd), next: { kid: n.kid, floorIdx: n.floorIdx } });
 }
 
 function postponeVacuum(){
@@ -642,9 +895,8 @@ function postponeVacuum(){
   if (!pKey || !n) return;
   const nd = parseDayKey(pKey);
   nd.setDate(nd.getDate() + 1);
-  if (dayIndex(nd) >= TOTAL_DAYS){ alert('Kan niet voorbij het einde van het schema.'); return; }
   // pointer meteen vastleggen zodat de beurt ook op een niet-stofzuigdag blijft kloppen
-  update(ref(db, 'settings/vacuum'), { override: dayKey(nd), next: { kid: n.kid, floorIdx: n.floorIdx } });
+  update(dbRef('settings/vacuum'), { override: dayKey(nd), next: { kid: n.kid, floorIdx: n.floorIdx } });
 }
 
 function toggleTask(id){
@@ -656,29 +908,29 @@ function toggleTask(id){
     const newVal = !dayState[id];
     if (info.mode === 'projected' && !newVal) return; // kan niet: projectie is per definitie onaangevinkt
     if (newVal) playChime();
-    set(ref(db, `days/${key}/${id}`), newVal);
+    set(dbRef(`days/${key}/${id}`), newVal);
     if (newVal){
       // historiek bevriezen: wie het was en welke verdieping, los van latere instellingen
-      set(ref(db, `days/${key}/vac`), { kid: info.kid, floor: info.floor });
+      set(dbRef(`days/${key}/vac`), { kid: info.kid, floor: info.floor });
       if (info.mode === 'pending' || info.mode === 'projected'){
         // beurt afgewerkt: pointer één stap voorbij déze combo, eventuele override
         // is opgebruikt. Bij een projectie (vooruitwerken) betekent dit ook dat een
         // nog openstaande eerdere beurt stilzwijgend vervalt — bewust: "de kids
         // deden het niet, een ouder nam het over" mag de rotatie niet blokkeren.
-        update(ref(db, 'settings/vacuum'), {
+        update(dbRef('settings/vacuum'), {
           next: advanceCombo({ kid: info.kid, floorIdx: info.floorIdx }, 1),
           override: null,
           lastDone: key
         });
       }
     } else {
-      remove(ref(db, `days/${key}/vac`));
+      remove(dbRef(`days/${key}/vac`));
       if (vacuumCache.lastDone === key && vacuumCache.next){
         // het net-afgevinkte ongedaan maken: pointer één stap terug, en de beurt
         // keert terug naar déze dag — afvinken wiste de override, dus zonder dit
         // herstel zou een met 📥/⏮/⏭ verplaatste beurt terugspringen naar de
         // eerstvolgende geplande dag en van deze dag lijken te verdwijnen
-        update(ref(db, 'settings/vacuum'), { next: advanceCombo(vacuumCache.next, -1), lastDone: null, override: key });
+        update(dbRef('settings/vacuum'), { next: advanceCombo(vacuumCache.next, -1), lastDone: null, override: key });
       }
     }
     return;
@@ -709,13 +961,13 @@ function toggleTask(id){
       // de rij doen verdwijnen (snap kwijt) of de taak elders laten terugkeren
       const snap = { label: task.label, bucket, order: task.order || 0 };
       if (Array.isArray(task.weekdays)) snap.weekdays = task.weekdays;
-      update(ref(db), {
+      rootUpdate({
         [`days/${key}/${id}`]: true,
         [`days/${key}/snap/${id}`]: snap,
         [`settings/tasks/${bucket}/${taskId}`]: null
       });
     } else {
-      set(ref(db, `days/${key}/${id}`), true);
+      set(dbRef(`days/${key}/${id}`), true);
     }
   } else {
     // uitvinken van een bevroren eenmalige taak: definitie herstellen uit de
@@ -724,13 +976,13 @@ function toggleTask(id){
     if (snap){
       const rec = { label: snap.label, recurring: false, order: snap.order || 0 };
       if (Array.isArray(snap.weekdays)) rec.weekdays = snap.weekdays;
-      update(ref(db), {
+      rootUpdate({
         [`days/${key}/${id}`]: false,
         [`days/${key}/snap/${id}`]: null,
         [`settings/tasks/${snap.bucket}/${taskId}`]: rec
       });
     } else {
-      set(ref(db, `days/${key}/${id}`), false);
+      set(dbRef(`days/${key}/${id}`), false);
     }
   }
 }
@@ -739,7 +991,7 @@ function changeDay(delta){
   const next = new Date(current);
   next.setDate(next.getDate() + delta);
   const idx = dayIndex(next);
-  if (idx < 0 || idx >= TOTAL_DAYS) return;
+  if (idx < 0) return; // vóór de startdatum kan niet; naar de toekomst is onbeperkt
   current = next;
   attachDayListener(current);
   render();
@@ -747,9 +999,7 @@ function changeDay(delta){
 
 function goToday(){
   let today = new Date();
-  const idx = dayIndex(today);
-  if (idx < 0) today = new Date(START);
-  if (idx >= TOTAL_DAYS) today = new Date(START.getTime() + (TOTAL_DAYS - 1) * 86400000);
+  if (dayIndex(today) < 0) today = new Date(START);
   current = today;
   attachDayListener(current);
   render();
@@ -816,16 +1066,29 @@ function playFanfare(){
   }
 }
 
-function showCelebration(names){
+function showCelebration(entries){
   // per kind gevierd; als beide kinderen in dezelfde render klaar zijn (bv. bij het
-  // openen van een al volledig afgewerkte dag) komt er één gezamenlijke popup
+  // openen van een al volledig afgewerkte dag) komt er één gezamenlijke popup.
+  // entries: [{ name, kid, badgeKey }] — badgeKey gezet als deze voltooiing ook
+  // een badge opleverde, dan pronkt die medaille in de popup.
   playFanfare();
   const old = document.getElementById('celebration');
   if (old) old.remove();
+  const names = entries.map(e => e.name);
   const title = `Proficiat ${names.join(' & ')}!`;
   const sub = names.length === 1
     ? `Alle klusjes van ${names[0]} zijn gedaan.`
     : 'Alle klusjes van vandaag zijn gedaan.';
+  const badgeHtml = entries.filter(e => e.badgeKey).map(e => {
+    const design = badgeDesign(badgeRankFor(e.kid, e.badgeKey));
+    const lvl = design.level > 1 ? ` ${roman(design.level)}` : '';
+    return `
+      <div class="celebration-badge">
+        ${badgeSVG(design, 96)}
+        <div class="celebration-badge-name">Nieuwe badge: <b>${design.name}${lvl}</b>!</div>
+      </div>
+    `;
+  }).join('');
   const div = document.createElement('div');
   div.id = 'celebration';
   div.className = 'celebration';
@@ -834,10 +1097,78 @@ function showCelebration(names){
       <div class="celebration-emoji">🎉</div>
       <div class="celebration-title">${title}</div>
       <div class="celebration-sub">${sub}</div>
+      ${badgeHtml}
       <button class="celebration-close" onclick="document.getElementById('celebration').remove()">Toppie</button>
     </div>
   `;
   document.body.appendChild(div);
+}
+
+// --- Badge-galerij ---
+function openBadges(){
+  screen = 'badges';
+  render();
+}
+
+function renderBadges(){
+  const kids = [
+    ['lies', 'Lies', '--lies', '--lies-bg'],
+    ['lenn', 'Lenn', '--lenn', '--lenn-bg']
+  ];
+  document.getElementById('app').innerHTML = `
+    <div class="admin-header">
+      <button class="admin-back" onclick="backToDay()">‹ Terug</button>
+      <div class="admin-title">🏆 Badges</div>
+    </div>
+    ${kids.map(([key, name, color, bg]) => renderBadgeSection(key, name, color)).join('')}
+    ${versionLine()}
+  `;
+}
+
+function renderBadgeSection(kidKey, name, color){
+  const earned = kidBadgeList(kidKey);
+  const st = simulateStreak(kidKey);
+  const filled = st.count === 0 ? 0 : ((st.count - 1) % 7) + 1;
+  const toGo = 7 - (filled % 7); // 7/7 vol = badge net binnen, dus weer 7 tot de volgende
+  const todayKey = dayKey(new Date());
+
+  const earnedCards = earned.map(b => {
+    const design = badgeDesign(b.rank);
+    return `
+      <div class="badge-card${b.key === todayKey ? ' new' : ''}" style="--bc1:${design.c1};--bc2:${design.c2}">
+        ${badgeSVG(design, 92)}
+        <div class="badge-name">${design.name}${design.level > 1 ? ` <span class="badge-level">${roman(design.level)}</span>` : ''}</div>
+        <div class="badge-date">${b.date.getDate()} ${MN[b.date.getMonth()]}</div>
+      </div>
+    `;
+  }).join('');
+
+  // de eerstvolgende (te verdienen) ontwerpen, vergrijsd — er is altijd iets om
+  // naartoe te werken; enkel de eerste toont hoeveel dagen er nog te gaan zijn
+  const lockedCards = [0,1,2].map(i => {
+    const design = badgeDesign(earned.length + i);
+    return `
+      <div class="badge-card locked">
+        ${badgeSVG(design, 92)}
+        <div class="badge-name">${design.name}${design.level > 1 ? ` <span class="badge-level">${roman(design.level)}</span>` : ''}</div>
+        <div class="badge-date">${i === 0 ? `nog ${toGo} ${toGo === 1 ? 'dag' : 'dagen'}` : '7 dagen op rij'}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="admin-section">
+      <div class="card-header">
+        <div class="dot" style="background:var(${color})"></div>
+        <div class="name">${name}</div>
+        <div class="role-badge" style="color:var(${color});background:var(--track)">🔥 ${st.count}</div>
+      </div>
+      <div class="badge-grid">
+        ${earnedCards}
+        ${lockedCards}
+      </div>
+    </div>
+  `;
 }
 
 // --- Admin ---
@@ -910,7 +1241,7 @@ function renderAdmin(){
     ${renderAdminRole('lies', 'Vaste taken — Lies')}
     ${renderAdminRole('lenn', 'Vaste taken — Lenn')}
     ${renderAdminVacuum()}
-    <div class="version">${VERSION}</div>
+    ${versionLine()}
   `;
 }
 
@@ -993,19 +1324,19 @@ function renderAdminVacuum(){
 function advanceVacuumTurn(){
   const n = effectiveNext();
   if (!n) return;
-  update(ref(db, 'settings/vacuum'), { next: advanceCombo(n, 1) });
+  update(dbRef('settings/vacuum'), { next: advanceCombo(n, 1) });
 }
 
 function rewindVacuumTurn(){
   const n = effectiveNext();
   if (!n) return;
-  update(ref(db, 'settings/vacuum'), { next: advanceCombo(n, -1) });
+  update(dbRef('settings/vacuum'), { next: advanceCombo(n, -1) });
 }
 
 function addFloor(){
   const label = prompt('Nieuwe verdieping:');
   if (!label) return;
-  update(ref(db, 'settings/vacuum'), { floors: [...vacuumFloors(), label] });
+  update(dbRef('settings/vacuum'), { floors: [...vacuumFloors(), label] });
 }
 
 function editFloor(i){
@@ -1014,7 +1345,7 @@ function editFloor(i){
   const label = prompt('Naam van de verdieping:', floors[i]);
   if (!label) return;
   const nf = floors.slice(); nf[i] = label;
-  update(ref(db, 'settings/vacuum'), { floors: nf });
+  update(dbRef('settings/vacuum'), { floors: nf });
 }
 
 function deleteFloor(i){
@@ -1031,7 +1362,7 @@ function deleteFloor(i){
     if (fi >= nf.length) fi = 0;
     if (fi !== n.floorIdx) upd.next = { kid: n.kid, floorIdx: fi };
   }
-  update(ref(db, 'settings/vacuum'), upd);
+  update(dbRef('settings/vacuum'), upd);
 }
 
 function editTaskLabel(role, id){
@@ -1039,25 +1370,25 @@ function editTaskLabel(role, id){
   if (!t) return;
   const label = prompt('Naam van de taak:', t.label);
   if (!label) return;
-  update(ref(db, `settings/tasks/${role}/${id}`), { label });
+  update(dbRef(`settings/tasks/${role}/${id}`), { label });
 }
 
 function toggleRecurring(role, id){
   const t = tasksCache[role] && tasksCache[role][id];
   if (!t) return;
-  update(ref(db, `settings/tasks/${role}/${id}`), { recurring: !t.recurring });
+  update(dbRef(`settings/tasks/${role}/${id}`), { recurring: !t.recurring });
 }
 
 function deleteTaskAdmin(role, id){
   if (!confirm('Deze taak verwijderen?')) return;
-  remove(ref(db, `settings/tasks/${role}/${id}`));
+  remove(dbRef(`settings/tasks/${role}/${id}`));
 }
 
 function addTaskAdmin(role){
   const label = prompt('Nieuwe taak:');
   if (!label) return;
   const recurring = confirm('Terugkerende taak (elke dag)?\nOK = ja, terugkerend\nAnnuleren = eenmalig');
-  push(ref(db, `settings/tasks/${role}`), { label, recurring, order: Date.now() });
+  push(dbRef(`settings/tasks/${role}`), { label, recurring, order: Date.now() });
 }
 
 function toggleWeekday(role, id, dayNum){
@@ -1065,17 +1396,17 @@ function toggleWeekday(role, id, dayNum){
   if (!t) return;
   const days = taskWeekdays(t);
   const next = days.includes(dayNum) ? days.filter(d => d !== dayNum) : [...days, dayNum].sort((a,b) => a-b);
-  update(ref(db, `settings/tasks/${role}/${id}`), { weekdays: next });
+  update(dbRef(`settings/tasks/${role}/${id}`), { weekdays: next });
 }
 
 function toggleVacuumWeekday(dayNum){
   const days = vacuumWeekdays();
   const next = days.includes(dayNum) ? days.filter(d => d !== dayNum) : [...days, dayNum].sort((a,b) => a-b);
-  update(ref(db, 'settings/vacuum'), { weekdays: next });
+  update(dbRef('settings/vacuum'), { weekdays: next });
 }
 
 Object.assign(window, {
-  toggleTask, changeDay, goToday, openAdmin, backToDay,
+  toggleTask, changeDay, goToday, openAdmin, backToDay, openBadges,
   editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleVacuumWeekday,
   postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
