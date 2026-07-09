@@ -165,11 +165,17 @@ const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026 — het schema loopt vanaf hier onbeperkt door
 // Reeksen & badges tellen pas vanaf deze dag. Alles ervoor (oude /days-historiek
-// van vóór de badges bestonden) telt niet mee, ook niet als je ernaartoe bladert —
-// zo kan oude afvink-historiek nooit met terugwerkende kracht een reeks toekennen.
-const STREAK_START = new Date(2026, 6, 9); // 9 juli 2026
+// van vóór de badges bestonden) telt niet mee, ook niet als je ernaartoe bladert.
+// Instelbaar via Beheer → bewaard in /settings/streakStart (dayKey-string); deze
+// constante is enkel de fallback zolang dat veld nog niet bestaat.
+const DEFAULT_STREAK_START = '2026-7-9'; // 9 juli 2026
+let streakStartKey = DEFAULT_STREAK_START;
+function streakStartIdx(){
+  const d = parseDayKey(streakStartKey) || parseDayKey(DEFAULT_STREAK_START);
+  return Math.max(0, dayIndex(d));
+}
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v14';
+const VERSION = 'klusjes-pwa v15';
 
 // Testmodus: met ?test in de URL leeft de héle app onder /test/... in de database,
 // zodat je vrij kunt experimenteren zonder de echte gezinsdata te raken. De
@@ -643,9 +649,9 @@ function kidScheduledCount(kidKey, d){
 function simulateStreak(kidKey, extraDayKey){
   const flags = streaksCache[kidKey].days;
   const todayIdx = dayIndex(new Date());
-  // pas vanaf STREAK_START tellen — oudere dagen laten we volledig buiten de walk,
-  // zodat oude /days-historiek nooit een reeks kan toekennen (zie STREAK_START)
-  const fromIdx = Math.max(0, dayIndex(STREAK_START));
+  // pas vanaf de reeks-startdatum tellen — oudere dagen laten we volledig buiten de
+  // walk, zodat oude /days-historiek nooit een reeks kan toekennen (zie streakStartKey)
+  const fromIdx = streakStartIdx();
   let count = 0, jokerUsed = false;
   const earnDays = [];
   for (let i = fromIdx; i <= todayIdx; i++){
@@ -780,6 +786,15 @@ onValue(dbRef('streaks'), snap => {
   render();
 });
 
+// --- Firebase: reeks-startdatum (instelbaar via Beheer) ---
+// Geen laad-gate: streakStartKey heeft altijd een geldige fallback (DEFAULT_STREAK_START),
+// dus de app hoeft hier nooit op te wachten en een leesfout kan niks platleggen.
+onValue(dbRef('settings/streakStart'), snap => {
+  const v = snap.val();
+  streakStartKey = (typeof v === 'string' && parseDayKey(v)) ? v : DEFAULT_STREAK_START;
+  render();
+}, () => {});
+
 // --- Firebase: dagstatus (opnieuw aangesloten bij elke dagwissel) ---
 function attachDayListener(d){
   if (dayUnsubscribe){ dayUnsubscribe(); dayUnsubscribe = null; }
@@ -871,9 +886,9 @@ function render(){
     // "onaf" maken. Toekomstige dagen krijgen nooit een vlag (vooruit klikken mag
     // de reeks niet kunnen foppen).
     const complete = ids.length > 0 && kidDone === ids.length;
-    // enkel dagen vanaf STREAK_START krijgen/verliezen een voltooiingsvlag — oudere
-    // dagen blijven buiten de reeks, hoe vaak je er ook naartoe terugbladert
-    if (dayIndex(current) >= dayIndex(STREAK_START) && dayIndex(current) <= dayIndex(new Date())){
+    // enkel dagen vanaf de reeks-startdatum krijgen/verliezen een voltooiingsvlag —
+    // oudere dagen blijven buiten de reeks, hoe vaak je er ook naartoe terugbladert
+    if (dayIndex(current) >= streakStartIdx() && dayIndex(current) <= dayIndex(new Date())){
       const flagged = !!streaksCache[k.key].days[cDay];
       if (complete && !flagged){
         k.newBadges = writeCompletionFlag(k.key, cDay);
@@ -1426,8 +1441,39 @@ function renderAdmin(){
     ${renderAdminRole('lies', 'Vaste taken — Lies')}
     ${renderAdminRole('lenn', 'Vaste taken — Lenn')}
     ${renderAdminVacuum()}
+    ${renderAdminStreak()}
     ${versionLine()}
   `;
+}
+
+// Reeks-startdatum: dagen vóór deze datum tellen niet mee voor reeksen & badges.
+function renderAdminStreak(){
+  const d = parseDayKey(streakStartKey) || parseDayKey(DEFAULT_STREAK_START);
+  return `
+    <div class="admin-section">
+      <div class="admin-role-title">Reeksen &amp; badges</div>
+      <div class="admin-next-row">
+        <span>Tellen vanaf: <b>${d.getDate()} ${MN[d.getMonth()]} ${d.getFullYear()}</b><br>
+        <small>dagen vóór deze datum tellen niet mee voor reeksen en badges</small></span>
+        <button class="admin-icon-btn accent" onclick="editStreakStart()" title="Startdatum wijzigen">✏️</button>
+      </div>
+    </div>
+  `;
+}
+
+function editStreakStart(){
+  const cur = parseDayKey(streakStartKey) || parseDayKey(DEFAULT_STREAK_START);
+  const pad = n => String(n).padStart(2, '0');
+  const preset = `${pad(cur.getDate())}-${pad(cur.getMonth() + 1)}-${cur.getFullYear()}`;
+  const inp = prompt('Reeksen & badges tellen vanaf welke dag? (dd-mm-jjjj)', preset);
+  if (!inp) return;
+  const m = inp.trim().match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if (!m){ alert('Ongeldige datum. Gebruik dd-mm-jjjj, bijvoorbeeld 09-07-2026.'); return; }
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  if (isNaN(d.getTime()) || d.getDate() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1){
+    alert('Ongeldige datum. Controleer dag en maand.'); return;
+  }
+  set(dbRef('settings/streakStart'), dayKey(d));
 }
 
 function renderWeekdayPicker(activeDays, role, id){
@@ -1595,7 +1641,7 @@ Object.assign(window, {
   editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleVacuumWeekday,
   postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
-  addFloor, editFloor, deleteFloor,
+  addFloor, editFloor, deleteFloor, editStreakStart,
   submitPassword, closePasswordPrompt
 });
 
