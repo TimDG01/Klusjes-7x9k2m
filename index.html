@@ -164,8 +164,12 @@ const db = getDatabase(firebaseApp);
 const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026 — het schema loopt vanaf hier onbeperkt door
+// Reeksen & badges tellen pas vanaf deze dag. Alles ervoor (oude /days-historiek
+// van vóór de badges bestonden) telt niet mee, ook niet als je ernaartoe bladert —
+// zo kan oude afvink-historiek nooit met terugwerkende kracht een reeks toekennen.
+const STREAK_START = new Date(2026, 6, 9); // 9 juli 2026
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v13';
+const VERSION = 'klusjes-pwa v14';
 
 // Testmodus: met ?test in de URL leeft de héle app onder /test/... in de database,
 // zodat je vrij kunt experimenteren zonder de echte gezinsdata te raken. De
@@ -639,9 +643,12 @@ function kidScheduledCount(kidKey, d){
 function simulateStreak(kidKey, extraDayKey){
   const flags = streaksCache[kidKey].days;
   const todayIdx = dayIndex(new Date());
+  // pas vanaf STREAK_START tellen — oudere dagen laten we volledig buiten de walk,
+  // zodat oude /days-historiek nooit een reeks kan toekennen (zie STREAK_START)
+  const fromIdx = Math.max(0, dayIndex(STREAK_START));
   let count = 0, jokerUsed = false;
   const earnDays = [];
-  for (let i = 0; i <= todayIdx; i++){
+  for (let i = fromIdx; i <= todayIdx; i++){
     const dd = new Date(START); dd.setDate(dd.getDate() + i);
     const key = dayKey(dd);
     if (flags[key] || key === extraDayKey){
@@ -864,7 +871,9 @@ function render(){
     // "onaf" maken. Toekomstige dagen krijgen nooit een vlag (vooruit klikken mag
     // de reeks niet kunnen foppen).
     const complete = ids.length > 0 && kidDone === ids.length;
-    if (dayIndex(current) <= dayIndex(new Date())){
+    // enkel dagen vanaf STREAK_START krijgen/verliezen een voltooiingsvlag — oudere
+    // dagen blijven buiten de reeks, hoe vaak je er ook naartoe terugbladert
+    if (dayIndex(current) >= dayIndex(STREAK_START) && dayIndex(current) <= dayIndex(new Date())){
       const flagged = !!streaksCache[k.key].days[cDay];
       if (complete && !flagged){
         k.newBadges = writeCompletionFlag(k.key, cDay);
