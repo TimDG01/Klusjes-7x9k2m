@@ -268,12 +268,18 @@ functionaliteit blijft werken voor een ingelogde ouder.
 - Startscherm-knop "Nieuw gezin aanmaken": `createUserWithEmailAndPassword` →
   gezinsnaam-prompt → genereer `familyId` (`push`-key) + 6-teken code (hoofdletters+cijfers,
   botsingscontrole tegen `/familyCodes`).
-- Atomische schrijf (één `update(ref(db), {…})`): `families/{fid}/meta`,
-  `families/{fid}/members/{uid}={rol:'ouder',…}`, `familyCodes/{code}=fid`,
-  `userIndex/{uid}=fid`.
+- Atomische schrijf (één `update(ref(db), {…})`): `families/{fid}/meta` (incl. `gezinscode`),
+  `families/{fid}/members/{uid}={rol:'ouder',…}`, `familyCodes/{code}=fid`, `userIndex/{uid}=fid`.
+- **Zaai de defaults hier, bij het aanmaken** (niet lui-bij-openen): schrijf meteen
+  `settings/tasks` (= `DEFAULT_TASKS`) en `settings/shifts` (de eerste beurt-taak) mee in de
+  create. Reden: de security-rules maken `settings` ouder-only, dus als een *kind* als eerste
+  een nog-niet-gezaaid gezin opent, mag het niet zaaien en blijft de app op "Laden…" hangen.
+  (In v15 zaait de listener lui — dat patroon vervalt hier.) **[bevinding uit de rules-review]**
 - Knop "Bij bestaand gezin aansluiten als ouder": registreren + code invoeren → lees
-  `familyCodes/{code}` → schrijf eigen `members/{uid}` + `userIndex/{uid}`.
-  ⚠️ Dit raakt security-rules (self-insert als member) — zie §5-gotcha; rules komen in fase 3.
+  `familyCodes/{code}` → schrijf eigen `members/{uid}` mét een `viaCode`-veld = de ingevoerde
+  gezinscode (de rules verifiëren dat server-side tegen `meta/gezinscode`) + `userIndex/{uid}`.
+  ⚠️ Zie §5 en `firebase-rules-v16.json`: self-insert lukt enkel met de juiste code én als je
+  nog geen lid bent.
 - **Test:** nieuw gezin → code verschijnt; tweede ouder sluit aan met die code.
 - **Commit:** `Fase 2: nieuw gezin aanmaken + mede-ouder aansluiten via gezinscode`.
 
@@ -338,6 +344,13 @@ functionaliteit blijft werken voor een ingelogde ouder.
 - Na login: rol uit `members/{uid}`. Kind → alleen eigen kaart; **beheerknoppen verbergen
   ÉN routes blokkeren** (geen `screen==='admin'`/`'members'` voor kinderen). Harde
   afdwinging zit al in de rules (fase 3).
+- **Eenmalige taak úítvinken is ouder-only** (de rules laten een kind een eenmalige taak wél
+  afvinken/verwijderen, maar de definitie herstellen niet). In de kind-UI dus het uitvinken
+  van een bevroren eenmalige taak verbergen/deactiveren (bv. "vraag een ouder"). Gewone
+  terugkerende taken en beurt-taken kan een kind gewoon aan- én uitvinken. **[bevinding uit
+  de rules-review]**
+- Ook de voltooiings-vlag op het lees-pad (`writeCompletionFlag`) enkel voor de **eigen** uid
+  schrijven wanneer een kind is ingelogd — anders weigert de streaks-rule de sibling-write.
 - Discrete uitlog-optie voor het kind.
 - **Test:** kind-login toont enkel eigen data; beheerroutes onbereikbaar.
 - **Commit:** `Fase 5: kind-login met pincode + afgeschermde kindweergave`.
@@ -431,6 +444,57 @@ precies waar rules meestal lekken:
    anders niet strak afdwingbaar.
 
 Lever de rules met NL-commentaar per blok zodat het tweede model gericht kan controleren.
+
+### 5.1 Status: rules geschreven → `firebase-rules-v16.json`
+De gecorrigeerde rules staan al in `firebase-rules-v16.json` (met NL-commentaar per blok).
+Alle vijf de gotcha's hierboven zijn erin verwerkt; de vier oorspronkelijke gaten (read via
+zelf-schrijfbare userIndex, ongegate self-insert als ouder, meta-bootstrap, kind dat eigen
+eenmalige-taak/beurt afvinkt) zijn gedicht. Twee gevolgen voor de app-bouw (hierboven al bij
+fase 2 en fase 5 genoteerd): **(1)** defaults zaaien bij het aanmaken van het gezin, niet lui;
+**(2)** eenmalige taak úítvinken is ouder-only.
+
+### 5.2 Rules testen in de Firebase Rules Playground
+De Console → Realtime Database → tab **Regels** heeft een **Playground** (simulator). Die
+draait tegen de **echte data** in de DB, dus zet er eerst even een klein testgezin in via de
+tab **Data** (het Console-data-scherm negeert de rules — admin — dus dit lukt altijd; achteraf
+weer verwijderen). Uid's mogen verzonnen strings zijn; in de Playground vul je bij "Auth" een
+custom uid in die overeenkomt met het testgezin.
+
+**Testdata om (tijdelijk) te plakken onder de root:**
+```json
+{
+  "userIndex": { "papa1": "fam1", "kind1": "fam1" },
+  "familyCodes": { "ABC123": "fam1" },
+  "families": { "fam1": {
+    "meta": { "naam": "Testgezin", "gezinscode": "ABC123", "aangemaakt": "2026-7-10" },
+    "members": {
+      "papa1": { "rol": "ouder", "weergavenaam": "Papa" },
+      "kind1": { "rol": "kind", "weergavenaam": "Lies", "gebruikersnaam": "lies" }
+    },
+    "settings": {
+      "tasks": {
+        "t1": { "label": "Afwas", "recurring": true, "order": 0 },
+        "t2": { "label": "Eenmalig", "recurring": false, "order": 1 }
+      }
+    }
+  }}
+}
+```
+
+**De vier testjes** (type · locatie · ingelogd-uid · [data] → verwacht):
+
+| # | Bewijst | Type | Locatie | Uid | Data | Verwacht |
+|---|---|---|---|---|---|---|
+| 1 | niet-lid kan gezin niet lezen | Lezen | `/families/fam1` | `vreemde9` | — | ❌ geweigerd |
+| 2a | kind vinkt eigen taak af | Schrijven | `/families/fam1/days/2026-7-10/checks/kind1/t1` | `kind1` | `true` | ✅ toegestaan |
+| 2b | kind kan geen ánder kind afvinken | Schrijven | `/families/fam1/days/2026-7-10/checks/papa1/t1` | `kind1` | `true` | ❌ geweigerd |
+| 3a | vreemde wordt niet zomaar ouder | Schrijven | `/families/fam1/members/vreemde9` | `vreemde9` | `{"rol":"ouder"}` | ❌ geweigerd |
+| 3b | mede-ouder mét juiste code lukt | Schrijven | `/families/fam1/members/nieuw2` | `nieuw2` | `{"rol":"ouder","viaCode":"ABC123"}` | ✅ toegestaan |
+| 4 | nieuw gezin aanmaken lukt | Schrijven | `/families/fam2/members/baas1` | `baas1` | `{"rol":"ouder"}` | ✅ toegestaan |
+
+Extra optioneel: kind vinkt eenmalige taak af = verwijderen van `/families/fam1/settings/tasks/t2`
+(type Verwijderen, uid `kind1`) → ✅; hetzelfde met de terugkerende `t1` → ❌. Ruim daarna de
+testdata weer op.
 
 ---
 
