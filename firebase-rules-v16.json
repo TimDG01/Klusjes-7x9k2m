@@ -1,0 +1,127 @@
+{
+  "rules": {
+
+    // =====================================================================
+    // WEGWIJZERS (top-level) — nodig VOOR je je gezin kent. Zie PLAN-v16 §3.
+    // =====================================================================
+
+    // /userIndex/{uid} : familyId — enkel de gebruiker zelf leest/schrijft zijn
+    // eigen wijzer. Geeft GEEN toegang meer (de familie-read hangt nu aan echte
+    // membership, niet meer aan deze zelf-schrijfbare waarde) — dus veilig los te laten.
+    "userIndex": {
+      "$uid": {
+        ".read":  "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    // /familyCodes/{code} : familyId — gerichte lookup bij aansluiten. Je kunt
+    // enkel een code lezen als je ze KENT (leesregel staat op $code, niet op de
+    // lijst → niet opsombaar). Aanmaken mag zolang de code nog vrij is.
+    "familyCodes": {
+      "$code": {
+        ".read":  "auth != null",
+        ".write": "auth != null && !data.exists()"
+      }
+    },
+
+    // =====================================================================
+    // GEZINSDATA — alles per gezin genest onder families/{familyId}/
+    // =====================================================================
+    "families": {
+      "$familyId": {
+
+        // LEZEN: enkel echte leden van dit gezin. Steunt op members/{auth.uid},
+        // NIET op userIndex (die is zelf-schrijfbaar) → een buitenstaander kan
+        // zich geen leesrecht toe-eigenen. (FIX #1)
+        ".read": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).exists()",
+
+        // ---- meta: gezinsnaam, gezinscode, aanmaakdatum ----
+        // Schrijven: ouders. Uitzondering: eerste aanmaak (meta bestaat nog niet),
+        // zodat het aanmaken van een nieuw gezin lukt in de atomische create. (FIX #4)
+        "meta": {
+          ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || !data.exists())"
+        },
+
+        // ---- members: wie zit in het gezin en met welke rol ----
+        // Node-niveau: enkel ouders (leden toevoegen/hernoemen/deactiveren/verwijderen).
+        "members": {
+          ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder'",
+
+          // Per lid: een ouder mag alles. Daarnaast mag een gebruiker ZICHZELF
+          // als ouder toevoegen in twee gevallen (self-insert), mits hij nog GEEN
+          // lid is (voorkomt dat een kind zichzelf tot ouder promoot): (FIX #2)
+          //   - bootstrap: het gezin heeft nog geen members (de aanmaker), OF
+          //   - mede-ouder: hij levert de juiste gezinscode (viaCode == meta.gezinscode),
+          //     server-side gecheckt → wie de code niet kent, geraakt er niet in.
+          "$memberUid": {
+            ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || (auth.uid === $memberUid && !root.child('families').child($familyId).child('members').child($memberUid).exists() && newData.child('rol').val() === 'ouder' && (!root.child('families').child($familyId).child('members').exists() || newData.child('viaCode').val() === root.child('families').child($familyId).child('meta').child('gezinscode').val())))"
+          }
+        },
+
+        // ---- settings: taak- en beurt-definities + reeks-startdatum ----
+        // Standaard: enkel ouders (geen kind maakt/bewerkt klusjes).
+        "settings": {
+          ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder'",
+
+          "tasks": {
+            // Uitzondering voor een kind: enkel het VERWIJDEREN van een reeds
+            // bestaande EENMALIGE taak (recurring===false) — dat is wat er gebeurt
+            // wanneer een kind een eenmalige taak afvinkt. Aanmaken/bewerken van
+            // taken of het aanraken van terugkerende taken blijft ouder-only. (FIX #5)
+            // (Een eenmalige taak weer UITvinken = definitie herstellen = ouder-actie.)
+            "$taskId": {
+              ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || (root.child('families').child($familyId).child('members').child(auth.uid).exists() && !newData.exists() && data.child('recurring').val() === false))"
+            }
+          },
+
+          "shifts": {
+            // Beurt-taak (bv. stofzuigen): de DEFINITIE (naam, weekdagen, lijnen,
+            // deelnemers) is ouder-only (erft van settings hierboven). Enkel de
+            // ROTATIE-STAND mag door elk lid geschreven worden, want een kind dat
+            // zijn beurt afvinkt schuift de pointer door. (FIX #5)
+            "$shiftId": {
+              "next":     { ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).exists()" },
+              "override": { ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).exists()" },
+              "lastDone": { ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).exists()" }
+            }
+          }
+        },
+
+        // ---- days: per-dag afvinkstatus, genest per uid ----
+        "days": {
+          "$dayKey": {
+            // Ouders mogen alles binnen een dag (ook afvinken namens een kind).
+            ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder'",
+
+            // Een kind mag enkel ZIJN EIGEN vinkjes en snapshots schrijven. (kern-eis)
+            "checks": {
+              "$uid": {
+                ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || auth.uid === $uid)"
+              }
+            },
+            "snap": {
+              "$uid": {
+                ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || auth.uid === $uid)"
+              }
+            },
+            // Bevroren beurt-historiek {uid,line}: door elk lid schrijfbaar (wie de
+            // beurt afwerkt of verplaatst legt/wist deze momentopname).
+            "shift": {
+              ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).exists()"
+            }
+          }
+        },
+
+        // ---- streaks: reeksen & badges, per uid ----
+        // Een kind schrijft enkel zijn eigen reeks/badges; ouders mogen alles
+        // (nodig voor de voltooiings-vlag op het lees-pad / backfill).
+        "streaks": {
+          "$childId": {
+            ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || auth.uid === $childId)"
+          }
+        }
+      }
+    }
+  }
+}
