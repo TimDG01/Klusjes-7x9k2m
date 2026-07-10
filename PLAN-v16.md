@@ -201,6 +201,16 @@ Lage prioriteit; parkeren tot fase 9.
 > hernoemen — dat houdt de v15-listeners vrijwel ongewijzigd. Als je liever letterlijk
 > `chores/` wil, is dat een extra rename-stap; zeg het en ik pas het plan aan.
 
+**Principe — álles genest per gezin.** Alle echte data (`meta`, `members`, `settings/tasks`,
+`settings/shifts`, `settings/streakStart`, `days`, `streaks`) leeft onder één subtree
+`families/{familyId}/…` met de `familyId` vooraan; de `DB_ROOT`-prefix regelt dit voor elke
+DB-toegang automatisch. De **enige** twee top-level nodes zijn de lookup-tabellen
+`/familyCodes/{code}` en `/userIndex/{uid}`, en dat móét: het zijn de wegwijzers die je nodig
+hebt vóórdat je je `familyId` kent (na login heb je enkel `auth.uid` → lees
+`/userIndex/{uid}`; bij aansluiten enkel de code → lees `/familyCodes/{code}`). Ze worden
+benaderd met een bare, niet-geprefixte `ref(db, …)` — de bewuste uitzondering op de
+`dbRef`-regel.
+
 **BESLIST — streaks genest ín het gezin** (`families/{fid}/streaks/{uid}`), niet apart
 top-level. Redenen: (1) een top-level `/streaks/{uid}` zou álle gezinnen dooreen mengen —
 genest is de data van nature gescoped tot dit gezin; (2) de v15-één-listener
