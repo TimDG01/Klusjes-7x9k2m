@@ -99,22 +99,16 @@ Overal waar nu `'lies'`/`'lenn'` staat, komt de Firebase-**uid** van het kind. D
 security-rules ("een kind mag enkel zijn eigen data schrijven") natuurlijk afdwingbaar
 (`$uid === auth.uid`). Migratie (fase 6) hertekent de oude slugs → nieuwe uids.
 
-### 2.2 Dag-status nesten per uid — **BESLISPUNT (aanbevolen: ja)**
+### 2.2 Dag-status nesten per uid — **BESLIST: ja (nesten per uid)**
 v15 gebruikt platte samengestelde sleutels: `days/{key}/{kid}-{taskId}: bool`. RTDB-rules
 kunnen zo'n samengestelde sleutel niet splitsen om "alleen eigen vinkjes" af te dwingen
-(geen dynamische regex op `auth.uid` in `$key`). Twee opties:
-
-- **A (aanbevolen):** herstructureer naar `days/{key}/checks/{uid}/{taskId}: bool`,
-  `days/{key}/snap/{uid}/{taskId}: {…}`, `days/{key}/vac: {uid, floor}`. Dan is de rule
-  triviaal: `days/{key}/checks/{uid}` schrijfbaar ⇔ `$uid === auth.uid` (kind) of ouder.
-  Kost: aanpassing van `toggleTask` (1094), `render()` id-opbouw (872), `daySnapsFor` (615),
-  `vacuumForDay` (539), `renderCard` (960). Migratie zet oude platte sleutels om.
-- **B:** platte sleutels houden; rules dwingen dan enkel gezins-lidmaatschap +
-  ouder-rol af, en een kind kan technisch een vinkje van een ander kind zetten
-  (lage impact binnen één gezin, maar schendt de harde eis in de opdracht).
-
-De opdracht eist expliciet rule-afgedwongen "eigen afvinkingen". → **Kies A.** Dit is de
-grootste refactor in het plan; verrekend in fase 6/8.
+(geen dynamische regex op `auth.uid` in `$key`). → **Gekozen:** herstructureer naar
+`days/{key}/checks/{uid}/{taskId}: bool`, `days/{key}/snap/{uid}/{taskId}: {…}`,
+`days/{key}/vac: {uid, floor}`. Dan is de rule triviaal: `days/{key}/checks/{uid}`
+schrijfbaar ⇔ `$uid === auth.uid` (kind) of ouder. Kost: aanpassing van `toggleTask` (1094),
+`render()` id-opbouw (872), `daySnapsFor` (615), `vacuumForDay` (539), `renderCard` (960).
+Migratie zet oude platte sleutels om. Dit is de grootste refactor in het plan; verrekend
+in fase 6/8.
 
 ### 2.3 Rotatiemodel — uniform, deterministisch, optioneel per taak — **aanbevolen**
 Rotatie wordt een eigenschap van een taak (opdracht §4b). Voorstel voor het taakrecord:
@@ -139,26 +133,41 @@ Opgeslagen `pointer`+`anchorIdx` maakt het deterministisch én laat een ouder de
 handmatig bijstellen (⏮/⏭, zoals nu bij stofzuigen). **Behoud bij migratie:** zet
 `anchorIdx`/`pointer` zó dat vandaag exact `getRoles(todayIdx)` reproduceert (zie fase 6).
 
-> **BESLISPUNT (rotatie-doorschuiven):** schuift de A/B-achtige rotatie in v16 nog steeds
-> *kalendergedreven* door (elke dag vanzelf, zoals nu), of *voltooiingsgedreven* (zoals de
-> stofzuigbeurt)? De opdracht wil beide gevallen aankunnen. Aanbeveling: **kalendergedreven
-> op basis van `interval`** (behoudt exact het huidige A/B-gedrag; simpelst te migreren),
-> met dezelfde handmatige ⏮/⏭-override als bij stofzuigen voor uitzonderingen. Stofzuigen
-> zelf blijft zijn eigen voltooiingsgedreven pointer houden (of wordt één speciale
-> roterende taak — zie §2.4).
+**BESLIST (rotatie-doorschuiven):** een gewone roterende taak schuift **kalendergedreven op
+`interval`** door (elke dag/week vanzelf, zoals nu bij A/B) — behoudt exact het huidige
+gedrag en is het simpelst te migreren. Plus dezelfde handmatige ⏮/⏭-override voor
+uitzonderingen. De beurt-taak (§2.4) houdt daarnaast zijn eigen voltooiingsgedreven pointer.
 
-### 2.4 Stofzuigen: apart concept houden of opgaan in roterende taken? — **BESLISPUNT**
-v15 behandelt stofzuigen als een derde, apart concept (eigen pointer, verdiepingen,
-projectie, ⏮/📥/⏭, bevroren `vac`-snapshot). Twee opties voor v16:
-- **A (aanbevolen, minste risico):** stofzuigen blijft z'n eigen mechaniek, alleen
-  `lies`/`lenn` → uids + familie-prefix. Roterende gewone taken zijn een nieuw, tweede
-  systeem ernaast. Minder elegant, maar de fijn-afgestelde stofzuig-edge-cases
-  (projectie, clamp-naar-vandaag, override-herstel bij uitvinken) blijven intact.
-- **B:** stofzuigen wordt "gewoon" een roterende taak met verdiepingen als extra veld.
-  Eleganter maar groot risico dat de subtiele stofzuig-gedragingen sneuvelen.
-→ Aanbeveling **A** voor v16; B eventueel later.
+### 2.4 Beurt-taken: veralgemeend stofzuig-mechaniek — **BESLIST**
+Stofzuigen wordt in v16 **niet** meer hardgecodeerd. In plaats daarvan komt er een tweede,
+herbruikbaar taaktype dat het huidige stofzuig-mechaniek veralgemeent, zodat je zelf zulke
+beurt-taken kunt aanmaken. Een **beurt-taak** heeft:
+```
+settings/shifts/{shiftId}: {
+  name,                          // bv. "Stofzuigen"
+  weekdays: [1,2,…],             // op welke dagen ze telt (bv. maandag+dinsdag)
+  lines:   ['Gelijkvloers', …],  // één of meer "lijnen" (de oude verdiepingen), bijplaatsbaar
+  members: [uid, uid, …],        // welke kinderen meedraaien
+  next:     { memberIdx, lineIdx },   // huidige stand — voltooiingsgedreven, zoals nu vacuum/next
+  override?, lastDone?           // exact het huidige override/lastDone-gedrag
+}
+```
+De app roteert per beurt kind + lijn (`memberIdx`/`lineIdx`), schuift alleen door bij
+afvinken, en behoudt álle bestaande fijn-afgestelde gedragingen: een gemiste beurt schuift
+door naar dezelfde persoon, de vooruit-projectie, ⏮/📥/⏭, en de bevroren `days/{key}/vac`-
+historiek. Concreet = de v15-stofzuigfuncties (`getVacuum` 448, `effectiveNext` 515,
+`advanceCombo` 525, `pendingVacuumDay` 490, `vacuumForDay` 539, de move-knoppen 1062-1092)
+worden geparametriseerd per `shiftId` i.p.v. het ene globale `settings/vacuum`, en
+`kid`→`uid`, `floor`→`line`. **"Stofzuigen" is dan gewoon de eerste beurt-taak** — bij
+migratie 1-op-1 uit `settings/vacuum` overgezet (§ fase 8), met behoud van de pointer.
 
-### 2.5 `?test`-sandbox
+> Zo dekt v16 exact wat je beschreef: "ik voeg stofzuigen toe, het moet maandag+dinsdag,
+> ik voeg extra lijnen toe, en die lijnen roteren per kind per dag." Meerdere beurt-taken
+> naast elkaar zijn mogelijk (bv. stofzuigen én afwas-beurt). De `advanceCombo`-flip (nu
+> binair `lies`↔`lenn`, regel 529) wordt "volgende `memberIdx` in de ring", zodat het ook
+> met 1, 3 of meer deelnemers klopt.
+
+### 2.6 `?test`-sandbox
 In v16 is data al per-gezin gescheiden, dus de oude `?test`-prefix is grotendeels
 overbodig. Aanbeveling: laten vallen óf vervangen door een expliciet "testgezin".
 Lage prioriteit; parkeren tot fase 9.
@@ -173,13 +182,13 @@ Lage prioriteit; parkeren tot fase 9.
   ├── members/{uid}/   { rol:'ouder'|'kind', weergavenaam, gebruikersnaam?(kind),
   │                      kleur|avatar, actief:bool }
   ├── settings/
-  │     ├── tasks/{bucketOfTaskId}/…   { label, recurring, order, weekdays?, rotation? }
-  │     ├── vacuum/                     { weekdays[], floors?[], next?, override?, lastDone? }
-  │     └── streakStart                 'yyyy-M-d'
+  │     ├── tasks/{taskId}/…    { label, recurring, order, weekdays?, rotation? }  (§2.3)
+  │     ├── shifts/{shiftId}/…  { name, weekdays[], lines[], members[], next, override?, lastDone? }  (§2.4)
+  │     └── streakStart         'yyyy-M-d'
   ├── days/{yyyy-M-d}/
-  │     ├── checks/{uid}/{taskId}: bool        (§2.2 optie A)
+  │     ├── checks/{uid}/{taskId}: bool        (§2.2: genest per uid)
   │     ├── snap/{uid}/{taskId}: {…}
-  │     └── vac: { uid, floor }
+  │     └── shift/{shiftId}: { uid, line }      (bevroren beurt-historiek, was days/*/vac)
   └── streaks/{uid}/
         ├── days/{yyyy-M-d}: true
         └── badges/b{n}: 'yyyy-M-d'
@@ -323,13 +332,19 @@ functionaliteit blijft werken voor een ingelogde ouder.
 - Admin: per taak kunnen kiezen vast/roterend, deelnemers (subset, volgorde), interval;
   huidige stand toonbaar + ⏮/⏭ bijstelbaar (hergebruik het patroon van
   `advanceVacuumTurn`/`rewindVacuumTurn`, 1555-1565).
-- Stofzuigen: `lies`/`lenn` → uids in `getVacuum`/`advanceCombo`/`effectiveNext`/
-  `vacuumForDay` (§2.4 optie A: mechaniek behouden, alleen sleutels dynamisch). `advanceCombo`
-  flip (529) wordt "volgende uid in de deelnemers-ring" i.p.v. binair.
+- **Beurt-taken (§2.4):** veralgemeen het stofzuig-mechaniek naar `settings/shifts/{shiftId}`.
+  De v15-functies (`getVacuum` 448, `effectiveNext` 515, `advanceCombo` 525,
+  `pendingVacuumDay` 490, `vacuumForDay` 539, `pull/prepone/postponeVacuum` 1062-1092,
+  `advance/rewindVacuumTurn` 1555-1565) worden geparametriseerd per `shiftId`; `kid`→`uid`,
+  `floor`→`line`. `advanceCombo`-flip (529) wordt "volgende `memberIdx` in de ring" i.p.v.
+  binair, zodat 1/2/3+ deelnemers allemaal werken. Admin: beurt-taak aanmaken met naam,
+  weekdagen, lijnen (bijplaatsbaar) en deelnemers.
 - Werk `simulateStreak`/`kidScheduledCount`/`writeCompletionFlag`/`kidBadgeList` bij naar
-  uid-sleutels (inhoud ongewijzigd).
-- **Test:** rotatie met 1, 2, 3 deelnemers; 2 deelnemers = identiek aan oud A/B-gedrag;
-  streak/badge blijft werken.
+  uid-sleutels (inhoud ongewijzigd). Let op: `kidScheduledCount` (634) telt beurt-taken
+  bewust NIET mee (doorgeschoven beurt mag oude reeks niet breken) — behouden.
+- **Test:** gewone rotatie met 1, 2, 3 deelnemers (2 = identiek aan oud A/B-gedrag);
+  beurt-taak met 2 lijnen + 2 kinderen = identiek aan oud stofzuiggedrag; streak/badge
+  blijft werken.
 - **Commit:** `Fase 6: dynamische, optionele roterende taken; lies/lenn hardcoding verwijderd`.
 
 ### Fase 7 — Beheerwachtwoord verwijderen, beheer via ouder-rol
@@ -346,16 +361,19 @@ functionaliteit blijft werken voor een ingelogde ouder.
 - **Kid-koppeling:** UI om oude `lies`/`lenn` te mappen op de in fase 4 aangemaakte
   kind-uids.
 - **Omzetting:**
-  - `days/*`: hersleutel `{kid}-{taskId}` → nieuwe structuur (§2.2 A: `checks/{uid}/{taskId}`),
-    incl. `snap/*` en `vac.{kid}` → `vac.uid`.
+  - `days/*`: hersleutel `{kid}-{taskId}` → `checks/{uid}/{taskId}` (§2.2), incl. `snap/*`
+    → `snap/{uid}/{taskId}` en `vac:{kid,floor}` → `shift/{stofzuigShiftId}:{uid,line}`.
   - `settings/tasks`: A-bucket-taken → roterende taak `members:[liesUid, lennUid]`;
     B-bucket-taken → `members:[lennUid, liesUid]` (omgekeerde fase); `lies`/`lenn`-buckets
     → vaste taken van dat kind. Interval `daily`.
   - **Rotatiestand behouden (hard eis):** zet `anchorIdx`/`pointer` zó dat de toewijzing
     vandaag exact `getRoles(todayIdx)` reproduceert (A→Lies op even dag, enz.). Rotatie
     mag NIET terugspringen naar het begin.
-  - **Stofzuig-pointer behouden:** neem `settings/vacuum/next/override/lastDone` letterlijk
-    over met `kid`→`uid` hersleuteld. Zo blijft dezelfde persoon aan de beurt.
+  - **Stofzuigen → eerste beurt-taak:** maak één `settings/shifts/{id}` "Stofzuigen" uit
+    het oude `settings/vacuum`: `weekdays`→`weekdays`, `floors`→`lines`, deelnemers
+    `[liesUid, lennUid]`. Neem `next/override/lastDone` letterlijk over met `kid`→`memberIdx`
+    (uid-positie in `members`) en `floorIdx`→`lineIdx`. Zo blijft exact dezelfde persoon +
+    lijn aan de beurt.
   - `streaks/{lies|lenn}` → `streaks/{uid}` (days + `b{n}`-badges ongewijzigd);
     `settings/streakStart` overnemen.
 - **Test:** na migratie is dezelfde persoon aan de beurt voor zowel rol als stofzuigen;
@@ -364,7 +382,7 @@ functionaliteit blijft werken voor een ingelogde ouder.
 
 ### Fase 9 — Versie naar v16 + opkuis
 - `VERSION` (178) → `'klusjes-pwa v16'`. NL-accountmodel-comment bovenaan (§3). Dode
-  code/`?test`-beslissing (§2.5) opruimen. Laatste manuele acceptatie.
+  code/`?test`-beslissing (§2.6) opruimen. Laatste manuele acceptatie.
 - **Commit:** `Fase 9: versie v16 + opkuis`.
 
 ---
