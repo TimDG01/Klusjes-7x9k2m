@@ -201,6 +201,17 @@ Lage prioriteit; parkeren tot fase 9.
 > hernoemen — dat houdt de v15-listeners vrijwel ongewijzigd. Als je liever letterlijk
 > `chores/` wil, is dat een extra rename-stap; zeg het en ik pas het plan aan.
 
+**BESLIST — streaks genest ín het gezin** (`families/{fid}/streaks/{uid}`), niet apart
+top-level. Redenen: (1) een top-level `/streaks/{uid}` zou álle gezinnen dooreen mengen —
+genest is de data van nature gescoped tot dit gezin; (2) de v15-één-listener
+(`onValue(dbRef('streaks'))` + niet-fatale foutafhandeling) blijft ongewijzigd werken via
+de `DB_ROOT`-prefix; (3) rules blijven simpel: lezen op `families/{fid}/streaks` = elk
+gezinslid (past bij de gedeelde 🏆-galerij), schrijven op `…/streaks/{uid}` ⇔
+`$uid===auth.uid` of ouder — geen kruislingse `/userIndex`-check nodig; (4) badge-historiek
+hoort bij het gezin. De Firebase-"vermijd diepe nesting"-regel geldt hier niet: we lezen
+nooit de hele `families/{fid}`-node, alleen gerichte subpaden, dus op het leespunt is het
+effectief plat.
+
 ### Accountmodel (bovenaan de code als NL-comment, opdracht "Randvoorwaarden")
 - **Ouder** = echt e-mail + wachtwoord-account.
 - **Kind** = gebruikersnaam + pincode; de app zet dit om naar synthetisch e-mailadres
