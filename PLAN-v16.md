@@ -445,8 +445,12 @@ precies waar rules meestal lekken:
 
 Lever de rules met NL-commentaar per blok zodat het tweede model gericht kan controleren.
 
-### 5.1 Status: rules geschreven → `firebase-rules-v16.json`
+### 5.1 Status: rules geschreven → `firebase-rules-v16.json` — ✅ geplaatst & getest
 De gecorrigeerde rules staan al in `firebase-rules-v16.json` (met NL-commentaar per blok).
+**Op `klusjesv2` geplaatst en geverifieerd via de Rules Playground:** de vier kern-testjes
+(niet-lid kan niet lezen · kind schrijft enkel eigen vinkje · self-insert gegate op code ·
+nieuw gezin aanmaken lukt) gaven allemaal het verwachte resultaat. De twee optionele
+eenmalige-taak-testjes zijn (nog) niet gedraaid — niet kritisch.
 Alle vijf de gotcha's hierboven zijn erin verwerkt; de vier oorspronkelijke gaten (read via
 zelf-schrijfbare userIndex, ongegate self-insert als ouder, meta-bootstrap, kind dat eigen
 eenmalige-taak/beurt afvinkt) zijn gedicht. Twee gevolgen voor de app-bouw (hierboven al bij
