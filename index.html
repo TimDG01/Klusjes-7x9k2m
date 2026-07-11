@@ -2237,9 +2237,18 @@ function renderMembers(){
     <div class="admin-section">
       <div class="admin-role-title">Ouders</div>
       ${parentRows}
+      <button class="admin-add-btn" onclick="explainAddParent()">+ Ouder toevoegen</button>
+      <div class="admin-vacuum-note">Een mede-ouder maakt zijn eigen account aan en sluit aan met de gezinscode hierboven.</div>
     </div>
     ${versionLine()}
   `;
+}
+
+// Een mede-ouder kan de app niet vóór hem aanmaken (die kiest zelf e-mail en
+// wachtwoord) — dus geen formulier maar een korte uitleg met de code erbij.
+function explainAddParent(){
+  const code = (metaCache && metaCache.gezinscode) || '—';
+  alert(`Zo voeg je een ouder toe:\n\n1. De andere ouder opent de app op zijn/haar eigen toestel.\n2. Kies op het inlogscherm "Aansluiten bij een bestaand gezin".\n3. Eigen e-mailadres + wachtwoord kiezen en deze gezinscode invullen: ${code}\n\nDaarna ziet en beheert die ouder precies hetzelfde gezin.`);
 }
 
 // --- Admin ---
@@ -2527,7 +2536,7 @@ Object.assign(window, {
   submitPassword, closePasswordPrompt,
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
   openMembers, addChildMember, changeChildPin, renameMember, cycleMemberColor,
-  toggleMemberActive, deleteMember, copyFamilyCode
+  toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent
 });
 
 render();
