@@ -22,6 +22,22 @@
 > toestel/tegen de echte klusjesv2-database — de Playwright-tests hieronder draaien
 > tegen een fake-DB en zien dit niet. Blijft geparkeerd tot fase 3 de rest van de app
 > ook naar `families/{familyId}/…` laat lezen/schrijven.
+>
+> **Review-fixes na fase 2** (tweede-model-review op fase 1+2): (1) een foutmelding die
+> ná `await signOut()` gezet werd kon door de `onAuthStateChanged(null)`-reset worden
+> overschreven — de volgorde observer↔resolve is geen SDK-contract; opgelost met
+> `pendingAuthError`/`pendingAuthMode` die de observer overneemt i.p.v. blind te wissen,
+> en de fakes in de tests vuren observers nu bewust ná de resolve (worst case — zo is de
+> regressie ook écht getest). (2) Gestrande accounts (aangemaakt maar nooit aan een gezin
+> gekoppeld) liepen bij een nieuwe poging vast op "e-mail al in gebruik": de gezinsnaam
+> wordt nu vóór de accountaanmaak gevraagd, en `ensureAccount` valt bij een bestaand
+> e-mailadres terug op inloggen met dezelfde gegevens; `alreadyInFamily` (leest de eigen
+> `userIndex`) stuurt een account dat al een gezin heeft gewoon door naar de app.
+> (3) `setPersistence` in try/catch — een rejectie brak anders de hele module af (blanco
+> scherm). (4) `teardownFamily`: uitloggen koppelt de vier gezinslisteners + daglistener
+> af en reset caches/gates/`adminUnlocked`, zodat her-inloggen vers start (nu al correct,
+> vanaf fase 3 onmisbaar omdat `DB_ROOT` dan per gezin verschilt). (5) De uitlog-knop
+> verschijnt niet meer op het auth-scherm zelf tijdens create/join.
 
 ---
 

@@ -170,7 +170,10 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 const auth = getAuth(firebaseApp);
-await setPersistence(auth, browserLocalPersistence);
+// Persistentie is nice-to-have: als dit faalt (bv. een browser zonder bruikbare
+// storage) moet de app gewoon opstarten — de sessie is dan alleen niet blijvend.
+// Zonder try/catch zou een rejectie hier de hele module (incl. render) afbreken.
+try { await setPersistence(auth, browserLocalPersistence); } catch (e) {}
 
 const ADMIN_PASSWORD = 'Klusjes.01';
 
@@ -454,6 +457,12 @@ let authError = null;
 let authBusy = false;
 let familyInited = false;
 let authMode = 'login'; // 'login' | 'create' | 'join' — welk auth-formulier getoond wordt
+// Foutmelding/modus die een geplande signOut moeten overleven: de volgorde waarin
+// signOut() resolvet en onAuthStateChanged(null) vuurt is geen SDK-contract, dus
+// een foutmelding die ná signOut gezet wordt kan door de observer-reset worden
+// overschreven. De observer neemt deze pending-waarden over i.p.v. blind te resetten.
+let pendingAuthError = null;
+let pendingAuthMode = null;
 
 let tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
 let tasksLoaded = false;
@@ -644,7 +653,10 @@ function dayKey(d){
 // versieregel onderaan elk scherm; in testmodus met een duidelijk niet te
 // missen marker zodat een testtoestel nooit voor de echte app wordt aanzien
 function versionLine(){
-  return `${DB_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}${authUser ? '<button class="admin-link" onclick="logout()">Uitloggen</button>' : ''}<div class="version">${VERSION}</div>`;
+  // uitlog-knop niet op het auth-scherm zelf: tijdens create/join is er al even
+  // een ingelogde gebruiker terwijl het aanmeldformulier nog zichtbaar is
+  const showLogout = authUser && screen !== 'auth';
+  return `${DB_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}${showLogout ? '<button class="admin-link" onclick="logout()">Uitloggen</button>' : ''}<div class="version">${VERSION}</div>`;
 }
 
 function tasksArray(role){
@@ -783,10 +795,12 @@ function writeCompletionFlag(kidKey, key){
 
 // --- Firebase: alle DB-listeners voor het gezin — pas gestart nadat een ouder
 // is ingelogd (zie onAuthStateChanged hieronder). Vóór login is er geen
-// databasetoegang nodig en mogen deze niet draaien.
+// databasetoegang nodig en mogen deze niet draaien. De unsubscribes worden
+// bewaard zodat teardownFamily ze bij uitloggen weer kan afkoppelen.
+let familyUnsubs = [];
 function initFamily(){
-  // --- taakinstellingen (permanente listener, hele app-levensduur) ---
-  onValue(dbRef('settings/tasks'), snap => {
+  // --- taakinstellingen (leeft zolang de login) ---
+  familyUnsubs.push(onValue(dbRef('settings/tasks'), snap => {
     if (!snap.exists()){
       set(dbRef('settings/tasks'), DEFAULT_TASKS);
       return; // wacht op de her-fire van deze listener met de echte data
@@ -799,10 +813,10 @@ function initFamily(){
   }, () => {
     loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
     render();
-  });
+  }));
 
-  // --- stofzuiginstellingen (permanente listener, hele app-levensduur) ---
-  onValue(dbRef('settings/vacuum'), snap => {
+  // --- stofzuiginstellingen (leeft zolang de login) ---
+  familyUnsubs.push(onValue(dbRef('settings/vacuum'), snap => {
     if (!snap.exists()){
       set(dbRef('settings/vacuum'), DEFAULT_VACUUM);
       return; // wacht op de her-fire van deze listener met de echte data
@@ -821,12 +835,12 @@ function initFamily(){
   }, () => {
     loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
     render();
-  });
+  }));
 
-  // --- reeksen & badges (permanente listener, hele app-levensduur) ---
+  // --- reeksen & badges (leeft zolang de login) ---
   // Geen seeding zoals bij settings/*: een ontbrekende tak betekent gewoon "nog
   // niets verdiend" (zelfde behandeling als afwezige kind-buckets in tasks).
-  onValue(dbRef('streaks'), snap => {
+  familyUnsubs.push(onValue(dbRef('streaks'), snap => {
     loadError = null;
     const v = snap.val() || {};
     streaksCache = {
@@ -842,23 +856,45 @@ function initFamily(){
     streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
     streaksLoaded = true;
     render();
-  });
+  }));
 
   // --- reeks-startdatum (instelbaar via Beheer) ---
   // Geen laad-gate: streakStartKey heeft altijd een geldige fallback (DEFAULT_STREAK_START),
   // dus de app hoeft hier nooit op te wachten en een leesfout kan niks platleggen.
-  onValue(dbRef('settings/streakStart'), snap => {
+  familyUnsubs.push(onValue(dbRef('settings/streakStart'), snap => {
     const v = snap.val();
     streakStartKey = (typeof v === 'string' && parseDayKey(v)) ? v : DEFAULT_STREAK_START;
     render();
-  }, () => {});
+  }, () => {}));
 
   attachDayListener(current);
 }
 
+// Koppelt alle gezinslisteners af en zet de caches en laad-gates terug naar hun
+// beginwaarden, zodat een volgende login (mogelijk een ander account/gezin) met
+// een schone lei en verse listeners start. Nu al belangrijk voor een correcte
+// her-login; vanaf fase 3 (DB_ROOT per gezin) onmisbaar.
+function teardownFamily(){
+  familyUnsubs.forEach(u => { try { u(); } catch (e) {} });
+  familyUnsubs = [];
+  if (dayUnsubscribe){ dayUnsubscribe(); dayUnsubscribe = null; }
+  dayListenerToken++; // maakt eventuele in-flight dag-callbacks tot no-ops
+  familyInited = false;
+  tasksLoaded = vacuumLoaded = dayLoaded = streaksLoaded = false;
+  tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
+  vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
+  streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
+  dayState = {};
+  streakStartKey = DEFAULT_STREAK_START;
+  celebratedDays = new Set();
+  loadError = null;
+  adminUnlocked = false; // beheer-ontgrendeling hoort niet te overleven naar een volgend account
+}
+
 // --- Firebase: aanmelding — start/stop de gezinslisteners op basis van de
-// inlogstatus. Listeners draaien pas ná een geslaagde login (familyInited
-// zorgt dat ze maar één keer worden aangekoppeld, ook bij een tokenrefresh).
+// inlogstatus. Listeners starten ná een geslaagde login (familyInited voorkomt
+// dubbel aankoppelen bij een tokenrefresh) en worden bij uitloggen weer
+// afgekoppeld via teardownFamily, zodat her-inloggen vers begint.
 onAuthStateChanged(auth, user => {
   authUser = user;
   authLoaded = true;
@@ -877,9 +913,14 @@ onAuthStateChanged(auth, user => {
     }
   } else {
     authBusy = false;
-    authError = null;
-    authMode = 'login';
+    // pending-waarden (gezet vlak vóór een signOut in de create/join-flows)
+    // overnemen i.p.v. wissen — zie de toelichting bij pendingAuthError.
+    authError = pendingAuthError;
+    authMode = pendingAuthMode || 'login';
+    pendingAuthError = null;
+    pendingAuthMode = null;
     screen = 'auth';
+    teardownFamily();
   }
   render();
 });
@@ -1477,7 +1518,9 @@ function authErrorMessage(code){
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential': return 'E-mailadres of wachtwoord onjuist.';
-    case 'auth/email-already-in-use': return 'Dit e-mailadres is al in gebruik.';
+    // surfacet enkel nog wanneer het bestaande account een ánder wachtwoord heeft
+    // (ensureAccount vangt het geval "zelfde gegevens" al op door in te loggen)
+    case 'auth/email-already-in-use': return 'Dit e-mailadres is al in gebruik met een ander wachtwoord.';
     case 'auth/weak-password': return 'Wachtwoord moet minstens 6 tekens lang zijn.';
     case 'auth/too-many-requests': return 'Te veel pogingen. Probeer het later opnieuw.';
     case 'auth/network-request-failed': return 'Geen internetverbinding.';
@@ -1506,12 +1549,47 @@ function submitLogin(){
   // bij succes doet onAuthStateChanged de rest (screen wisselt, listeners starten)
 }
 
-// Nieuw gezin aanmaken: eerst het ouderaccount, dan de gezinsnaam via prompt()
-// (zelfde stijl als de rest van de admin-UI), dan een unieke code en één
-// atomische multi-path schrijf: meta/members/settings horen bij het gezin (dus
-// via dbRef, met DB_ROOT-prefix), familyCodes/userIndex zijn de bewuste bare
-// uitzondering (§3 van PLAN-v16) — dus hier zelf samengesteld i.p.v. rootUpdate,
-// dat alle sleutels zou prefixen.
+// Maakt het ouderaccount aan, of — als het e-mailadres al bestaat — probeert
+// met dezelfde gegevens in te loggen en dat account te hergebruiken. Dat heelt
+// gestrande accounts (aangemaakt maar nooit aan een gezin gekoppeld, bv. door
+// een eerder afgebroken create/join): een nieuwe poging loopt dan niet meer
+// vast op "e-mail al in gebruik". Klopt het wachtwoord niet met het bestaande
+// account, dan gooien we de oorspronkelijke already-in-use-fout door.
+async function ensureAccount(email, pw){
+  try {
+    return (await createUserWithEmailAndPassword(auth, email, pw)).user;
+  } catch (err){
+    if (!err || err.code !== 'auth/email-already-in-use') throw err;
+    try {
+      return (await signInWithEmailAndPassword(auth, email, pw)).user;
+    } catch (e2){
+      throw err;
+    }
+  }
+}
+
+// Hoort dit account al bij een gezin? (userIndex/{uid} is de wegwijzer; enkel
+// door de uid zelf leesbaar — wij zíjn die uid.) Zo ja: niet nóg een gezin
+// aanmaken of ergens bijklussen, maar gewoon doorsturen naar de app.
+async function alreadyInFamily(uid){
+  const idx = await get(ref(db, 'userIndex/' + uid));
+  return idx.exists();
+}
+
+function enterAppAfterAuth(){
+  authBusy = false;
+  authError = null;
+  authMode = 'login';
+  screen = 'day';
+  render();
+}
+
+// Nieuw gezin aanmaken: eerst de gezinsnaam via prompt() (vóór de accountaanmaak,
+// zodat annuleren niets achterlaat), dan het account via ensureAccount, dan een
+// unieke code en één atomische multi-path schrijf: meta/members/settings horen
+// bij het gezin (dus met DB_ROOT-prefix), familyCodes/userIndex zijn de bewuste
+// bare uitzondering (§3 van PLAN-v16) — dus hier zelf samengesteld i.p.v.
+// rootUpdate, dat alle sleutels zou prefixen.
 async function submitCreateFamily(){
   const emailInp = document.getElementById('authEmail');
   const pwInp = document.getElementById('authPw');
@@ -1522,49 +1600,44 @@ async function submitCreateFamily(){
     render();
     return;
   }
+  const naam = (prompt('Naam van het gezin:') || '').trim();
+  if (!naam){
+    authError = 'Geef een gezinsnaam op om het gezin aan te maken.';
+    render();
+    return;
+  }
   authError = null;
   authBusy = true;
   render();
 
-  let cred;
+  let user;
   try {
-    cred = await createUserWithEmailAndPassword(auth, email, pw);
+    user = await ensureAccount(email, pw);
   } catch (err){
     authBusy = false;
-    authError = authErrorMessage(err.code);
-    render();
-    return;
-  }
-
-  const naam = (prompt('Naam van het gezin:') || '').trim();
-  if (!naam){
-    // Account bestaat al (ingelogd), maar zonder gezinsnaam maken we niets aan.
-    // Uitloggen zodat een hernieuwde poging niet vastloopt op "e-mail al in gebruik".
-    await signOut(auth);
-    authMode = 'login';
-    authBusy = false;
-    authError = 'Aanmaken geannuleerd. Log opnieuw in met dit e-mailadres om verder te gaan.';
+    authError = authErrorMessage(err && err.code);
     render();
     return;
   }
 
   try {
-    const uid = cred.user.uid;
+    if (await alreadyInFamily(user.uid)){
+      enterAppAfterAuth();
+      alert('Dit account hoort al bij een gezin — je bent ermee ingelogd.');
+      return;
+    }
     const familyId = push(dbRef('families')).key;
     const code = await generateUniqueFamilyCode();
     const writes = {};
     writes[DB_ROOT + `families/${familyId}/meta`] = { naam, gezinscode: code, aangemaakt: dayKey(new Date()) };
-    writes[DB_ROOT + `families/${familyId}/members/${uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true };
+    writes[DB_ROOT + `families/${familyId}/members/${user.uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true };
     writes[DB_ROOT + `families/${familyId}/settings/tasks`] = DEFAULT_TASKS;
     writes[DB_ROOT + `families/${familyId}/settings/shifts`] = DEFAULT_SHIFTS;
     writes['familyCodes/' + code] = familyId;
-    writes['userIndex/' + uid] = familyId;
+    writes['userIndex/' + user.uid] = familyId;
     await update(ref(db), writes);
 
-    authBusy = false;
-    authMode = 'login';
-    screen = 'day';
-    render();
+    enterAppAfterAuth();
     alert(`Gezin "${naam}" is aangemaakt!\nGezinscode: ${code}\nDeel deze code met de andere ouder om aan te sluiten.`);
   } catch (err){
     authBusy = false;
@@ -1573,7 +1646,7 @@ async function submitCreateFamily(){
   }
 }
 
-// Aansluiten bij een bestaand gezin: eerst het ouderaccount, dan de opgegeven
+// Aansluiten bij een bestaand gezin: account via ensureAccount, dan de opgegeven
 // code opzoeken in /familyCodes (mag pas gelezen worden als je bent ingelogd),
 // en tot slot zelf-insert in members/{uid} — de rules verifiëren de code
 // server-side tegen meta/gezinscode (zie firebase-rules-v16.json §5).
@@ -1593,37 +1666,45 @@ async function submitJoinFamily(){
   authBusy = true;
   render();
 
-  let cred;
+  let user;
   try {
-    cred = await createUserWithEmailAndPassword(auth, email, pw);
+    user = await ensureAccount(email, pw);
   } catch (err){
     authBusy = false;
-    authError = authErrorMessage(err.code);
+    authError = authErrorMessage(err && err.code);
     render();
     return;
   }
 
   try {
+    if (await alreadyInFamily(user.uid)){
+      enterAppAfterAuth();
+      alert('Dit account hoort al bij een gezin — je bent ermee ingelogd.');
+      return;
+    }
     const snap = await get(ref(db, 'familyCodes/' + code));
     const familyId = snap.exists() ? snap.val() : null;
     if (!familyId){
+      // Uitloggen (geen half-lid laten rondhangen), maar de foutmelding via het
+      // pending-mechanisme zetten: onAuthStateChanged(null) kan vóór of ná de
+      // regels hieronder lopen en zou de melding anders overschrijven. Dubbel
+      // zetten is bewust — zo klopt de state in beide volgordes. Dankzij
+      // ensureAccount kan de gebruiker het daarna gewoon opnieuw proberen.
+      pendingAuthError = 'Ongeldige gezinscode.';
+      pendingAuthMode = 'join';
       await signOut(auth);
-      authMode = 'join';
       authBusy = false;
-      authError = 'Ongeldige gezinscode. Log opnieuw in met dit e-mailadres om het nogmaals te proberen.';
+      authError = 'Ongeldige gezinscode.';
+      authMode = 'join';
       render();
       return;
     }
-    const uid = cred.user.uid;
     const writes = {};
-    writes[DB_ROOT + `families/${familyId}/members/${uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true, viaCode: code };
-    writes['userIndex/' + uid] = familyId;
+    writes[DB_ROOT + `families/${familyId}/members/${user.uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true, viaCode: code };
+    writes['userIndex/' + user.uid] = familyId;
     await update(ref(db), writes);
 
-    authBusy = false;
-    authMode = 'login';
-    screen = 'day';
-    render();
+    enterAppAfterAuth();
   } catch (err){
     authBusy = false;
     authError = 'Aansluiten is mislukt. Probeer het opnieuw.';
