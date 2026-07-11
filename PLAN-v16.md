@@ -1,23 +1,27 @@
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
-> **Status:** Fase 1 gebouwd en getest (klusjesv2-config + ouder-login met
-> persistente sessie). Zeg "ga verder vanaf fase X" om te hervatten.
+> **Status:** Fase 1 én fase 2 gebouwd en getest (klusjesv2-config, ouder-login met
+> persistente sessie, gezin aanmaken/aansluiten via code). Zeg "ga verder vanaf fase X"
+> om te hervatten.
 > **Branch:** `claude/chores-pwa-v16-plan-11kzki` voor de planfase; de bouwfase draait
 > in deze sessie op `claude/phase-1-execution-fcxdv1`, `main` blijft live v15.
 > **Nieuw Firebase-project:** `klusjesv2` (config staat in fase 1 hieronder).
 >
-> **Let op — rules/data-model mismatch:** `firebase-rules-v16.json` staat al live op
-> `klusjesv2` (zie §5.1) en dekt enkel `userIndex`, `familyCodes` en
-> `families/{familyId}/…`. Fase 1 laat het datamodel bewust nog plat (`settings/`,
-> `days/`, `streaks/` zonder gezins-prefix, zie fase-1-tekst hieronder) — dat verhuist
-> pas in fase 3. Tot fase 3 is uitgevoerd, weigert de live database dus lees/schrijf-
-> toegang tot die platte paden voor een echte ingelogde ouder ("Geen verbinding met
-> de database"). Dit is enkel zichtbaar op een echt toestel/tegen de echte
-> klusjesv2-database — de Playwright-tests hieronder draaien tegen een fake-DB en
-> zien dit niet. Twee opties: (a) tijdelijke rules toevoegen voor de platte paden tot
-> fase 3 klaar is, of (b) fase 3 (datastructuur-migratie) vóór manuele
-> device-acceptatie uitvoeren. Nog geen van beide gedaan — bewust geparkeerd tot de
-> volgende sessie.
+> **Let op — rules/data-model mismatch, deels nog open:** `firebase-rules-v16.json`
+> staat al live op `klusjesv2` (zie §5.1) en dekt enkel `userIndex`, `familyCodes` en
+> `families/{familyId}/…`. Fase 1 laat het datamodel voor de **dagelijkse app**
+> (tasks/vacuum/streaks/streakStart/dag-listeners in `initFamily()`) bewust nog plat
+> (`settings/`, `days/`, `streaks/` zonder gezins-prefix) — dat verhuist pas in fase 3.
+> Tot fase 3 is uitgevoerd, weigert de live database dus lees/schrijftoegang tot die
+> platte paden voor een echte ingelogde ouder ("Geen verbinding met de database").
+> **Fase 2 is hier de uitzondering:** het aanmaken/aansluiten bij een gezin schrijft al
+> wél rechtstreeks naar `families/{familyId}/…` + de bare `familyCodes`/`userIndex`
+> (zie fase-2-tekst), dus die twee acties zíjn al verenigbaar met de live rules — alleen
+> de rest van de app (de dagkaarten zelf) leest nog van de oude platte paden, los van
+> welk gezin je net aanmaakte of waarbij je aansloot. Dit is enkel zichtbaar op een echt
+> toestel/tegen de echte klusjesv2-database — de Playwright-tests hieronder draaien
+> tegen een fake-DB en zien dit niet. Blijft geparkeerd tot fase 3 de rest van de app
+> ook naar `families/{familyId}/…` laat lezen/schrijven.
 
 ---
 
@@ -311,6 +315,34 @@ uitloggen keert terug naar het loginscherm. Zie de mismatch-waarschuwing hierbov
   nog geen lid bent.
 - **Test:** nieuw gezin → code verschijnt; tweede ouder sluit aan met die code.
 - **Commit:** `Fase 2: nieuw gezin aanmaken + mede-ouder aansluiten via gezinscode`.
+
+**Status: ✅ gebouwd & getest.** Auth-scherm uitgebreid met `authMode` ('login' |
+'create' | 'join') en twee nieuwe links onder het inlogformulier. `submitCreateFamily`:
+`createUserWithEmailAndPassword` → `prompt()` voor de gezinsnaam → `familyId` via een
+lege `push()` (reserveert enkel een key, schrijft niets) → `generateUniqueFamilyCode`
+(botsingscontrole met `get()` tegen `/familyCodes`, 20 pogingen) → één root-level
+`update(ref(db), {…})` die `families/{fid}/meta|members|settings/tasks|settings/shifts`
+handmatig met `DB_ROOT` prefixt en `familyCodes/{code}` + `userIndex/{uid}` bewust
+ongeprefixt laat (de bare uitzondering uit §3) — dus geen `rootUpdate()`, die zou alles
+prefixen. De code verschijnt via `alert()` na de write. `submitJoinFamily`: zelfde
+account-aanmaak, dan `get()` op `/familyCodes/{code}` (mag pas na inloggen, want de
+rule vereist `auth != null`); onbestaande code → uitloggen + foutmelding, zodat een
+hernieuwde poging niet vastloopt op "e-mailadres al in gebruik"; bestaande code →
+`members/{uid}` met `viaCode` erbij (de rule verifieert dat server-side tegen
+`meta/gezinscode`) + `userIndex/{uid}`, weer in één `update()`. `onAuthStateChanged`
+navigeert alleen automatisch naar het dagscherm bij `authMode==='login'` — bij
+create/join houdt de eigen functie de regie tot de gezins-write klaar is, zodat het
+scherm niet voortijdig wegspringt terwijl de code nog gegenereerd wordt.
+`settings/shifts` is meteen gezaaid met een eerste "Stofzuigen"-beurt-taak in de vorm
+uit §2.4 (nog leeg qua `members` — kinderen komen pas in fase 4), zodat een kind dat als
+eerste een nieuw gezin opent nooit op een ongezaaide `settings`-tak stuit (zie de
+rules-bevinding hierboven). Playwright-tests (fake `createUserWithEmailAndPassword` +
+`get()` toegevoegd aan de fase-1-testharness, databackend nu via `localStorage`
+gedeeld tussen paginas om twee "ouders" te simuleren, sessie via `sessionStorage`
+per pagina geïsoleerd) bevestigen: gezin aanmaken toont een 6-tekens-code, een tweede
+ouder sluit aan met die code (ook in kleine letters — de app dwingt hoofdletters af) en
+komt op het dagscherm, en een foute code toont een foutmelding zónder het scherm te
+laten doorstromen naar de app.
 
 ### Fase 3 — Datastructuur + userIndex + security rules (EERSTE versie) → **STOP**
 **Doel:** alle app-data leeft onder `families/{familyId}/`; rules-JSON opgeleverd.

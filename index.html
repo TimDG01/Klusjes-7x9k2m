@@ -87,6 +87,8 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .auth-card{background:var(--card);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;width:100%;}
 .auth-title{font-size:20px;font-weight:700;margin-bottom:6px;}
 .auth-sub{font-size:14px;color:var(--text2);margin-bottom:18px;}
+.auth-links{display:flex;flex-direction:column;gap:10px;margin-top:18px;}
+.auth-link{font-size:13px;font-weight:600;color:var(--blue);}
 
 .footer-row{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;}
 .admin-link{font-size:13px;font-weight:600;color:var(--text2);background:var(--card);padding:8px 16px;border-radius:10px;}
@@ -153,8 +155,8 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, onValue, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getDatabase, ref, onValue, get, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBMLoS2ybJV-G0cYOIP_PHcc3BAbdAXI2c",
@@ -404,6 +406,42 @@ const DEFAULT_TASKS = {
 const ALL_WEEKDAYS = [0,1,2,3,4,5,6];
 const DEFAULT_VACUUM = { weekdays: [1,5] }; // huidige planning: maandag & vrijdag
 
+// v16 §2.4: de eerste beurt-taak ("Stofzuigen"), gezaaid bij het aanmaken van een
+// nieuw gezin. Zelfde standaardwaarden als DEFAULT_VACUUM/FLOORS — nog niet gelezen
+// door de huidige app (dat komt pas in fase 6), maar alvast in de juiste vorm klaar.
+const DEFAULT_SHIFTS = {
+  vacuum: {
+    name: 'Stofzuigen',
+    weekdays: DEFAULT_VACUUM.weekdays.slice(),
+    lines: FLOORS.slice(),
+    members: [],
+    next: null,
+    override: null,
+    lastDone: null
+  }
+};
+
+// tekens zonder 0/O/1/I/l — vermijdt verwarring bij het overtypen van een gezinscode
+const FAMILY_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function randomFamilyCode(){
+  let s = '';
+  for (let i = 0; i < 6; i++) s += FAMILY_CODE_CHARS[Math.floor(Math.random() * FAMILY_CODE_CHARS.length)];
+  return s;
+}
+async function generateUniqueFamilyCode(){
+  for (let i = 0; i < 20; i++){
+    const code = randomFamilyCode();
+    const snap = await get(ref(db, 'familyCodes/' + code));
+    if (!snap.exists()) return code;
+  }
+  throw new Error('Kon geen unieke gezinscode genereren');
+}
+
+function defaultDisplayName(email){
+  const local = (email.split('@')[0] || 'Ouder').trim();
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
 let current = new Date();
 if (current < START) current = new Date(START);
 
@@ -415,6 +453,7 @@ let authLoaded = false;
 let authError = null;
 let authBusy = false;
 let familyInited = false;
+let authMode = 'login'; // 'login' | 'create' | 'join' — welk auth-formulier getoond wordt
 
 let tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
 let tasksLoaded = false;
@@ -823,15 +862,23 @@ function initFamily(){
 onAuthStateChanged(auth, user => {
   authUser = user;
   authLoaded = true;
-  authBusy = false;
   if (user){
-    authError = null;
-    if (screen === 'auth') screen = 'day';
+    // Bij 'create'/'join' loopt er nog een prompt/schrijf-vervolg (zie
+    // submitCreateFamily/submitJoinFamily) dat zelf bepaalt wanneer het scherm
+    // wisselt — dit alleen automatisch doen voor een gewone login.
+    if (authMode === 'login'){
+      authError = null;
+      authBusy = false;
+      if (screen === 'auth') screen = 'day';
+    }
     if (!familyInited){
       familyInited = true;
       initFamily();
     }
   } else {
+    authBusy = false;
+    authError = null;
+    authMode = 'login';
     screen = 'auth';
   }
   render();
@@ -1430,9 +1477,11 @@ function authErrorMessage(code){
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential': return 'E-mailadres of wachtwoord onjuist.';
+    case 'auth/email-already-in-use': return 'Dit e-mailadres is al in gebruik.';
+    case 'auth/weak-password': return 'Wachtwoord moet minstens 6 tekens lang zijn.';
     case 'auth/too-many-requests': return 'Te veel pogingen. Probeer het later opnieuw.';
     case 'auth/network-request-failed': return 'Geen internetverbinding.';
-    default: return 'Inloggen mislukt. Probeer het opnieuw.';
+    default: return 'Er ging iets mis. Probeer het opnieuw.';
   }
 }
 
@@ -1457,20 +1506,168 @@ function submitLogin(){
   // bij succes doet onAuthStateChanged de rest (screen wisselt, listeners starten)
 }
 
+// Nieuw gezin aanmaken: eerst het ouderaccount, dan de gezinsnaam via prompt()
+// (zelfde stijl als de rest van de admin-UI), dan een unieke code en één
+// atomische multi-path schrijf: meta/members/settings horen bij het gezin (dus
+// via dbRef, met DB_ROOT-prefix), familyCodes/userIndex zijn de bewuste bare
+// uitzondering (§3 van PLAN-v16) — dus hier zelf samengesteld i.p.v. rootUpdate,
+// dat alle sleutels zou prefixen.
+async function submitCreateFamily(){
+  const emailInp = document.getElementById('authEmail');
+  const pwInp = document.getElementById('authPw');
+  const email = emailInp ? emailInp.value.trim() : '';
+  const pw = pwInp ? pwInp.value : '';
+  if (!email || !pw){
+    authError = 'Vul e-mailadres en wachtwoord in.';
+    render();
+    return;
+  }
+  authError = null;
+  authBusy = true;
+  render();
+
+  let cred;
+  try {
+    cred = await createUserWithEmailAndPassword(auth, email, pw);
+  } catch (err){
+    authBusy = false;
+    authError = authErrorMessage(err.code);
+    render();
+    return;
+  }
+
+  const naam = (prompt('Naam van het gezin:') || '').trim();
+  if (!naam){
+    // Account bestaat al (ingelogd), maar zonder gezinsnaam maken we niets aan.
+    // Uitloggen zodat een hernieuwde poging niet vastloopt op "e-mail al in gebruik".
+    await signOut(auth);
+    authMode = 'login';
+    authBusy = false;
+    authError = 'Aanmaken geannuleerd. Log opnieuw in met dit e-mailadres om verder te gaan.';
+    render();
+    return;
+  }
+
+  try {
+    const uid = cred.user.uid;
+    const familyId = push(dbRef('families')).key;
+    const code = await generateUniqueFamilyCode();
+    const writes = {};
+    writes[DB_ROOT + `families/${familyId}/meta`] = { naam, gezinscode: code, aangemaakt: dayKey(new Date()) };
+    writes[DB_ROOT + `families/${familyId}/members/${uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true };
+    writes[DB_ROOT + `families/${familyId}/settings/tasks`] = DEFAULT_TASKS;
+    writes[DB_ROOT + `families/${familyId}/settings/shifts`] = DEFAULT_SHIFTS;
+    writes['familyCodes/' + code] = familyId;
+    writes['userIndex/' + uid] = familyId;
+    await update(ref(db), writes);
+
+    authBusy = false;
+    authMode = 'login';
+    screen = 'day';
+    render();
+    alert(`Gezin "${naam}" is aangemaakt!\nGezinscode: ${code}\nDeel deze code met de andere ouder om aan te sluiten.`);
+  } catch (err){
+    authBusy = false;
+    authError = 'Aanmaken van het gezin is mislukt. Probeer het opnieuw.';
+    render();
+  }
+}
+
+// Aansluiten bij een bestaand gezin: eerst het ouderaccount, dan de opgegeven
+// code opzoeken in /familyCodes (mag pas gelezen worden als je bent ingelogd),
+// en tot slot zelf-insert in members/{uid} — de rules verifiëren de code
+// server-side tegen meta/gezinscode (zie firebase-rules-v16.json §5).
+async function submitJoinFamily(){
+  const emailInp = document.getElementById('authEmail');
+  const pwInp = document.getElementById('authPw');
+  const codeInp = document.getElementById('authCode');
+  const email = emailInp ? emailInp.value.trim() : '';
+  const pw = pwInp ? pwInp.value : '';
+  const code = (codeInp ? codeInp.value : '').trim().toUpperCase();
+  if (!email || !pw || !code){
+    authError = 'Vul e-mailadres, wachtwoord en gezinscode in.';
+    render();
+    return;
+  }
+  authError = null;
+  authBusy = true;
+  render();
+
+  let cred;
+  try {
+    cred = await createUserWithEmailAndPassword(auth, email, pw);
+  } catch (err){
+    authBusy = false;
+    authError = authErrorMessage(err.code);
+    render();
+    return;
+  }
+
+  try {
+    const snap = await get(ref(db, 'familyCodes/' + code));
+    const familyId = snap.exists() ? snap.val() : null;
+    if (!familyId){
+      await signOut(auth);
+      authMode = 'join';
+      authBusy = false;
+      authError = 'Ongeldige gezinscode. Log opnieuw in met dit e-mailadres om het nogmaals te proberen.';
+      render();
+      return;
+    }
+    const uid = cred.user.uid;
+    const writes = {};
+    writes[DB_ROOT + `families/${familyId}/members/${uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true, viaCode: code };
+    writes['userIndex/' + uid] = familyId;
+    await update(ref(db), writes);
+
+    authBusy = false;
+    authMode = 'login';
+    screen = 'day';
+    render();
+  } catch (err){
+    authBusy = false;
+    authError = 'Aansluiten is mislukt. Probeer het opnieuw.';
+    render();
+  }
+}
+
 function logout(){
   signOut(auth);
 }
 
+function switchAuthMode(mode){
+  authMode = mode;
+  authError = null;
+  render();
+}
+
 function renderAuth(){
+  const isCreate = authMode === 'create';
+  const isJoin = authMode === 'join';
+  const title = isCreate ? 'Nieuw gezin aanmaken' : isJoin ? 'Aansluiten bij een gezin' : 'Klusjesschema';
+  const sub = isCreate ? 'Maak een ouderaccount aan om te starten.'
+    : isJoin ? 'Maak een ouderaccount aan en vul de gezinscode in.'
+    : 'Log in als ouder om verder te gaan.';
+  const submitLabel = isCreate ? 'Gezin aanmaken' : isJoin ? 'Aansluiten' : 'Inloggen als ouder';
+  const submitHandler = isCreate ? 'submitCreateFamily()' : isJoin ? 'submitJoinFamily()' : 'submitLogin()';
+  const pwEnterHandler = isCreate ? 'submitCreateFamily()'
+    : isJoin ? "document.getElementById('authCode').focus()"
+    : 'submitLogin()';
+  const links = isCreate || isJoin
+    ? `<button class="auth-link" onclick="switchAuthMode('login')">‹ Terug naar inloggen</button>`
+    : `<button class="auth-link" onclick="switchAuthMode('create')">Nieuw gezin aanmaken</button>
+       <button class="auth-link" onclick="switchAuthMode('join')">Aansluiten bij een bestaand gezin</button>`;
   document.getElementById('app').innerHTML = `
     <div class="auth-screen">
       <div class="auth-card">
-        <div class="auth-title">Klusjesschema</div>
-        <div class="auth-sub">Log in als ouder om verder te gaan.</div>
+        <div class="auth-title">${title}</div>
+        <div class="auth-sub">${sub}</div>
         <input id="authEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" class="pw-input" placeholder="E-mailadres" onkeydown="if(event.key==='Enter')document.getElementById('authPw').focus()">
-        <input id="authPw" type="password" autocomplete="current-password" class="pw-input" placeholder="Wachtwoord" onkeydown="if(event.key==='Enter')submitLogin()">
+        <input id="authPw" type="password" autocomplete="${isCreate || isJoin ? 'new-password' : 'current-password'}" class="pw-input" placeholder="Wachtwoord" onkeydown="if(event.key==='Enter'){${pwEnterHandler}}">
+        ${isJoin ? `<input id="authCode" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" class="pw-input" style="text-transform:uppercase;letter-spacing:2px;" placeholder="Gezinscode" onkeydown="if(event.key==='Enter')submitJoinFamily()">` : ''}
         <div class="pw-error">${escapeHtml(authError || '')}</div>
-        <button class="pw-ok" style="width:100%" onclick="submitLogin()" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Bezig…' : 'Inloggen als ouder'}</button>
+        <button class="pw-ok" style="width:100%" onclick="${submitHandler}" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Bezig…' : submitLabel}</button>
+        <div class="auth-links">${links}</div>
       </div>
       ${versionLine()}
     </div>
@@ -1749,7 +1946,7 @@ Object.assign(window, {
   postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
   addFloor, editFloor, deleteFloor, editStreakStart,
   submitPassword, closePasswordPrompt,
-  submitLogin, logout
+  submitLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily
 });
 
 render();
