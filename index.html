@@ -15,8 +15,6 @@
   --bg:#F2F2F7;--card:#FFFFFF;--text:#1C1C1E;
   --text2:#6C6C70;--text3:#AEAEB2;
   --border:rgba(0,0,0,0.12);--track:#E5E5EA;
-  --lies:#B5006E;--lies-bg:#F9D0E8;
-  --lenn:#185FA5;--lenn-bg:#E6F1FB;
   --vac:#946200;--vac-bg:#FBEFD2;
   --green:#1D9E75;--blue:#378ADD;--red:#D5493A;
 }
@@ -25,7 +23,7 @@
     --bg:#1C1C1E;--card:#2C2C2E;--text:#FFFFFF;
     --text2:#AEAEB2;--text3:#636366;
     --border:rgba(255,255,255,0.14);--track:#3A3A3C;
-    --lies-bg:#4A0E2A;--lenn-bg:#0D2B45;--vac-bg:#3D2E08;
+    --vac-bg:#3D2E08;
   }
 }
 body{
@@ -89,6 +87,8 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .auth-sub{font-size:14px;color:var(--text2);margin-bottom:18px;}
 .auth-links{display:flex;flex-direction:column;gap:10px;margin-top:18px;}
 .auth-link{font-size:13px;font-weight:600;color:var(--blue);}
+.kid-input{font-size:20px;padding:14px 12px;}
+.kid-btn{font-size:17px;padding:14px 0;}
 
 .footer-row{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;}
 .admin-link{font-size:13px;font-weight:600;color:var(--text2);background:var(--card);padding:8px 16px;border-radius:10px;}
@@ -216,7 +216,31 @@ const baseRef = path => ref(db, BASE_ROOT + path);
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
-const KID_NAMES = { lies:'Lies', lenn:'Lenn' };
+
+// --- Dynamische gezinsleden (fase 5/6: geen hardcoded lies/lenn meer) ---
+// De kaarten op het dagscherm zijn de actieve kind-leden, gesorteerd op uid:
+// die volgorde is stabiel (hernoemen of heractiveren verschuift de rolverdeling
+// niet). Het volwaardige rotatiemodel (§2.3, met anker/pointer) komt in fase 6.
+function activeKids(){
+  return Object.keys(membersCache)
+    .filter(uid => (membersCache[uid].rol || 'kind') === 'kind' && membersCache[uid].actief !== false)
+    .sort()
+    .map(uid => ({ uid, name: membersCache[uid].weergavenaam || '?', kleur: membersCache[uid].kleur || KID_COLORS[0] }));
+}
+// Rolverdeling: dagelijkse A/B-wissel op positie in de kids-lijst — met twee
+// kinderen exact het oude gedrag (even dag: eerste kind = A). Interim tot §2.3.
+function roleFor(pos, idx){
+  return (idx + pos) % 2 === 0 ? 'A' : 'B';
+}
+function kidPos(uid){
+  return activeKids().findIndex(k => k.uid === uid);
+}
+function memberName(uid){
+  return (membersCache[uid] && membersCache[uid].weergavenaam) || '?';
+}
+function isChild(){
+  return !!(authUser && membersCache[authUser.uid] && membersCache[authUser.uid].rol === 'kind');
+}
 // lijntekeningen i.p.v. emoji's (🗑 ⏭ ⏮): kleur-emoji's negeren CSS `color` en de
 // zwarte ⏭/⏮-glyfen verdwijnen op een donkere achtergrond — deze SVG's volgen currentColor
 const TRASH_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M18 7l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
@@ -505,7 +529,7 @@ let authMode = 'login'; // 'login' | 'create' | 'join' — welk auth-formulier g
 let pendingAuthError = null;
 let pendingAuthMode = null;
 
-let tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
+let tasksCache = { A:{}, B:{} }; // + één bucket per kind-uid (vaste taken)
 let tasksLoaded = false;
 
 let metaCache = null;   // { naam, gezinscode, aangemaakt }
@@ -516,8 +540,11 @@ let membersLoaded = false;
 let vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
 let vacuumLoaded = false;
 
-let streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
+let streaksCache = {}; // { uid: { days, badges } }
 let streaksLoaded = false;
+function streaksOf(uid){
+  return streaksCache[uid] || { days: {}, badges: {} };
+}
 
 let dayState = {};
 let dayLoaded = false;
@@ -536,12 +563,8 @@ function dayIndex(d){
   return Math.round((clean - START) / 86400000);
 }
 
-function getRoles(idx){
-  // wisselt elke dag: even index -> Lies=A, oneven -> Lies=B
-  return idx % 2 === 0
-    ? { lies:'A', lenn:'B' }
-    : { lies:'B', lenn:'A' };
-}
+// (de oude getRoles met hardcoded lies/lenn is vervangen door roleFor(pos, idx)
+// op basis van de positie in de dynamische activeKids-lijst — zie bovenaan)
 
 function vacuumWeekdays(){
   return Array.isArray(vacuumCache.weekdays) ? vacuumCache.weekdays : DEFAULT_VACUUM.weekdays;
@@ -555,6 +578,8 @@ function vacuumFloors(){
 // Legacy-formule: kalendergebaseerde rotatie van vóór het pointer-systeem.
 // Alleen nog gebruikt als fallback (historiek en databases zonder `next`).
 function getVacuum(idx, d, vacDays){
+  const kids = activeKids();
+  if (!kids.length) return null;
   const days = vacDays || vacuumWeekdays();
   const dow = d.getDay();
   if (!days.includes(dow)) return null;
@@ -566,7 +591,7 @@ function getVacuum(idx, d, vacDays){
   }
   const vacIdx = count - 1;
   return {
-    kid: vacIdx % 2 === 0 ? 'lies' : 'lenn',
+    kid: kids[vacIdx % kids.length].uid,
     floorIdx: vacIdx % vacuumFloors().length
   };
 }
@@ -624,18 +649,23 @@ function pendingVacuumDay(){
 function effectiveNext(){
   const floors = vacuumFloors();
   const n = vacuumCache.next;
-  if (n && (n.kid === 'lies' || n.kid === 'lenn') && Number.isInteger(n.floorIdx)){
+  // de opgeslagen pointer telt alleen als hij naar een actief kind wijst
+  if (n && activeKids().some(k => k.uid === n.kid) && Number.isInteger(n.floorIdx)){
     return { kid: n.kid, floorIdx: ((n.floorIdx % floors.length) + floors.length) % floors.length };
   }
   const nd = nextScheduledDayFrom(clampedToday());
   return nd ? getVacuum(dayIndex(nd), nd) : null;
 }
 
+// Ring over de actieve kinderen: elke stap schuift kind én verdieping één plaats
+// door — met twee kinderen exact de oude flip. Werkt ook met 1 of 3+ kinderen.
 function advanceCombo(c, steps){
+  const kids = activeKids();
   const len = vacuumFloors().length;
-  const flip = steps % 2 !== 0;
+  const ki = kids.findIndex(k => k.uid === c.kid);
+  const n = kids.length;
   return {
-    kid: flip ? (c.kid === 'lies' ? 'lenn' : 'lies') : c.kid,
+    kid: n ? kids[(((ki < 0 ? 0 : ki) + steps) % n + n) % n].uid : c.kid,
     floorIdx: ((c.floorIdx + steps) % len + len) % len
   };
 }
@@ -667,11 +697,12 @@ function vacuumForDay(d){
   if (idx < dayIndex(clampedToday())){
     // Verleden zonder snapshot: vóór het pointer-systeem toont de formule de
     // historiek. Mét pointer is een niet-gedane beurt doorgeschoven en toont de
-    // dag niets — tenzij deze dag ooit een vinkje had (`!== undefined`, niet
+    // dag niets — tenzij deze dag ooit een vac-vinkje had (`!== undefined`, niet
     // waarheids-check: uitvinken schrijft `false` weg, geen verwijdering — een
     // truthy-check zou de taak dan laten verdwijnen in plaats van onaangevinkt
     // te blijven staan).
-    if (!vacuumCache.next || dayState['lies-vac'] !== undefined || dayState['lenn-vac'] !== undefined){
+    const anyVacBool = Object.values(dayState.checks || {}).some(c => c && c.vac !== undefined);
+    if (!vacuumCache.next || anyVacBool){
       const lv = getVacuum(idx, d, vacuumWeekdays());
       if (lv) return { kid: lv.kid, floorIdx: lv.floorIdx, floor: floors[lv.floorIdx], mode: 'legacy' };
     }
@@ -720,16 +751,21 @@ function tasksArrayForDay(role, dow){
   return tasksArray(role).filter(t => taskWeekdays(t).includes(dow));
 }
 
-// Bevroren eenmalige taken van deze dag (days/{key}/snap/{kid}-{taskId}) voor één kind.
-// Zo'n snapshot wordt geschreven op het moment dat een eenmalige taak wordt afgevinkt
-// (de definitie wordt dan uit settings/tasks verwijderd) — zonder snapshot zou de rij
-// meteen verdwijnen in plaats van afgevinkt te blijven staan. Zelfde idee als days/{key}/vac.
-function daySnapsFor(kidKey, state){
-  const snap = state.snap || {};
+// Bevroren eenmalige taken van deze dag (days/{key}/snap/{uid}/{taskId}) voor één
+// kind. Zo'n snapshot wordt geschreven op het moment dat een eenmalige taak wordt
+// afgevinkt (de definitie wordt dan uit settings/tasks verwijderd) — zonder snapshot
+// zou de rij meteen verdwijnen i.p.v. afgevinkt te blijven staan. Genest per uid
+// (§2.2) zodat de rules "alleen eigen snapshots" kunnen afdwingen.
+function daySnapsFor(uid, state){
+  const snap = (state.snap && state.snap[uid]) || {};
   return Object.keys(snap)
-    .filter(k => k.startsWith(kidKey + '-'))
-    .map(k => ({ id: k.slice(kidKey.length + 1), ...snap[k] }))
+    .map(id => ({ id, ...snap[id] }))
     .sort((a,b) => (a.order||0) - (b.order||0));
+}
+
+// Afvinkstatus van één taak: days/{key}/checks/{uid}/{taskId} (§2.2-nesting).
+function isChecked(uid, taskId){
+  return !!(dayState.checks && dayState.checks[uid] && dayState.checks[uid][taskId]);
 }
 
 // --- Reeksen (streaks) & badges ---
@@ -744,8 +780,10 @@ function daySnapsFor(kidKey, state){
 // het verleden: gebruikt de húidige instellingen. Stofzuigen telt bewust niet mee
 // — een doorgeschoven beurt mag een oude reeks niet achteraf breken.
 function kidScheduledCount(kidKey, d){
+  const pos = kidPos(kidKey);
+  if (pos < 0) return 0; // (nog) geen actief kind-lid: telt niet, breekt niet
   const dow = d.getDay();
-  const role = getRoles(dayIndex(d))[kidKey];
+  const role = roleFor(pos, dayIndex(d));
   return tasksArrayForDay(role, dow).length + tasksArrayForDay(kidKey, dow).length;
 }
 
@@ -759,7 +797,7 @@ function kidScheduledCount(kidKey, d){
 // Puur lees-pad (zoals pendingVacuumDay): elke render herrekent, schrijft niets.
 // extraDayKey: een vlag die net geschreven wordt maar nog niet in de cache zit.
 function simulateStreak(kidKey, extraDayKey){
-  const flags = streaksCache[kidKey].days;
+  const flags = streaksOf(kidKey).days;
   const todayIdx = dayIndex(new Date());
   // pas vanaf de reeks-startdatum tellen — oudere dagen laten we volledig buiten de
   // walk, zodat oude /days-historiek nooit een reeks kan toekennen (zie streakStartKey)
@@ -797,7 +835,7 @@ function simulateStreak(kidKey, extraDayKey){
 // en groeit dat enkel als er écht 7 dagen bijkomen. De rang (= ontwerp-index)
 // volgt uit het volgnummer; de waarde bewaart de verdiendag, enkel om te tonen.
 function kidBadgeList(kidKey){
-  const badges = streaksCache[kidKey].badges || {};
+  const badges = streaksOf(kidKey).badges;
   return Object.keys(badges)
     .filter(k => /^b\d+$/.test(k))
     .map(k => ({ rank: parseInt(k.slice(1), 10) - 1, date: parseDayKey(badges[k]) }))
@@ -806,14 +844,14 @@ function kidBadgeList(kidKey){
 
 // Aantal reeds opgeslagen badges (enkel de b<n>-sleutels tellen mee).
 function badgeCountOf(kidKey){
-  return Object.keys(streaksCache[kidKey].badges || {}).filter(k => /^b\d+$/.test(k)).length;
+  return Object.keys(streaksOf(kidKey).badges).filter(k => /^b\d+$/.test(k)).length;
 }
 
 // Rang (= ontwerp-index) van de badge die op deze dag verdiend werd, of null.
 // Nodig zodat een tweede toestel — dat de voltooiing via de listener ziet i.p.v.
 // zelf te schrijven — toch de juiste medaille in de viering kan tonen.
 function badgeRankEarnedOn(kidKey, dayK){
-  const badges = streaksCache[kidKey].badges || {};
+  const badges = streaksOf(kidKey).badges;
   const hit = Object.keys(badges).find(k => /^b\d+$/.test(k) && badges[k] === dayK);
   return hit ? parseInt(hit.slice(1), 10) - 1 : null;
 }
@@ -853,7 +891,8 @@ function initFamily(){
     }
     loadError = null;
     const v = snap.val();
-    tasksCache = { A: v.A || {}, B: v.B || {}, lies: v.lies || {}, lenn: v.lenn || {} };
+    // alle buckets meenemen (A/B + per-kind-uid); A/B altijd aanwezig
+    tasksCache = { ...v, A: v.A || {}, B: v.B || {} };
     tasksLoaded = true;
     render();
   }, () => {
@@ -889,17 +928,17 @@ function initFamily(){
   familyUnsubs.push(onValue(dbRef('streaks'), snap => {
     loadError = null;
     const v = snap.val() || {};
-    streaksCache = {
-      lies: { days: (v.lies && v.lies.days) || {}, badges: (v.lies && v.lies.badges) || {} },
-      lenn: { days: (v.lenn && v.lenn.days) || {}, badges: (v.lenn && v.lenn.badges) || {} }
-    };
+    streaksCache = {};
+    Object.keys(v).forEach(uid => {
+      streaksCache[uid] = { days: v[uid].days || {}, badges: v[uid].badges || {} };
+    });
     streaksLoaded = true;
     render();
   }, () => {
     // Streaks/badges zijn een extra laag bovenop de klusjes — een leesfout hier
     // (bv. een ontbrekende /streaks-regel) mag de kernapp nooit platleggen: toon
     // dan gewoon "nog geen badges" i.p.v. de app te laten vasthangen op "Laden…".
-    streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
+    streaksCache = {};
     streaksLoaded = true;
     render();
   }));
@@ -956,9 +995,9 @@ function teardownFamily(){
   tasksLoaded = vacuumLoaded = dayLoaded = streaksLoaded = false;
   metaCache = null; metaLoaded = false;
   membersCache = {}; membersLoaded = false;
-  tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
+  tasksCache = { A:{}, B:{} };
   vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
-  streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
+  streaksCache = {};
   dayState = {};
   streakStartKey = DEFAULT_STREAK_START;
   celebratedDays = new Set();
@@ -1012,14 +1051,16 @@ onAuthStateChanged(auth, user => {
   authUser = user;
   authLoaded = true;
   if (user){
-    if (authMode === 'login'){
+    // 'login' (ouder) en 'kid' (kind) zijn allebei gewone aanmeldingen: scherm
+    // wisselen en het gezin opzoeken via userIndex. Bij 'create'/'join' doet de
+    // flow zelf startFamily ná zijn schrijf — daar hier niets doen.
+    if (authMode === 'login' || authMode === 'kid'){
       authError = null;
       authBusy = false;
       if (screen === 'auth') screen = 'day';
       // resolutie pas starten als er nog geen gezin loopt of wordt opgezocht
       if (!familyInited && !familyResolving) resolveFamilyAndInit(user);
     }
-    // Bij 'create'/'join' doet de flow zelf startFamily ná zijn schrijf — hier niets.
   } else {
     authBusy = false;
     // pending-waarden (gezet vlak vóór een signOut in de create/join-flows of de
@@ -1069,8 +1110,13 @@ function render(){
     return;
   }
 
+  // kinderen mogen niet in beheer-schermen belanden, ook niet via een oude state
+  if (isChild() && (screen === 'admin' || screen === 'members')){
+    screen = 'day';
+  }
+
   if (screen === 'admin'){
-    if (!tasksLoaded || !vacuumLoaded){
+    if (!tasksLoaded || !vacuumLoaded || !membersLoaded){
       document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
       return;
     }
@@ -1079,8 +1125,9 @@ function render(){
   }
 
   if (screen === 'badges'){
-    // taken zijn nodig omdat simulateStreak vrije dagen herkent via het taakschema
-    if (!streaksLoaded || !tasksLoaded){
+    // taken + leden zijn nodig omdat simulateStreak vrije dagen herkent via het
+    // taakschema en de kaarten uit de ledenlijst komen
+    if (!streaksLoaded || !tasksLoaded || !membersLoaded){
       document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
       return;
     }
@@ -1097,25 +1144,41 @@ function render(){
     return;
   }
 
-  if (!tasksLoaded || !dayLoaded || !vacuumLoaded || !streaksLoaded){
+  if (!tasksLoaded || !dayLoaded || !vacuumLoaded || !streaksLoaded || !membersLoaded){
     document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
     return;
   }
 
+  // Gepauzeerd kind: vriendelijk blokkeren i.p.v. een lege of verkeerde weergave.
+  if (isChild() && membersCache[authUser.uid].actief === false){
+    document.getElementById('app').innerHTML = `
+      <div class="auth-screen"><div class="auth-card">
+        <div class="celebration-emoji">⏸️</div>
+        <div class="auth-title">Even gepauzeerd</div>
+        <div class="auth-sub">Je account staat op pauze. Vraag het aan mama of papa.</div>
+        <button class="pw-cancel" style="width:100%;padding:11px 0;border-radius:12px;font-weight:600;" onclick="logout()">Uitloggen</button>
+      </div></div>`;
+    return;
+  }
+
   const idx = dayIndex(current);
-  const roles = getRoles(idx);
   const dow = current.getDay();
   const vac = vacuumForDay(current);
   const state = dayState;
 
-  const kids = [
-    ['lies', 'Lies', '--lies', '--lies-bg'],
-    ['lenn', 'Lenn', '--lenn', '--lenn-bg']
-  ].map(([key, name, color, bg]) => ({
-    key, name, color, bg, role: roles[key],
-    // roterende roltaken eerst, daarna de vaste kind-taken (👤)
-    tasks: tasksArrayForDay(roles[key], dow).concat(tasksArrayForDay(key, dow).map(t => ({ ...t, fixed:true })))
-  }));
+  // Kaarten = actieve kind-leden (uid-gesleuteld). Een ingelogd kind ziet enkel
+  // zijn eigen kaart; een ouder ziet iedereen.
+  const kids = activeKids()
+    .filter(k => !isChild() || k.uid === authUser.uid)
+    .map((k, i) => {
+      const pos = kidPos(k.uid);
+      const role = roleFor(pos, idx);
+      return {
+        key: k.uid, name: k.name, kleur: k.kleur, role,
+        // roterende roltaken eerst, daarna de vaste kind-taken (👤)
+        tasks: tasksArrayForDay(role, dow).concat(tasksArrayForDay(k.uid, dow).map(t => ({ ...t, fixed:true })))
+      };
+    });
 
   const isToday = dayIndex(current) === dayIndex(new Date());
   const cDay = dayKey(current);
@@ -1125,11 +1188,11 @@ function render(){
   kids.forEach(k => {
     // bevroren eenmalige taken van deze dag die niet (meer) in de levende lijst zitten
     k.snaps = daySnapsFor(k.key, state).filter(s => !k.tasks.some(t => t.id === s.id));
-    const ids = k.tasks.map(t => `${k.key}-${t.id}`).concat(k.snaps.map(s => `${k.key}-${s.id}`));
-    if (vac && vac.kid === k.key && vac.mode !== 'projected') ids.push(`${k.key}-vac`);
+    const ids = k.tasks.map(t => t.id).concat(k.snaps.map(s => s.id));
+    if (vac && vac.kid === k.key && vac.mode !== 'projected') ids.push('vac');
     allTasks = allTasks.concat(ids);
 
-    const kidDone = ids.filter(id => state[id]).length;
+    const kidDone = ids.filter(id => isChecked(k.key, id)).length;
     doneCount += kidDone;
 
     // Voltooiingsvlag voor de reeks bijhouden. Bewust een schrijf op het lees-pad,
@@ -1140,12 +1203,14 @@ function render(){
     // historiek van vóór deze feature, repareert zo de reeks); alleen op vandaag
     // ook weer weghalen — later toegevoegde taken mogen oude dagen niet achteraf
     // "onaf" maken. Toekomstige dagen krijgen nooit een vlag (vooruit klikken mag
-    // de reeks niet kunnen foppen).
+    // de reeks niet kunnen foppen). Een ingelogd KIND schrijft dit enkel voor
+    // zichzelf: zijn kids-lijst bevat alleen de eigen kaart, dus k.key===auth.uid
+    // — precies wat de streaks-rule vereist (sibling-writes zouden geweigerd worden).
     const complete = ids.length > 0 && kidDone === ids.length;
     // enkel dagen vanaf de reeks-startdatum krijgen/verliezen een voltooiingsvlag —
     // oudere dagen blijven buiten de reeks, hoe vaak je er ook naartoe terugbladert
     if (dayIndex(current) >= streakStartIdx() && dayIndex(current) <= dayIndex(new Date())){
-      const flagged = !!streaksCache[k.key].days[cDay];
+      const flagged = !!streaksOf(k.key).days[cDay];
       if (complete && !flagged){
         k.newBadges = writeCompletionFlag(k.key, cDay);
       } else if (!complete && flagged && isToday && ids.length > 0){
@@ -1199,13 +1264,14 @@ function render(){
       <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
     </div>
 
-    ${kids.map(k => renderCard(k, vac, state)).join('')}
+    ${kids.map(k => renderCard(k, vac)).join('')}
+    ${kids.length === 0 ? '<div class="card"><div class="loading" style="padding:20px;">Nog geen kinderen in het gezin.<br>Voeg ze toe via 👨‍👩‍👧 Gezin hieronder.</div></div>' : ''}
 
     <div class="footer-row">
       <div class="footer-btns">
         <button class="admin-link" onclick="openBadges()">🏆 Badges</button>
-        <button class="admin-link" onclick="openMembers()">👨‍👩‍👧 Gezin</button>
-        <button class="admin-link" onclick="openAdmin()">⚙️ Beheer</button>
+        ${isChild() ? '' : `<button class="admin-link" onclick="openMembers()">👨‍👩‍👧 Gezin</button>
+        <button class="admin-link" onclick="openAdmin()">⚙️ Beheer</button>`}
       </div>
       ${versionLine()}
     </div>
@@ -1214,25 +1280,24 @@ function render(){
   if (newlyDone.length) showCelebration(newlyDone);
 }
 
-function renderCard(k, vac, state){
-  const tasks = k.tasks.map(t => {
-    const id = `${k.key}-${t.id}`;
-    const done = !!state[id];
-    return taskRow(id, t.label, done, t.fixed);
-  }).concat((k.snaps || []).map(s => {
+function renderCard(k, vac){
+  const tasks = k.tasks.map(t =>
+    taskRow(k.key, t.id, t.label, isChecked(k.key, t.id), t.fixed)
+  ).concat((k.snaps || []).map(s =>
     // bevroren eenmalige taak: blijft afgevinkt zichtbaar; terug aanklikken herstelt ze
-    const id = `${k.key}-${s.id}`;
-    return taskRow(id, s.label, !!state[id], s.bucket === k.key);
-  })).join('');
+    taskRow(k.key, s.id, s.label, isChecked(k.key, s.id), s.bucket === k.key)
+  )).join('');
 
-  const vacRow = (vac && vac.kid === k.key) ? vacuumRow(k.key, vac, state) : '';
+  const vacRow = (vac && vac.kid === k.key) ? vacuumRow(k.key, vac) : '';
 
+  // kleuren komen uit het ledenrecord (hex); de kaart-tint is dezelfde kleur met
+  // lage dekking zodat hij in licht én donker thema leesbaar blijft
   return `
     <div class="card">
       <div class="card-header">
-        <div class="dot" style="background:var(${k.color})"></div>
-        <div class="name">${k.name}</div>
-        <div class="role-badge" style="color:var(${k.color});background:var(${k.bg})">Rol ${k.role}</div>
+        <div class="dot" style="background:${k.kleur}"></div>
+        <div class="name">${escapeHtml(k.name)}</div>
+        <div class="role-badge" style="color:${k.kleur};background:${k.kleur}26">Rol ${k.role}</div>
       </div>
       ${streakStrip(k)}
       ${tasks}
@@ -1251,7 +1316,7 @@ function streakStrip(k){
   const nBadges = badgeCountOf(k.key);
   const dots = [0,1,2,3,4,5,6].map(i => `<span class="sdot${i < filled ? ' on' : ''}"></span>`).join('');
   return `
-    <button class="streak-strip" onclick="openBadges('${k.key}')" title="Bekijk de badges van ${k.name}">
+    <button class="streak-strip" onclick="openBadges('${k.key}')" title="Bekijk de badges van ${escapeHtml(k.name)}">
       <span class="streak-flame${st.count ? '' : ' off'}">🔥 ${st.count}</span>
       <span class="streak-dots">${dots}</span>
       <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? '💔' : '❤️'}</span>
@@ -1260,9 +1325,9 @@ function streakStrip(k){
   `;
 }
 
-function taskRow(id, label, done, fixed){
+function taskRow(uid, taskId, label, done, fixed){
   return `
-    <div class="task" onclick="toggleTask('${id}')">
+    <div class="task" onclick="toggleTask('${uid}','${taskId}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}</div>
       ${fixed ? '<span class="fixed-mark" title="Vaste taak">👤</span>' : ''}
@@ -1270,22 +1335,21 @@ function taskRow(id, label, done, fixed){
   `;
 }
 
-function vacuumRow(kidKey, vac, state){
-  const id = `${kidKey}-vac`;
-  const done = !!state[id];
+function vacuumRow(kidKey, vac){
+  const done = isChecked(kidKey, 'vac');
   const label = `🧹 Stofzuigen: ${escapeHtml(vac.floor)}`;
   if (vac.mode === 'projected'){
     // wél aanklikbaar: vooruitwerken (of een blijven-liggen-beurt door een ouder
-    // laten vervallen) moet kunnen — zie de projected-tak in toggleTask
+    // laten vervallen) moet kunnen — zie de projected-tak in toggleVacuum
     return `
-    <div class="task projected" onclick="toggleTask('${id}')">
+    <div class="task projected" onclick="toggleVacuum('${kidKey}')">
       <div class="check"></div>
       <div class="task-label">${label}<span class="vac-tag">verwacht</span></div>
     </div>
   `;
   }
   let buttons = '';
-  if (!done && vac.floorIdx != null){
+  if (!done && vac.floorIdx != null && !isChild()){
     const todayIdx = dayIndex(clampedToday());
     const pKey = pendingVacuumDay();
     const pIdx = pKey ? dayIndex(parseDayKey(pKey)) : null;
@@ -1305,7 +1369,7 @@ function vacuumRow(kidKey, vac, state){
     }
   }
   return `
-    <div class="task" onclick="toggleTask('${id}')">
+    <div class="task" onclick="toggleVacuum('${kidKey}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="task-label ${done ? 'done' : ''}">${label}<span class="vac-tag">week</span></div>
       ${buttons}
@@ -1348,57 +1412,62 @@ function postponeVacuum(){
   update(dbRef('settings/vacuum'), { override: dayKey(nd), next: { kid: n.kid, floorIdx: n.floorIdx } });
 }
 
-function toggleTask(id){
-  if (id.endsWith('-vac')){
-    const info = vacuumForDay(current);
-    const kidKey = id.slice(0, id.indexOf('-'));
-    if (!info || info.kid !== kidKey) return;
-    const key = dayKey(current);
-    const newVal = !dayState[id];
-    if (info.mode === 'projected' && !newVal) return; // kan niet: projectie is per definitie onaangevinkt
-    if (newVal) playChime();
-    set(dbRef(`days/${key}/${id}`), newVal);
-    if (newVal){
-      // historiek bevriezen: wie het was en welke verdieping, los van latere instellingen
-      set(dbRef(`days/${key}/vac`), { kid: info.kid, floor: info.floor });
-      if (info.mode === 'pending' || info.mode === 'projected'){
-        // beurt afgewerkt: pointer één stap voorbij déze combo, eventuele override
-        // is opgebruikt. Bij een projectie (vooruitwerken) betekent dit ook dat een
-        // nog openstaande eerdere beurt stilzwijgend vervalt — bewust: "de kids
-        // deden het niet, een ouder nam het over" mag de rotatie niet blokkeren.
-        update(dbRef('settings/vacuum'), {
-          next: advanceCombo({ kid: info.kid, floorIdx: info.floorIdx }, 1),
-          override: null,
-          lastDone: key
-        });
-      }
-    } else {
-      remove(dbRef(`days/${key}/vac`));
-      if (vacuumCache.lastDone === key && vacuumCache.next){
-        // het net-afgevinkte ongedaan maken: pointer één stap terug, en de beurt
-        // keert terug naar déze dag — afvinken wiste de override, dus zonder dit
-        // herstel zou een met 📥/⏮/⏭ verplaatste beurt terugspringen naar de
-        // eerstvolgende geplande dag en van deze dag lijken te verdwijnen
-        update(dbRef('settings/vacuum'), { next: advanceCombo(vacuumCache.next, -1), lastDone: null, override: key });
-      }
-    }
+// Stofzuigbeurt aan/afvinken — alleen voor ouders: het afvinken schuift ook de
+// rotatie-pointer in settings/vacuum door en bevriest days/{key}/vac, en die
+// paden zijn volgens de rules ouder-only. Zodra stofzuigen in fase 6 naar het
+// beurt-taken-model (settings/shifts) verhuist, mag een kind dit zelf.
+function toggleVacuum(kidKey){
+  if (isChild()){
+    alert('Vraag een ouder om de stofzuigbeurt af te vinken — dat kan een kind binnenkort zelf.');
     return;
   }
-
-  const newVal = !dayState[id];
+  const info = vacuumForDay(current);
+  if (!info || info.kid !== kidKey) return;
   const key = dayKey(current);
-  const sep = id.indexOf('-');
-  const kidKey = id.slice(0, sep);
-  const taskId = id.slice(sep + 1);
+  const newVal = !isChecked(kidKey, 'vac');
+  if (info.mode === 'projected' && !newVal) return; // kan niet: projectie is per definitie onaangevinkt
+  if (newVal) playChime();
+  set(dbRef(`days/${key}/checks/${kidKey}/vac`), newVal);
+  if (newVal){
+    // historiek bevriezen: wie het was en welke verdieping, los van latere instellingen
+    set(dbRef(`days/${key}/vac`), { kid: info.kid, floor: info.floor });
+    if (info.mode === 'pending' || info.mode === 'projected'){
+      // beurt afgewerkt: pointer één stap voorbij déze combo, eventuele override
+      // is opgebruikt. Bij een projectie (vooruitwerken) betekent dit ook dat een
+      // nog openstaande eerdere beurt stilzwijgend vervalt — bewust: "de kids
+      // deden het niet, een ouder nam het over" mag de rotatie niet blokkeren.
+      update(dbRef('settings/vacuum'), {
+        next: advanceCombo({ kid: info.kid, floorIdx: info.floorIdx }, 1),
+        override: null,
+        lastDone: key
+      });
+    }
+  } else {
+    remove(dbRef(`days/${key}/vac`));
+    if (vacuumCache.lastDone === key && vacuumCache.next){
+      // het net-afgevinkte ongedaan maken: pointer één stap terug, en de beurt
+      // keert terug naar déze dag — afvinken wiste de override, dus zonder dit
+      // herstel zou een met 📥/⏮/⏭ verplaatste beurt terugspringen naar de
+      // eerstvolgende geplande dag en van deze dag lijken te verdwijnen
+      update(dbRef('settings/vacuum'), { next: advanceCombo(vacuumCache.next, -1), lastDone: null, override: key });
+    }
+  }
+}
+
+function toggleTask(uid, taskId){
+  const newVal = !isChecked(uid, taskId);
+  const key = dayKey(current);
+  const frozenSnap = dayState.snap && dayState.snap[uid] && dayState.snap[uid][taskId];
 
   if (newVal){
-    const role = getRoles(dayIndex(current))[kidKey];
+    const pos = kidPos(uid);
+    const role = pos >= 0 ? roleFor(pos, dayIndex(current)) : null;
     // taak kan in de roterende rol-bucket zitten óf in de vaste kind-bucket
-    let bucket = role, task = tasksCache[role] && tasksCache[role][taskId];
-    if (!task && tasksCache[kidKey] && tasksCache[kidKey][taskId]){
-      bucket = kidKey; task = tasksCache[kidKey][taskId];
+    let bucket = role, task = role && tasksCache[role] && tasksCache[role][taskId];
+    if (!task && tasksCache[uid] && tasksCache[uid][taskId]){
+      bucket = uid; task = tasksCache[uid][taskId];
     }
-    if (!task && !(dayState.snap && dayState.snap[id])){
+    if (!task && !frozenSnap){
       // rij bestaat niet meer (bv. net in een andere sessie verwijderd): geen
       // wees-vinkje schrijven voor iets dat de volgende render toch verdwijnt
       return;
@@ -1407,31 +1476,38 @@ function toggleTask(id){
     if (task && task.recurring === false){
       // bevriezen in de dag (zoals days/{key}/vac) + definitie verwijderen + afvinken,
       // atomisch in één multi-path update: een gedeeltelijk gelande write zou anders
-      // de rij doen verdwijnen (snap kwijt) of de taak elders laten terugkeren
+      // de rij doen verdwijnen (snap kwijt) of de taak elders laten terugkeren.
+      // Een kind mag dit van de rules óók (eigen checks/snap + delete van een
+      // eenmalige taakdefinitie is de expliciete kind-uitzondering).
       const snap = { label: task.label, bucket, order: task.order || 0 };
       if (Array.isArray(task.weekdays)) snap.weekdays = task.weekdays;
       rootUpdate({
-        [`days/${key}/${id}`]: true,
-        [`days/${key}/snap/${id}`]: snap,
+        [`days/${key}/checks/${uid}/${taskId}`]: true,
+        [`days/${key}/snap/${uid}/${taskId}`]: snap,
         [`settings/tasks/${bucket}/${taskId}`]: null
       });
     } else {
-      set(dbRef(`days/${key}/${id}`), true);
+      set(dbRef(`days/${key}/checks/${uid}/${taskId}`), true);
     }
   } else {
     // uitvinken van een bevroren eenmalige taak: definitie herstellen uit de
-    // snapshot, atomisch samen met het uitvinken en het opruimen van de snapshot
-    const snap = dayState.snap && dayState.snap[id];
-    if (snap){
-      const rec = { label: snap.label, recurring: false, order: snap.order || 0 };
-      if (Array.isArray(snap.weekdays)) rec.weekdays = snap.weekdays;
+    // snapshot, atomisch samen met het uitvinken en het opruimen van de snapshot.
+    // Ouder-only: het terugzetten van de definitie is een settings-schrijf die de
+    // rules een kind niet toestaan — de kind-UI legt dat vriendelijk uit.
+    if (frozenSnap){
+      if (isChild()){
+        alert('Oeps — een eenmalige taak terugzetten kan alleen een ouder. Vraag het even.');
+        return;
+      }
+      const rec = { label: frozenSnap.label, recurring: false, order: frozenSnap.order || 0 };
+      if (Array.isArray(frozenSnap.weekdays)) rec.weekdays = frozenSnap.weekdays;
       rootUpdate({
-        [`days/${key}/${id}`]: false,
-        [`days/${key}/snap/${id}`]: null,
-        [`settings/tasks/${snap.bucket}/${taskId}`]: rec
+        [`days/${key}/checks/${uid}/${taskId}`]: false,
+        [`days/${key}/snap/${uid}/${taskId}`]: null,
+        [`settings/tasks/${frozenSnap.bucket}/${taskId}`]: rec
       });
     } else {
-      set(dbRef(`days/${key}/${id}`), false);
+      set(dbRef(`days/${key}/checks/${uid}/${taskId}`), false);
     }
   }
 }
@@ -1560,23 +1636,26 @@ function showCelebration(entries){
 // waarde kan nooit blijven hangen.
 let badgesFilter = null;
 function openBadges(kidKey){
-  badgesFilter = (kidKey === 'lies' || kidKey === 'lenn') ? kidKey : null;
+  // een ingelogd kind ziet altijd alleen zijn eigen badges, wat er ook wordt
+  // meegegeven; voor ouders is de filter een geldige kind-uid of null (iedereen)
+  if (isChild()){
+    badgesFilter = authUser.uid;
+  } else {
+    badgesFilter = (membersCache[kidKey] && membersCache[kidKey].rol === 'kind') ? kidKey : null;
+  }
   screen = 'badges';
   render();
 }
 
 function renderBadges(){
-  const kids = [
-    ['lies', 'Lies', '--lies', '--lies-bg'],
-    ['lenn', 'Lenn', '--lenn', '--lenn-bg']
-  ].filter(([key]) => !badgesFilter || key === badgesFilter);
-  const title = badgesFilter ? `🏆 Badges van ${KID_NAMES[badgesFilter]}` : '🏆 Badges';
+  const kids = activeKids().filter(k => !badgesFilter || k.uid === badgesFilter);
+  const title = badgesFilter ? `🏆 Badges van ${escapeHtml(memberName(badgesFilter))}` : '🏆 Badges';
   document.getElementById('app').innerHTML = `
     <div class="admin-header">
       <button class="admin-back" onclick="backToDay()">‹ Terug</button>
       <div class="admin-title">${title}</div>
     </div>
-    ${kids.map(([key, name, color, bg]) => renderBadgeSection(key, name, color)).join('')}
+    ${kids.map(k => renderBadgeSection(k.uid, k.name, k.kleur)).join('')}
     ${versionLine()}
   `;
 }
@@ -1616,9 +1695,9 @@ function renderBadgeSection(kidKey, name, color){
   return `
     <div class="admin-section">
       <div class="card-header">
-        <div class="dot" style="background:var(${color})"></div>
-        <div class="name">${name}</div>
-        <div class="role-badge" style="color:var(${color});background:var(--track)">🔥 ${st.count}</div>
+        <div class="dot" style="background:${color}"></div>
+        <div class="name">${escapeHtml(name)}</div>
+        <div class="role-badge" style="color:${color};background:var(--track)">🔥 ${st.count}</div>
       </div>
       <div class="badge-grid">
         ${earnedCards}
@@ -1666,6 +1745,28 @@ function submitLogin(){
     render();
   });
   // bij succes doet onAuthStateChanged de rest (screen wisselt, listeners starten)
+}
+
+// Kind-login: gebruikersnaam + pincode → het synthetische kind-e-mailadres.
+// Zelfde afhandeling als de ouder-login, maar met kindvriendelijke teksten.
+function submitKidLogin(){
+  const nameInp = document.getElementById('authKidName');
+  const pinInp = document.getElementById('authKidPin');
+  const username = normalizeUsername(nameInp ? nameInp.value : '');
+  const pin = pinInp ? pinInp.value.trim() : '';
+  if (!username || !pin){
+    authError = 'Vul je naam en je pincode in.';
+    render();
+    return;
+  }
+  authError = null;
+  authBusy = true;
+  render();
+  signInWithEmailAndPassword(auth, kidEmail(username), pin).catch(() => {
+    authBusy = false;
+    authError = 'Naam of pincode klopt niet. Probeer opnieuw.';
+    render();
+  });
 }
 
 // Maakt het ouderaccount aan, of — als het e-mailadres al bestaat — probeert
@@ -1860,6 +1961,26 @@ function switchAuthMode(mode){
 }
 
 function renderAuth(){
+  // Kind-login: eigen, eenvoudiger formulier (grote invoervelden, numeriek
+  // toetsenbord voor de pin) — apart pad zodat de ouder-formulieren simpel blijven.
+  if (authMode === 'kid'){
+    document.getElementById('app').innerHTML = `
+      <div class="auth-screen">
+        <div class="auth-card">
+          <div class="celebration-emoji">🧒</div>
+          <div class="auth-title">Hoi!</div>
+          <div class="auth-sub">Vul je naam en je pincode in.</div>
+          <input id="authKidName" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" class="pw-input kid-input" placeholder="Je naam" onkeydown="if(event.key==='Enter')document.getElementById('authKidPin').focus()">
+          <input id="authKidPin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" class="pw-input kid-input" placeholder="Pincode" onkeydown="if(event.key==='Enter')submitKidLogin()">
+          <div class="pw-error">${escapeHtml(authError || '')}</div>
+          <button class="pw-ok kid-btn" style="width:100%" onclick="submitKidLogin()" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Even wachten…' : 'Inloggen'}</button>
+          <div class="auth-links"><button class="auth-link" onclick="switchAuthMode('login')">‹ Ik ben een ouder</button></div>
+        </div>
+        ${versionLine()}
+      </div>
+    `;
+    return;
+  }
   const isCreate = authMode === 'create';
   const isJoin = authMode === 'join';
   const title = isCreate ? 'Nieuw gezin aanmaken' : isJoin ? 'Aansluiten bij een gezin' : 'Klusjesschema';
@@ -1873,7 +1994,8 @@ function renderAuth(){
     : 'submitLogin()';
   const links = isCreate || isJoin
     ? `<button class="auth-link" onclick="switchAuthMode('login')">‹ Terug naar inloggen</button>`
-    : `<button class="auth-link" onclick="switchAuthMode('create')">Nieuw gezin aanmaken</button>
+    : `<button class="auth-link" onclick="switchAuthMode('kid')">🧒 Inloggen als kind</button>
+       <button class="auth-link" onclick="switchAuthMode('create')">Nieuw gezin aanmaken</button>
        <button class="auth-link" onclick="switchAuthMode('join')">Aansluiten bij een bestaand gezin</button>`;
   document.getElementById('app').innerHTML = `
     <div class="auth-screen">
@@ -2122,6 +2244,7 @@ function renderMembers(){
 
 // --- Admin ---
 function openAdmin(){
+  if (isChild()) return; // kinderen hebben geen beheer — knop is al verborgen, route ook dicht
   pwTarget = 'admin';
   if (!adminUnlocked){ showPasswordPrompt(); return; }
   screen = 'admin';
@@ -2131,6 +2254,7 @@ function openAdmin(){
 // Ledenscherm: zelfde wachtwoord-drempel als Beheer (verdwijnt in fase 7,
 // wanneer toegang aan de ouder-rol hangt i.p.v. aan een client-side wachtwoord).
 function openMembers(){
+  if (isChild()) return;
   pwTarget = 'members';
   if (!adminUnlocked){ showPasswordPrompt(); return; }
   screen = 'members';
@@ -2197,8 +2321,7 @@ function renderAdmin(){
     </div>
     ${renderAdminRole('A', 'Rol A')}
     ${renderAdminRole('B', 'Rol B')}
-    ${renderAdminRole('lies', 'Vaste taken — Lies')}
-    ${renderAdminRole('lenn', 'Vaste taken — Lenn')}
+    ${activeKids().map(k => renderAdminRole(k.uid, `Vaste taken — ${escapeHtml(k.name)}`)).join('')}
     ${renderAdminVacuum()}
     ${renderAdminStreak()}
     ${versionLine()}
@@ -2283,7 +2406,7 @@ function renderAdminVacuum(){
   const pd = pKey ? parseDayKey(pKey) : null;
   const nextRow = (n && pd) ? `
     <div class="admin-next-row">
-      <span>Volgende beurt: <b>${KID_NAMES[n.kid]}</b> — ${escapeHtml(floors[n.floorIdx])}<br>
+      <span>Volgende beurt: <b>${escapeHtml(memberName(n.kid))}</b> — ${escapeHtml(floors[n.floorIdx])}<br>
       <small>op ${WD[pd.getDay()]} ${pd.getDate()} ${MN[pd.getMonth()]}${vacuumCache.override ? ' (doorgeschoven)' : ''}</small></span>
       <button class="admin-icon-btn accent" onclick="rewindVacuumTurn()" title="Beurt terugdraaien">${SKIP_BACK_ICON}</button>
       <button class="admin-icon-btn accent" onclick="advanceVacuumTurn()" title="Beurt doorschuiven">${SKIP_FWD_ICON}</button>
@@ -2396,13 +2519,13 @@ function toggleVacuumWeekday(dayNum){
 }
 
 Object.assign(window, {
-  toggleTask, changeDay, goToday, openAdmin, backToDay, openBadges,
+  toggleTask, toggleVacuum, changeDay, goToday, openAdmin, backToDay, openBadges,
   editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleVacuumWeekday,
   postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
   addFloor, editFloor, deleteFloor, editStreakStart,
   submitPassword, closePasswordPrompt,
-  submitLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
+  submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
   openMembers, addChildMember, changeChildPin, renameMember, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode
 });

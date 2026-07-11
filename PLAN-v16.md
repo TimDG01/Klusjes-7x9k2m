@@ -502,6 +502,43 @@ hernoemen, pauzeren/activeren en verwijderen. Fase 1–3 blijven groen.
 - **Test:** kind-login toont enkel eigen data; beheerroutes onbereikbaar.
 - **Commit:** `Fase 5: kind-login met pincode + afgeschermde kindweergave`.
 
+**Status: ✅ gebouwd & getest — mét vooruitgeschoven fase-6-kern.** De rules-review
+(bevinding B, §5.3) maakte twee stukken fase 6 tot randvoorwaarde; die zijn hier
+meegenomen:
+- **Dagstatus per uid (§2.2):** `days/{key}/checks/{uid}/{taskId}` +
+  `days/{key}/snap/{uid}/{taskId}`. `toggleTask(uid, taskId)` en een aparte
+  `toggleVacuum(uid)`; de one-off freeze/restore blijft één atomische multi-path
+  update op de nieuwe paden. Geen migratie nodig — klusjesv2 is een verse database
+  (fase 8 zet de oude export om).
+- **Dynamische kinderen (deel van fase 6):** de kaarten komen uit `members`
+  (actieve kind-leden, gesorteerd op uid — stabiel bij hernoemen), kleuren uit het
+  ledenrecord (`kleur` + transparante tint, CSS-vars --lies/--lenn verwijderd),
+  rolverdeling via `roleFor(positie, dagindex)` (met twee kinderen exact de oude
+  A/B-flip; het volwaardige §2.3-model met anker/pointer blijft fase 6), vaste
+  taak-buckets per uid, streaks/badges per uid, stofzuigrotatie als ring over de
+  actieve kinderen (`advanceCombo` werkt met 1/2/3+ deelnemers), en admin/badges
+  volledig uid-gebaseerd. `KID_NAMES` en alle hardcoded lies/lenn zijn weg uit de
+  app-logica.
+- **Kind-login:** knop "🧒 Inloggen als kind" → eenvoudig formulier (grote velden,
+  `inputmode="numeric"` voor de pin) → `signInWithEmailAndPassword` op het
+  synthetische adres; zelfde `userIndex`-resolutie als de ouder-login.
+- **Afgeschermde kindweergave:** enkel de eigen kaart (en dus ook enkel de eigen
+  voltooiingsvlag — de streaks-rule weigert sibling-writes), geen Gezin/Beheer-knoppen
+  én routes programmatiek dicht (`openAdmin`/`openMembers`-guards + render-guard),
+  🏆 toont alleen de eigen badges, een bevroren eenmalige taak uitvinken geeft een
+  nette "vraag een ouder"-uitleg (rules: definitie herstellen is ouder-only), en de
+  stofzuigrij is voor een kind read-only met uitleg (het afvinken schrijft de
+  ouder-only paden `settings/vacuum` + `days/{key}/vac`; kan het kind zelf zodra
+  fase 6 het shifts-model invoert). Een gepauzeerd kind (`actief:false`) krijgt een
+  vriendelijk pauze-scherm met uitlog-knop.
+- **Testles (fake-realisme):** de fake-DB notificeerde synchroon binnen een write,
+  waardoor re-entrante renders met achterlopende caches een oneindige
+  completion-flag-lus gaven die met de echte (altijd asynchrone) SDK niet kan
+  bestaan. De fakes notificeren nu async + gecoalesced. Alle suites (fase 1–5)
+  groen; `test-fase5.js` dekt: kind-login, alleen-eigen-kaart, geblokkeerde routes,
+  geneste checks + eigen streak-vlag (en niets voor anderen), bevroren one-off niet
+  uitvinkbaar door kind, badges-filter, pauze-scherm.
+
 ### Fase 6 — Roterende taken dynamisch + optioneel; hardcoded lies/lenn eruit
 **Doel:** §4b volledig; nul verwijzingen naar `lies`/`lenn` of "exact twee kinderen".
 - Vervang de vaste kids-array (856-857, 1313-1314) door de leden-lijst uit `members`
