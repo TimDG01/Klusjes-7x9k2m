@@ -1,27 +1,26 @@
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
-> **Status:** Fase 1 én fase 2 gebouwd en getest (klusjesv2-config, ouder-login met
-> persistente sessie, gezin aanmaken/aansluiten via code). Zeg "ga verder vanaf fase X"
-> om te hervatten.
+> **Status:** Fase 1, 2 én 3 gebouwd en getest (klusjesv2-config, ouder-login met
+> persistente sessie, gezin aanmaken/aansluiten via code, en álle app-data genest per
+> gezin onder `families/{familyId}/`). **Fase 3 eindigt met een STOP voor een
+> rules-review** — zie het fase-3-blok onderaan §4. Zeg "ga verder vanaf fase X" om te
+> hervatten.
 > **Branch:** `claude/chores-pwa-v16-plan-11kzki` voor de planfase; de bouwfase draait
 > in deze sessie op `claude/phase-1-execution-fcxdv1`, `main` blijft live v15.
 > **Nieuw Firebase-project:** `klusjesv2` (config staat in fase 1 hieronder).
 >
-> **Let op — rules/data-model mismatch, deels nog open:** `firebase-rules-v16.json`
-> staat al live op `klusjesv2` (zie §5.1) en dekt enkel `userIndex`, `familyCodes` en
-> `families/{familyId}/…`. Fase 1 laat het datamodel voor de **dagelijkse app**
-> (tasks/vacuum/streaks/streakStart/dag-listeners in `initFamily()`) bewust nog plat
-> (`settings/`, `days/`, `streaks/` zonder gezins-prefix) — dat verhuist pas in fase 3.
-> Tot fase 3 is uitgevoerd, weigert de live database dus lees/schrijftoegang tot die
-> platte paden voor een echte ingelogde ouder ("Geen verbinding met de database").
-> **Fase 2 is hier de uitzondering:** het aanmaken/aansluiten bij een gezin schrijft al
-> wél rechtstreeks naar `families/{familyId}/…` + de bare `familyCodes`/`userIndex`
-> (zie fase-2-tekst), dus die twee acties zíjn al verenigbaar met de live rules — alleen
-> de rest van de app (de dagkaarten zelf) leest nog van de oude platte paden, los van
-> welk gezin je net aanmaakte of waarbij je aansloot. Dit is enkel zichtbaar op een echt
-> toestel/tegen de echte klusjesv2-database — de Playwright-tests hieronder draaien
-> tegen een fake-DB en zien dit niet. Blijft geparkeerd tot fase 3 de rest van de app
-> ook naar `families/{familyId}/…` laat lezen/schrijven.
+> **Rules/data-model mismatch — OPGELOST in fase 3.** Vanaf fase 3 is `DB_ROOT`
+> dynamisch `families/{familyId}/` (na login opgezocht via `userIndex/{uid}`), dus alle
+> bestaande paden (`settings/`, `days/`, `streaks/`) nestelen automatisch onder het
+> gezin — precies waar de live rules een ingelogde ouder lees/schrijftoegang geven. De
+> eerdere "Geen verbinding"-situatie voor een echte ingelogde ouder is daarmee weg.
+> **Nog wél open (bewust, per §2.2):** de dag-status staat nog plat
+> (`days/{key}/{kid}-{taskId}`) i.p.v. genest per uid (`days/{key}/checks/{uid}/…`).
+> Dat is nu onschuldig omdat alleen de ouder schrijft (de rules laten een ouder alle
+> dag-schrijven toe); de per-uid-herstructurering is nodig zodra kinderen zelf afvinken
+> en is naar fase 6 geschoven (kind-login is fase 5 — zie de kanttekening in het
+> fase-3-blok). De reeds live rules anticiperen die structuur al (`checks`/`snap`/`shift`
+> per uid), maar blokkeren de huidige platte ouder-schrijven niet.
 >
 > **Review-fixes na fase 2** (tweede-model-review op fase 1+2): (1) een foutmelding die
 > ná `await signOut()` gezet werd kon door de `onAuthStateChanged(null)`-reset worden
@@ -387,6 +386,51 @@ laten doorstromen naar de app.
 
   Wacht op bevestiging vóór fase 4.
 - **Commit:** `Fase 3: gezins-gescoopte datastructuur + userIndex + security rules v1`.
+
+**Status: ✅ gebouwd & getest — STOP-punt bereikt.** `DB_ROOT` is gesplitst in een vaste
+`BASE_ROOT` (`''`, of `'test/'` bij `?test`) en een dynamische `DB_ROOT` die na login
+`BASE_ROOT + 'families/{familyId}/'` wordt. De gezins-resolutie (`resolveFamilyAndInit`)
+zoekt `userIndex/{uid}` op en roept `startFamily(fid)` aan, dat `DB_ROOT` zet en
+`initFamily()` start — alle bestaande `dbRef`/`rootUpdate`-paden verhuizen zo vanzelf
+onder het gezin, de listeners bleven inhoudelijk ongewijzigd. Create/join zetten hun
+gezin zelf op (ze kennen de `familyId` al); een gewone login gaat via de resolutie. De
+twee wegwijzers `userIndex`/`familyCodes` lopen via `baseRef` (BASE_ROOT-prefix, geen
+gezins-scope). Een ingelogd account **zonder** gezin (bv. een afgebroken create/join)
+wordt netjes uitgelogd met uitleg i.p.v. de app op een onbekende scope te laten draaien.
+`teardownFamily` reset nu ook `DB_ROOT`/`familyId`/`familyResolving`.
+
+**Bevinding tijdens de rules-verificatie (belangrijk, gefixt):** de fase-2 create schreef
+`settings/tasks|vacuum|shifts` in dezelfde atomische update als `members`. De
+`settings`-regel is echter ouder-only op basis van `root` (de stáát vóór de schrijf), en
+tijdens het aanmaken is de schrijver in `root` nog géén ouder-lid → die schrijf zou op de
+échte backend geweigerd worden. De Playground-test uit de planfase schreef enkel
+`members`, niet `settings`, dus het bleef onopgemerkt. **Fix (app-kant, geen rule
+verzwakt):** de create is opgesplitst in (1) bootstrap `meta`+`members`+`familyCodes`+
+`userIndex`, en daarná (2) de `settings` — pas dan is de aanmaker een vastgelegd
+ouder-lid en slaagt de bestaande ouder-only regel. Zo bleef de tightste rule staan (geen
+bootstrap-uitzondering op `settings`, wat schrijven naar niet-bestaande gezinnen zou
+toelaten). Het rules-bestand kreeg hierover een verklarende NL-comment; de regels zelf
+zijn ongewijzigd t.o.v. de al-geplaatste versie.
+
+**Kanttekening — dag-status nog niet per uid.** Per §2.2 blijft `days/{key}/{kid}-{taskId}`
+voorlopig plat; de per-uid-nesting (`checks/{uid}`) is naar fase 6 geschoven. Dit werkt
+nu omdat enkel de ouder schrijft. **Let op bij fase 5 (kind-login):** een kind dat zelf
+afvinkt heeft die nesting nodig, anders weigeren de rules de platte dag-schrijf van het
+kind (dag-niveau is ouder-only). Trek de §2.2-herstructurering dus naar voren (fase 5 of
+begin fase 6) vóór kinderen echt zelf afvinken.
+
+**Tests:** Playwright-suite `test-fase3.js` bewijst: aanmaken nestelt data onder
+`families/{fid}/` (geen platte paden), afvinken schrijft onder `families/{fid}/days`,
+herladen herstelt de sessie via `userIndex`, een tweede ouder sluit aan en zit in
+hetzelfde gezin, en een gestrand account krijgt de nette uitleg. Fase 1 en 2 blijven
+groen (de fase-1-test seedt nu een gezin, want "ingelogd" vereist er sinds fase 3 één).
+
+**Rules-review (het STOP-punt):** `firebase-rules-v16.json` staat al op `klusjesv2` en is
+tijdens de planfase via de Playground getoetst (§5.1). Fase 3 voegde géén regel toe of
+weg — enkel de create-flow is aangepast en er is een verklarende comment bij `settings`
+gezet. De hierboven beschreven create-bevinding is precies punt (4) van de gevraagde
+review; laat een sterk model ook (1) kind-schrijfrechten, (2) niet-member-leesrechten en
+(3) `familyCodes`/`userIndex`-misbruik nog eens nalopen vóór fase 4.
 
 ### Fase 4 — Scherm "Gezinsleden beheren" + kind-accounts (tweede app-instantie!)
 **Doel:** ouder maakt/beheert kinderen; login-account wordt onderliggend aangemaakt.

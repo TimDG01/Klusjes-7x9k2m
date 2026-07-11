@@ -60,7 +60,12 @@
         },
 
         // ---- settings: taak- en beurt-definities + reeks-startdatum ----
-        // Standaard: enkel ouders (geen kind maakt/bewerkt klusjes).
+        // Standaard: enkel ouders (geen kind maakt/bewerkt klusjes). Bewust GEEN
+        // bootstrap-uitzondering: dat zou settings-schrijven naar een nog niet
+        // bestaand gezin toelaten. De app zaait de settings daarom PAS ná de
+        // bootstrap-schrijf (twee opeenvolgende updates in submitCreateFamily),
+        // wanneer de aanmaker al een vastgelegd ouder-lid is en deze `root`-check
+        // dus slaagt. (Zie PLAN-v16 fase 3 — reden voor de split-create.)
         "settings": {
           ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder'",
 

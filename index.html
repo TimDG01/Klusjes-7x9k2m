@@ -191,15 +191,26 @@ function streakStartIdx(){
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const VERSION = 'klusjes-pwa v15';
 
-// Testmodus: met ?test in de URL leeft de héle app onder /test/... in de database,
-// zodat je vrij kunt experimenteren zonder de echte gezinsdata te raken. De
-// settings-listeners zaaien de defaults daar vanzelf. Opruimen = /test verwijderen.
-const DB_ROOT = new URLSearchParams(location.search).has('test') ? 'test/' : '';
+// Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
+// zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
+// vaste basis; de gezins-scope komt er ná login bovenop (zie DB_ROOT). ?test op een
+// echt toestel vereist nog een /test-regel in de rules — geparkeerd tot fase 9.
+const BASE_ROOT = new URLSearchParams(location.search).has('test') ? 'test/' : '';
+// DB_ROOT is dynamisch: vóór login gelijk aan de basis (nodig voor de bootstrap-
+// schrijf bij gezin aanmaken/aansluiten), ná login `…families/{familyId}/`, zodat
+// ELKE bestaande DB-toegang (settings/…, days/…, streaks/…) via dbRef/rootUpdate
+// vanzelf onder het juiste gezin nestelt — de listeners veranderen inhoudelijk niet.
+let DB_ROOT = BASE_ROOT;
 const dbRef = path => ref(db, DB_ROOT + path);
 // multi-path updates op de root moeten hun sleutels óók prefixen
 const rootUpdate = obj => update(ref(db), Object.fromEntries(
   Object.entries(obj).map(([k, v]) => [DB_ROOT + k, v])
 ));
+// De twee top-level wegwijzers (userIndex, familyCodes) staan bewust NIET onder een
+// gezin — je hebt ze nodig vóór je je familyId kent. Ze volgen wel BASE_ROOT, zodat
+// ?test ook hen sandboxt. Bare, niet-gezins-geprefixte toegang: de bewuste
+// uitzondering op de dbRef-regel (zie PLAN-v16 §3).
+const baseRef = path => ref(db, BASE_ROOT + path);
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -434,7 +445,7 @@ function randomFamilyCode(){
 async function generateUniqueFamilyCode(){
   for (let i = 0; i < 20; i++){
     const code = randomFamilyCode();
-    const snap = await get(ref(db, 'familyCodes/' + code));
+    const snap = await get(baseRef('familyCodes/' + code));
     if (!snap.exists()) return code;
   }
   throw new Error('Kon geen unieke gezinscode genereren');
@@ -456,6 +467,8 @@ let authLoaded = false;
 let authError = null;
 let authBusy = false;
 let familyInited = false;
+let familyResolving = false; // voorkomt dubbele gezins-resolutie bij snelle auth-events
+let familyId = null;
 let authMode = 'login'; // 'login' | 'create' | 'join' — welk auth-formulier getoond wordt
 // Foutmelding/modus die een geplande signOut moeten overleven: de volgorde waarin
 // signOut() resolvet en onAuthStateChanged(null) vuurt is geen SDK-contract, dus
@@ -656,7 +669,7 @@ function versionLine(){
   // uitlog-knop niet op het auth-scherm zelf: tijdens create/join is er al even
   // een ingelogde gebruiker terwijl het aanmeldformulier nog zichtbaar is
   const showLogout = authUser && screen !== 'auth';
-  return `${DB_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}${showLogout ? '<button class="admin-link" onclick="logout()">Uitloggen</button>' : ''}<div class="version">${VERSION}</div>`;
+  return `${BASE_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}${showLogout ? '<button class="admin-link" onclick="logout()">Uitloggen</button>' : ''}<div class="version">${VERSION}</div>`;
 }
 
 function tasksArray(role){
@@ -880,6 +893,9 @@ function teardownFamily(){
   if (dayUnsubscribe){ dayUnsubscribe(); dayUnsubscribe = null; }
   dayListenerToken++; // maakt eventuele in-flight dag-callbacks tot no-ops
   familyInited = false;
+  familyResolving = false;
+  familyId = null;
+  DB_ROOT = BASE_ROOT; // terug naar de sandbox-basis, zodat een volgende bootstrap klopt
   tasksLoaded = vacuumLoaded = dayLoaded = streaksLoaded = false;
   tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
   vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
@@ -891,30 +907,64 @@ function teardownFamily(){
   adminUnlocked = false; // beheer-ontgrendeling hoort niet te overleven naar een volgend account
 }
 
+// Zet de gezins-scope en start de listeners. Aangeroepen door de login-resolutie
+// (na het opzoeken van userIndex) én rechtstreeks door create/join (die de
+// familyId meteen kennen). Vanaf hier wijst dbRef('settings/…') naar
+// families/{familyId}/settings/… — alle bestaande paden verhuizen zo mee.
+function startFamily(fid){
+  familyId = fid;
+  DB_ROOT = BASE_ROOT + 'families/' + fid + '/';
+  familyInited = true;
+  familyResolving = false;
+  initFamily();
+}
+
+// Login-resolutie: zoek het gezin van deze gebruiker op via userIndex/{uid} en
+// start het. Een account zonder gezin (bv. een aanmaak die na de accountstap is
+// afgebroken) wordt netjes uitgelogd met een uitleg, i.p.v. de app op een
+// onbekende scope te laten draaien.
+async function resolveFamilyAndInit(user){
+  familyResolving = true;
+  try {
+    const idx = await get(baseRef('userIndex/' + user.uid));
+    const fid = idx.exists() ? idx.val() : null;
+    if (!fid){
+      familyResolving = false;
+      pendingAuthError = 'Dit account hoort nog niet bij een gezin. Maak er een aan of sluit aan met een gezinscode.';
+      pendingAuthMode = 'login';
+      await signOut(auth);
+      return;
+    }
+    startFamily(fid);
+    render();
+  } catch (e){
+    familyResolving = false;
+    loadError = 'Kon het gezin niet laden. Probeer de app opnieuw te openen.';
+    render();
+  }
+}
+
 // --- Firebase: aanmelding — start/stop de gezinslisteners op basis van de
-// inlogstatus. Listeners starten ná een geslaagde login (familyInited voorkomt
-// dubbel aankoppelen bij een tokenrefresh) en worden bij uitloggen weer
-// afgekoppeld via teardownFamily, zodat her-inloggen vers begint.
+// inlogstatus. Bij een gewone login zoeken we het gezin op via userIndex en
+// starten we de listeners; create/join starten zelf (ze kennen de familyId al en
+// hebben userIndex mogelijk net pas geschreven). Uitloggen koppelt alles af via
+// teardownFamily, zodat her-inloggen (mogelijk een ander gezin) vers begint.
 onAuthStateChanged(auth, user => {
   authUser = user;
   authLoaded = true;
   if (user){
-    // Bij 'create'/'join' loopt er nog een prompt/schrijf-vervolg (zie
-    // submitCreateFamily/submitJoinFamily) dat zelf bepaalt wanneer het scherm
-    // wisselt — dit alleen automatisch doen voor een gewone login.
     if (authMode === 'login'){
       authError = null;
       authBusy = false;
       if (screen === 'auth') screen = 'day';
+      // resolutie pas starten als er nog geen gezin loopt of wordt opgezocht
+      if (!familyInited && !familyResolving) resolveFamilyAndInit(user);
     }
-    if (!familyInited){
-      familyInited = true;
-      initFamily();
-    }
+    // Bij 'create'/'join' doet de flow zelf startFamily ná zijn schrijf — hier niets.
   } else {
     authBusy = false;
-    // pending-waarden (gezet vlak vóór een signOut in de create/join-flows)
-    // overnemen i.p.v. wissen — zie de toelichting bij pendingAuthError.
+    // pending-waarden (gezet vlak vóór een signOut in de create/join-flows of de
+    // gestrand-account-afhandeling) overnemen i.p.v. wissen — zie pendingAuthError.
     authError = pendingAuthError;
     authMode = pendingAuthMode || 'login';
     pendingAuthError = null;
@@ -1568,12 +1618,12 @@ async function ensureAccount(email, pw){
   }
 }
 
-// Hoort dit account al bij een gezin? (userIndex/{uid} is de wegwijzer; enkel
-// door de uid zelf leesbaar — wij zíjn die uid.) Zo ja: niet nóg een gezin
-// aanmaken of ergens bijklussen, maar gewoon doorsturen naar de app.
-async function alreadyInFamily(uid){
-  const idx = await get(ref(db, 'userIndex/' + uid));
-  return idx.exists();
+// Het gezin van dit account, of null. (userIndex/{uid} is de wegwijzer; enkel
+// door de uid zelf leesbaar — wij zíjn die uid.) Zit het account al in een gezin,
+// dan niet nóg eens aanmaken/aansluiten maar dat gezin gewoon openen.
+async function familyIdOf(uid){
+  const idx = await get(baseRef('userIndex/' + uid));
+  return idx.exists() ? idx.val() : null;
 }
 
 function enterAppAfterAuth(){
@@ -1586,10 +1636,17 @@ function enterAppAfterAuth(){
 
 // Nieuw gezin aanmaken: eerst de gezinsnaam via prompt() (vóór de accountaanmaak,
 // zodat annuleren niets achterlaat), dan het account via ensureAccount, dan een
-// unieke code en één atomische multi-path schrijf: meta/members/settings horen
-// bij het gezin (dus met DB_ROOT-prefix), familyCodes/userIndex zijn de bewuste
-// bare uitzondering (§3 van PLAN-v16) — dus hier zelf samengesteld i.p.v.
-// rootUpdate, dat alle sleutels zou prefixen.
+// unieke code en TWEE opeenvolgende schrijven:
+//   (1) bootstrap: meta + members/{uid} + familyCodes + userIndex — gedekt door de
+//       bootstrap-uitzonderingen in de rules (meta/familyCodes: !data.exists;
+//       members: eerste-lid-self-insert; userIndex: self).
+//   (2) settings: tasks + vacuum + shifts — PAS na de bootstrap, want de
+//       settings-regel is ouder-only op basis van `root` (de stáát vóór de schrijf),
+//       en pas ná (1) is de aanmaker een vastgelegd ouder-lid. Eén atomische create
+//       met settings erin zou door de rules geweigerd worden (root kent het lid nog
+//       niet). Faalt (2), dan zaait de app de settings alsnog lui bij het openen.
+// Alle sleutels krijgen de BASE_ROOT-prefix (sandbox-basis) — NIET de gezins-scope
+// DB_ROOT, want die zetten we pas ná de schrijven via startFamily.
 async function submitCreateFamily(){
   const emailInp = document.getElementById('authEmail');
   const pwInp = document.getElementById('authPw');
@@ -1621,22 +1678,30 @@ async function submitCreateFamily(){
   }
 
   try {
-    if (await alreadyInFamily(user.uid)){
+    const existingFid = await familyIdOf(user.uid);
+    if (existingFid){
+      startFamily(existingFid);
       enterAppAfterAuth();
       alert('Dit account hoort al bij een gezin — je bent ermee ingelogd.');
       return;
     }
-    const familyId = push(dbRef('families')).key;
+    const newFid = push(baseRef('families')).key;
     const code = await generateUniqueFamilyCode();
-    const writes = {};
-    writes[DB_ROOT + `families/${familyId}/meta`] = { naam, gezinscode: code, aangemaakt: dayKey(new Date()) };
-    writes[DB_ROOT + `families/${familyId}/members/${user.uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true };
-    writes[DB_ROOT + `families/${familyId}/settings/tasks`] = DEFAULT_TASKS;
-    writes[DB_ROOT + `families/${familyId}/settings/shifts`] = DEFAULT_SHIFTS;
-    writes['familyCodes/' + code] = familyId;
-    writes['userIndex/' + user.uid] = familyId;
-    await update(ref(db), writes);
+    // (1) bootstrap — hierna is de aanmaker een vastgelegd ouder-lid
+    const bootstrap = {};
+    bootstrap[BASE_ROOT + `families/${newFid}/meta`] = { naam, gezinscode: code, aangemaakt: dayKey(new Date()) };
+    bootstrap[BASE_ROOT + `families/${newFid}/members/${user.uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true };
+    bootstrap[BASE_ROOT + 'familyCodes/' + code] = newFid;
+    bootstrap[BASE_ROOT + 'userIndex/' + user.uid] = newFid;
+    await update(ref(db), bootstrap);
+    // (2) settings — nu toegestaan door de ouder-only settings-regel
+    const settings = {};
+    settings[BASE_ROOT + `families/${newFid}/settings/tasks`] = DEFAULT_TASKS;
+    settings[BASE_ROOT + `families/${newFid}/settings/vacuum`] = DEFAULT_VACUUM;
+    settings[BASE_ROOT + `families/${newFid}/settings/shifts`] = DEFAULT_SHIFTS;
+    await update(ref(db), settings);
 
+    startFamily(newFid);
     enterAppAfterAuth();
     alert(`Gezin "${naam}" is aangemaakt!\nGezinscode: ${code}\nDeel deze code met de andere ouder om aan te sluiten.`);
   } catch (err){
@@ -1677,14 +1742,16 @@ async function submitJoinFamily(){
   }
 
   try {
-    if (await alreadyInFamily(user.uid)){
+    const existingFid = await familyIdOf(user.uid);
+    if (existingFid){
+      startFamily(existingFid);
       enterAppAfterAuth();
       alert('Dit account hoort al bij een gezin — je bent ermee ingelogd.');
       return;
     }
-    const snap = await get(ref(db, 'familyCodes/' + code));
-    const familyId = snap.exists() ? snap.val() : null;
-    if (!familyId){
+    const snap = await get(baseRef('familyCodes/' + code));
+    const fid = snap.exists() ? snap.val() : null;
+    if (!fid){
       // Uitloggen (geen half-lid laten rondhangen), maar de foutmelding via het
       // pending-mechanisme zetten: onAuthStateChanged(null) kan vóór of ná de
       // regels hieronder lopen en zou de melding anders overschrijven. Dubbel
@@ -1700,10 +1767,11 @@ async function submitJoinFamily(){
       return;
     }
     const writes = {};
-    writes[DB_ROOT + `families/${familyId}/members/${user.uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true, viaCode: code };
-    writes['userIndex/' + user.uid] = familyId;
+    writes[BASE_ROOT + `families/${fid}/members/${user.uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true, viaCode: code };
+    writes[BASE_ROOT + 'userIndex/' + user.uid] = fid;
     await update(ref(db), writes);
 
+    startFamily(fid);
     enterAppAfterAuth();
   } catch (err){
     authBusy = false;
