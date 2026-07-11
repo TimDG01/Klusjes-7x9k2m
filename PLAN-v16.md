@@ -1,9 +1,23 @@
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
-> **Status:** planfase afgerond. Nog géén code geschreven. Bouw gebeurt in latere
-> sessie(s). Zeg "ga verder vanaf fase X" om te hervatten.
-> **Branch:** `claude/chores-pwa-v16-plan-11kzki` — al het werk hier, `main` blijft live v15.
+> **Status:** Fase 1 gebouwd en getest (klusjesv2-config + ouder-login met
+> persistente sessie). Zeg "ga verder vanaf fase X" om te hervatten.
+> **Branch:** `claude/chores-pwa-v16-plan-11kzki` voor de planfase; de bouwfase draait
+> in deze sessie op `claude/phase-1-execution-fcxdv1`, `main` blijft live v15.
 > **Nieuw Firebase-project:** `klusjesv2` (config staat in fase 1 hieronder).
+>
+> **Let op — rules/data-model mismatch:** `firebase-rules-v16.json` staat al live op
+> `klusjesv2` (zie §5.1) en dekt enkel `userIndex`, `familyCodes` en
+> `families/{familyId}/…`. Fase 1 laat het datamodel bewust nog plat (`settings/`,
+> `days/`, `streaks/` zonder gezins-prefix, zie fase-1-tekst hieronder) — dat verhuist
+> pas in fase 3. Tot fase 3 is uitgevoerd, weigert de live database dus lees/schrijf-
+> toegang tot die platte paden voor een echte ingelogde ouder ("Geen verbinding met
+> de database"). Dit is enkel zichtbaar op een echt toestel/tegen de echte
+> klusjesv2-database — de Playwright-tests hieronder draaien tegen een fake-DB en
+> zien dit niet. Twee opties: (a) tijdelijke rules toevoegen voor de platte paden tot
+> fase 3 klaar is, of (b) fase 3 (datastructuur-migratie) vóór manuele
+> device-acceptatie uitvoeren. Nog geen van beide gedaan — bewust geparkeerd tot de
+> volgende sessie.
 
 ---
 
@@ -262,6 +276,21 @@ functionaliteit blijft werken voor een ingelogde ouder.
   breid uit met een fake `firebase-auth.js`). Verifieer: login, persistente sessie
   (herladen blijft ingelogd), uitloggen.
 - **Commit:** `Fase 1: klusjesv2-config + ouder-login met persistente sessie`.
+
+**Status: ✅ gebouwd & getest.** `firebaseConfig` staat op `klusjesv2`; `auth`-module
+geïmporteerd met `browserLocalPersistence`. Nieuw scherm `screen==='auth'` (login-kaart
+met e-mail/wachtwoord, NL-foutmeldingen, "Bezig…"-status) via `renderAuth`/`submitLogin`.
+`onAuthStateChanged` bepaalt het scherm en start `initFamily()` (alle bestaande
+tasks/vacuum/streaks/streakStart/dag-listeners, ongewijzigd in inhoud, enkel verplaatst
+uit module-top-level) precies één keer na de eerste succesvolle login — een latere
+token-refresh triggert `initFamily` niet opnieuw (`familyInited`-guard). Uitlog-knop
+zit in `versionLine()` (dus zichtbaar op elk scherm) en roept `signOut(auth)` aan.
+Playwright-tests (fake `firebase-app.js`/`firebase-database.js`/`firebase-auth.js` via
+`page.route()`) bevestigen: startscherm → fout-wachtwoord-melding → geslaagde login
+toont de dagkaarten → Beheer/Badges blijven werken → herladen blijft ingelogd →
+uitloggen keert terug naar het loginscherm. Zie de mismatch-waarschuwing hierboven bij
+**Status** voor wat dit betekent voor manuele device-acceptatie tegen de echte
+`klusjesv2`-database.
 
 ### Fase 2 — Registratie: nieuw gezin aanmaken + gezinscode
 **Doel:** een ouder kan een gezin oprichten en krijgt een unieke 6-teken code.

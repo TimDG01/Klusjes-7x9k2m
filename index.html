@@ -81,6 +81,12 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .pw-actions button{flex:1;font-weight:600;padding:11px 0;border-radius:12px;font-size:15px;}
 .pw-cancel{background:var(--track);color:var(--text);}
 .pw-ok{background:var(--green);color:#fff;}
+.pw-ok:disabled{opacity:.6;}
+
+.auth-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;gap:14px;}
+.auth-card{background:var(--card);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;width:100%;}
+.auth-title{font-size:20px;font-weight:700;margin-bottom:6px;}
+.auth-sub{font-size:14px;color:var(--text2);margin-bottom:18px;}
 
 .footer-row{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;}
 .admin-link{font-size:13px;font-weight:600;color:var(--text2);background:var(--card);padding:8px 16px;border-radius:10px;}
@@ -148,18 +154,21 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, onValue, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDqJMQobVVPy1Cx-rq-JAKZP2r9jFrzddI",
-  authDomain: "klusjes-9b7b8.firebaseapp.com",
-  databaseURL: "https://klusjes-9b7b8-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "klusjes-9b7b8",
-  storageBucket: "klusjes-9b7b8.firebasestorage.app",
-  messagingSenderId: "839893725363",
-  appId: "1:839893725363:web:a4ff615a8b832ac08c40c6"
+  apiKey: "AIzaSyBMLoS2ybJV-G0cYOIP_PHcc3BAbdAXI2c",
+  authDomain: "klusjesv2.firebaseapp.com",
+  databaseURL: "https://klusjesv2-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "klusjesv2",
+  storageBucket: "klusjesv2.firebasestorage.app",
+  messagingSenderId: "1066695207859",
+  appId: "1:1066695207859:web:3a5a9dfdde234b02acb9c6"
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
+const auth = getAuth(firebaseApp);
+await setPersistence(auth, browserLocalPersistence);
 
 const ADMIN_PASSWORD = 'Klusjes.01';
 
@@ -398,8 +407,14 @@ const DEFAULT_VACUUM = { weekdays: [1,5] }; // huidige planning: maandag & vrijd
 let current = new Date();
 if (current < START) current = new Date(START);
 
-let screen = 'day'; // 'day' | 'admin'
+let screen = 'auth'; // 'auth' | 'day' | 'admin' | 'badges'
 let adminUnlocked = false;
+
+let authUser = null;
+let authLoaded = false;
+let authError = null;
+let authBusy = false;
+let familyInited = false;
 
 let tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
 let tasksLoaded = false;
@@ -590,7 +605,7 @@ function dayKey(d){
 // versieregel onderaan elk scherm; in testmodus met een duidelijk niet te
 // missen marker zodat een testtoestel nooit voor de echte app wordt aanzien
 function versionLine(){
-  return `${DB_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}<div class="version">${VERSION}</div>`;
+  return `${DB_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}${authUser ? '<button class="admin-link" onclick="logout()">Uitloggen</button>' : ''}<div class="version">${VERSION}</div>`;
 }
 
 function tasksArray(role){
@@ -727,73 +742,100 @@ function writeCompletionFlag(kidKey, key){
   return newRanks;
 }
 
-// --- Firebase: taakinstellingen (permanente listener, hele app-levensduur) ---
-onValue(dbRef('settings/tasks'), snap => {
-  if (!snap.exists()){
-    set(dbRef('settings/tasks'), DEFAULT_TASKS);
-    return; // wacht op de her-fire van deze listener met de echte data
+// --- Firebase: alle DB-listeners voor het gezin — pas gestart nadat een ouder
+// is ingelogd (zie onAuthStateChanged hieronder). Vóór login is er geen
+// databasetoegang nodig en mogen deze niet draaien.
+function initFamily(){
+  // --- taakinstellingen (permanente listener, hele app-levensduur) ---
+  onValue(dbRef('settings/tasks'), snap => {
+    if (!snap.exists()){
+      set(dbRef('settings/tasks'), DEFAULT_TASKS);
+      return; // wacht op de her-fire van deze listener met de echte data
+    }
+    loadError = null;
+    const v = snap.val();
+    tasksCache = { A: v.A || {}, B: v.B || {}, lies: v.lies || {}, lenn: v.lenn || {} };
+    tasksLoaded = true;
+    render();
+  }, () => {
+    loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
+    render();
+  });
+
+  // --- stofzuiginstellingen (permanente listener, hele app-levensduur) ---
+  onValue(dbRef('settings/vacuum'), snap => {
+    if (!snap.exists()){
+      set(dbRef('settings/vacuum'), DEFAULT_VACUUM);
+      return; // wacht op de her-fire van deze listener met de echte data
+    }
+    loadError = null;
+    const v = snap.val();
+    vacuumCache = {
+      weekdays: v.weekdays || DEFAULT_VACUUM.weekdays.slice(),
+      floors: Array.isArray(v.floors) ? v.floors : null,
+      next: v.next || null,
+      override: typeof v.override === 'string' ? v.override : null,
+      lastDone: typeof v.lastDone === 'string' ? v.lastDone : null
+    };
+    vacuumLoaded = true;
+    render();
+  }, () => {
+    loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
+    render();
+  });
+
+  // --- reeksen & badges (permanente listener, hele app-levensduur) ---
+  // Geen seeding zoals bij settings/*: een ontbrekende tak betekent gewoon "nog
+  // niets verdiend" (zelfde behandeling als afwezige kind-buckets in tasks).
+  onValue(dbRef('streaks'), snap => {
+    loadError = null;
+    const v = snap.val() || {};
+    streaksCache = {
+      lies: { days: (v.lies && v.lies.days) || {}, badges: (v.lies && v.lies.badges) || {} },
+      lenn: { days: (v.lenn && v.lenn.days) || {}, badges: (v.lenn && v.lenn.badges) || {} }
+    };
+    streaksLoaded = true;
+    render();
+  }, () => {
+    // Streaks/badges zijn een extra laag bovenop de klusjes — een leesfout hier
+    // (bv. een ontbrekende /streaks-regel) mag de kernapp nooit platleggen: toon
+    // dan gewoon "nog geen badges" i.p.v. de app te laten vasthangen op "Laden…".
+    streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
+    streaksLoaded = true;
+    render();
+  });
+
+  // --- reeks-startdatum (instelbaar via Beheer) ---
+  // Geen laad-gate: streakStartKey heeft altijd een geldige fallback (DEFAULT_STREAK_START),
+  // dus de app hoeft hier nooit op te wachten en een leesfout kan niks platleggen.
+  onValue(dbRef('settings/streakStart'), snap => {
+    const v = snap.val();
+    streakStartKey = (typeof v === 'string' && parseDayKey(v)) ? v : DEFAULT_STREAK_START;
+    render();
+  }, () => {});
+
+  attachDayListener(current);
+}
+
+// --- Firebase: aanmelding — start/stop de gezinslisteners op basis van de
+// inlogstatus. Listeners draaien pas ná een geslaagde login (familyInited
+// zorgt dat ze maar één keer worden aangekoppeld, ook bij een tokenrefresh).
+onAuthStateChanged(auth, user => {
+  authUser = user;
+  authLoaded = true;
+  authBusy = false;
+  if (user){
+    authError = null;
+    if (screen === 'auth') screen = 'day';
+    if (!familyInited){
+      familyInited = true;
+      initFamily();
+    }
+  } else {
+    screen = 'auth';
   }
-  loadError = null;
-  const v = snap.val();
-  tasksCache = { A: v.A || {}, B: v.B || {}, lies: v.lies || {}, lenn: v.lenn || {} };
-  tasksLoaded = true;
-  render();
-}, () => {
-  loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
   render();
 });
-
-// --- Firebase: stofzuiginstellingen (permanente listener, hele app-levensduur) ---
-onValue(dbRef('settings/vacuum'), snap => {
-  if (!snap.exists()){
-    set(dbRef('settings/vacuum'), DEFAULT_VACUUM);
-    return; // wacht op de her-fire van deze listener met de echte data
-  }
-  loadError = null;
-  const v = snap.val();
-  vacuumCache = {
-    weekdays: v.weekdays || DEFAULT_VACUUM.weekdays.slice(),
-    floors: Array.isArray(v.floors) ? v.floors : null,
-    next: v.next || null,
-    override: typeof v.override === 'string' ? v.override : null,
-    lastDone: typeof v.lastDone === 'string' ? v.lastDone : null
-  };
-  vacuumLoaded = true;
-  render();
-}, () => {
-  loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
-  render();
-});
-
-// --- Firebase: reeksen & badges (permanente listener, hele app-levensduur) ---
-// Geen seeding zoals bij settings/*: een ontbrekende tak betekent gewoon "nog
-// niets verdiend" (zelfde behandeling als afwezige kind-buckets in tasks).
-onValue(dbRef('streaks'), snap => {
-  loadError = null;
-  const v = snap.val() || {};
-  streaksCache = {
-    lies: { days: (v.lies && v.lies.days) || {}, badges: (v.lies && v.lies.badges) || {} },
-    lenn: { days: (v.lenn && v.lenn.days) || {}, badges: (v.lenn && v.lenn.badges) || {} }
-  };
-  streaksLoaded = true;
-  render();
-}, () => {
-  // Streaks/badges zijn een extra laag bovenop de klusjes — een leesfout hier
-  // (bv. een ontbrekende /streaks-regel) mag de kernapp nooit platleggen: toon
-  // dan gewoon "nog geen badges" i.p.v. de app te laten vasthangen op "Laden…".
-  streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
-  streaksLoaded = true;
-  render();
-});
-
-// --- Firebase: reeks-startdatum (instelbaar via Beheer) ---
-// Geen laad-gate: streakStartKey heeft altijd een geldige fallback (DEFAULT_STREAK_START),
-// dus de app hoeft hier nooit op te wachten en een leesfout kan niks platleggen.
-onValue(dbRef('settings/streakStart'), snap => {
-  const v = snap.val();
-  streakStartKey = (typeof v === 'string' && parseDayKey(v)) ? v : DEFAULT_STREAK_START;
-  render();
-}, () => {});
 
 // --- Firebase: dagstatus (opnieuw aangesloten bij elke dagwissel) ---
 function attachDayListener(d){
@@ -814,9 +856,17 @@ function attachDayListener(d){
     render();
   });
 }
-attachDayListener(current);
 
 function render(){
+  if (screen === 'auth'){
+    if (!authLoaded){
+      document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
+      return;
+    }
+    renderAuth();
+    return;
+  }
+
   if (loadError){
     document.getElementById('app').innerHTML = `<div class="loading">${escapeHtml(loadError)}</div>`;
     return;
@@ -1371,6 +1421,62 @@ function renderBadgeSection(kidKey, name, color){
   `;
 }
 
+// --- Aanmelden (auth) ---
+// Startscherm vóór elke andere schermweergave: pas na een geslaagde ouder-login
+// (onAuthStateChanged) start de rest van de app zijn databasetoegang.
+function authErrorMessage(code){
+  switch (code){
+    case 'auth/invalid-email': return 'Ongeldig e-mailadres.';
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential': return 'E-mailadres of wachtwoord onjuist.';
+    case 'auth/too-many-requests': return 'Te veel pogingen. Probeer het later opnieuw.';
+    case 'auth/network-request-failed': return 'Geen internetverbinding.';
+    default: return 'Inloggen mislukt. Probeer het opnieuw.';
+  }
+}
+
+function submitLogin(){
+  const emailInp = document.getElementById('authEmail');
+  const pwInp = document.getElementById('authPw');
+  const email = emailInp ? emailInp.value.trim() : '';
+  const pw = pwInp ? pwInp.value : '';
+  if (!email || !pw){
+    authError = 'Vul e-mailadres en wachtwoord in.';
+    render();
+    return;
+  }
+  authError = null;
+  authBusy = true;
+  render();
+  signInWithEmailAndPassword(auth, email, pw).catch(err => {
+    authBusy = false;
+    authError = authErrorMessage(err.code);
+    render();
+  });
+  // bij succes doet onAuthStateChanged de rest (screen wisselt, listeners starten)
+}
+
+function logout(){
+  signOut(auth);
+}
+
+function renderAuth(){
+  document.getElementById('app').innerHTML = `
+    <div class="auth-screen">
+      <div class="auth-card">
+        <div class="auth-title">Klusjesschema</div>
+        <div class="auth-sub">Log in als ouder om verder te gaan.</div>
+        <input id="authEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" class="pw-input" placeholder="E-mailadres" onkeydown="if(event.key==='Enter')document.getElementById('authPw').focus()">
+        <input id="authPw" type="password" autocomplete="current-password" class="pw-input" placeholder="Wachtwoord" onkeydown="if(event.key==='Enter')submitLogin()">
+        <div class="pw-error">${escapeHtml(authError || '')}</div>
+        <button class="pw-ok" style="width:100%" onclick="submitLogin()" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Bezig…' : 'Inloggen als ouder'}</button>
+      </div>
+      ${versionLine()}
+    </div>
+  `;
+}
+
 // --- Admin ---
 function openAdmin(){
   if (!adminUnlocked){ showPasswordPrompt(); return; }
@@ -1642,7 +1748,8 @@ Object.assign(window, {
   toggleWeekday, toggleVacuumWeekday,
   postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
   addFloor, editFloor, deleteFloor, editStreakStart,
-  submitPassword, closePasswordPrompt
+  submitPassword, closePasswordPrompt,
+  submitLogin, logout
 });
 
 render();
