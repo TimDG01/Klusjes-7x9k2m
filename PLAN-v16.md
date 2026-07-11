@@ -458,6 +458,32 @@ review; laat een sterk model ook (1) kind-schrijfrechten, (2) niet-member-leesre
   dubbele naam → nette NL-fout.
 - **Commit:** `Fase 4: gezinsleden beheren + kind-accounts via tweede app-instantie`.
 
+**Status: ✅ gebouwd & getest.** Nieuw scherm `screen==='members'` (footer-knop "👨‍👩‍👧
+Gezin", zelfde wachtwoord-drempel als Beheer via een `pwTarget`-parameter — verdwijnt in
+fase 7): gezinsnaam + gezinscode met 📋-kopieerknop, kinderlijst met per kind 🎨 kleur
+(cyclet door `KID_COLORS`), ✏️ hernoemen, 🔑 pincode wijzigen, ⏸/▶ pauzeren (soft-delete,
+`actief`-vlag) en 🗑 verwijderen (member-record weg na zware confirm; historiek/streaks
+en het login-account blijven), en de ouderlijst ("jij"-marker, eigen naam hernoembaar).
+Twee nieuwe listeners in `initFamily` (eigen gates `metaLoaded`/`membersLoaded`,
+CLAUDE.md-patroon; geen seeding — de bootstrap schreef ze al). **Kind toevoegen** volgt
+exact de rules-volgorde uit het plan: tijdelijke tweede app-instantie
+(`initializeApp(config,'secondary-…')`), daar `createUserWithEmailAndPassword` met het
+synthetische adres `{genormaliseerde-naam}@kids.klusjesv2.app` + pincode (≥6 cijfers,
+gevalideerd), dan als kind (secundaire app) `userIndex/{kidUid}`, dan als ouder
+(primaire app) `members/{kidUid}`, en tot slot `signOut`+`deleteApp` in een `finally`.
+Bestaat het adres al, dan probeert de flow secundair in te loggen met de opgegeven pin
+en hecht het een eerder gestrand account alsnog aan (zelfde herstel-idee als
+`ensureAccount`); hoort het account al bij een ánder gezin → "Deze naam is al in
+gebruik". **BESLISPUNT pincode-reset → beslist:** wijzigen kan alleen mét de huidige pin
+(secundaire app: inloggen met oude pin → `updatePassword`); een vergeten pin is een
+bekende beperking (client-side is andermans wachtwoord niet te resetten zonder
+Admin-SDK/Cloud Function) en staat zo ook op het scherm vermeld. Playwright
+(`test-fase4.js`, fake-auth nu met state per app-instantie zoals de echte SDK):
+gezinscode zichtbaar en correct, kind toevoegen mét de kritische assertie dat de ouder
+ingelogd blijft, genormaliseerde gebruikersnaam + `userIndex`-wegwijzer kloppen, dubbele
+naam → nette NL-fout, pin wijzigen (foute oude pin → fout; juiste → echt gewijzigd),
+hernoemen, pauzeren/activeren en verwijderen. Fase 1–3 blijven groen.
+
 ### Fase 5 — Kind-login (naam + pincode) + afgeschermde kindweergave
 **Doel:** kind logt kindvriendelijk in en ziet enkel eigen klusjes/streaks/badges.
 - Startscherm-knop "Inloggen als kind": grote knoppen, `inputmode="numeric"` voor de pin.

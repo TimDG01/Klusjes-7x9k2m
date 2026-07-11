@@ -148,15 +148,17 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .admin-next-row{display:flex;align-items:center;gap:6px;font-size:14px;padding:10px 0 6px;border-bottom:1px solid var(--border);}
 .admin-next-row span{flex:1;}
 .admin-next-row small{color:var(--text2);}
+.member-sub{font-size:11px;color:var(--text2);}
+.family-code{font-size:22px;letter-spacing:4px;font-variant-numeric:tabular-nums;}
 </style>
 </head>
 <body>
 <div id="app"></div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, onValue, get, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBMLoS2ybJV-G0cYOIP_PHcc3BAbdAXI2c",
@@ -456,11 +458,37 @@ function defaultDisplayName(email){
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
+// --- Accountmodel kinderen (zie PLAN-v16 §3) ---
+// Een kind logt in met gebruikersnaam + pincode. De app zet dat om naar een
+// synthetisch e-mailadres {genormaliseerde-naam}@kids.klusjesv2.app met de
+// pincode als wachtwoord — Firebase weigert dubbele e-mailadressen, dus
+// gebruikersnamen zijn gratis globaal uniek. Pincode ≥ 6 cijfers (Firebase-
+// minimum); dit is een lichte drempel tegen broers/zussen, geen sterke
+// beveiliging.
+const KIDS_EMAIL_DOMAIN = 'kids.klusjesv2.app';
+// gebruikersnaam → e-mail-local-part: kleine letters, accenten weg, alleen a-z0-9
+function normalizeUsername(name){
+  return String(name || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+function kidEmail(username){
+  return username + '@' + KIDS_EMAIL_DOMAIN;
+}
+// kleurenpalet voor gezinsleden; de eerste twee zijn de historische Lies/Lenn-
+// kleuren zodat de fase-8-migratie dezelfde tinten kan behouden
+const KID_COLORS = ['#B5006E','#185FA5','#1D9E75','#D5493A','#946200','#7048E8','#0FA3A3','#E8590C'];
+function nextFreeColor(){
+  const used = Object.values(membersCache).map(m => m.kleur).filter(Boolean);
+  return KID_COLORS.find(c => !used.includes(c)) || KID_COLORS[Object.keys(membersCache).length % KID_COLORS.length];
+}
+
 let current = new Date();
 if (current < START) current = new Date(START);
 
-let screen = 'auth'; // 'auth' | 'day' | 'admin' | 'badges'
+let screen = 'auth'; // 'auth' | 'day' | 'admin' | 'badges' | 'members'
 let adminUnlocked = false;
+let pwTarget = 'admin'; // welk scherm het wachtwoordvenster na ontgrendeling opent
 
 let authUser = null;
 let authLoaded = false;
@@ -479,6 +507,11 @@ let pendingAuthMode = null;
 
 let tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
 let tasksLoaded = false;
+
+let metaCache = null;   // { naam, gezinscode, aangemaakt }
+let metaLoaded = false;
+let membersCache = {};  // { uid: { rol, weergavenaam, gebruikersnaam?, kleur?, actief } }
+let membersLoaded = false;
 
 let vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
 let vacuumLoaded = false;
@@ -880,6 +913,30 @@ function initFamily(){
     render();
   }, () => {}));
 
+  // --- gezinsgegevens: meta (naam + gezinscode) ---
+  // Geen seeding: de bootstrap bij het aanmaken schreef meta al; absent kan
+  // praktisch niet, maar wordt als leeg behandeld i.p.v. te blijven hangen.
+  familyUnsubs.push(onValue(dbRef('meta'), snap => {
+    loadError = null;
+    metaCache = snap.val() || null;
+    metaLoaded = true;
+    render();
+  }, () => {
+    loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
+    render();
+  }));
+
+  // --- gezinsleden (voor het ledenscherm; fase 6 gaat hier ook de kaarten op bouwen) ---
+  familyUnsubs.push(onValue(dbRef('members'), snap => {
+    loadError = null;
+    membersCache = snap.val() || {};
+    membersLoaded = true;
+    render();
+  }, () => {
+    loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
+    render();
+  }));
+
   attachDayListener(current);
 }
 
@@ -897,6 +954,8 @@ function teardownFamily(){
   familyId = null;
   DB_ROOT = BASE_ROOT; // terug naar de sandbox-basis, zodat een volgende bootstrap klopt
   tasksLoaded = vacuumLoaded = dayLoaded = streaksLoaded = false;
+  metaCache = null; metaLoaded = false;
+  membersCache = {}; membersLoaded = false;
   tasksCache = { A:{}, B:{}, lies:{}, lenn:{} };
   vacuumCache = { weekdays: DEFAULT_VACUUM.weekdays, floors: null, next: null, override: null, lastDone: null };
   streaksCache = { lies:{ days:{}, badges:{} }, lenn:{ days:{}, badges:{} } };
@@ -1029,6 +1088,15 @@ function render(){
     return;
   }
 
+  if (screen === 'members'){
+    if (!metaLoaded || !membersLoaded){
+      document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
+      return;
+    }
+    renderMembers();
+    return;
+  }
+
   if (!tasksLoaded || !dayLoaded || !vacuumLoaded || !streaksLoaded){
     document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
     return;
@@ -1136,6 +1204,7 @@ function render(){
     <div class="footer-row">
       <div class="footer-btns">
         <button class="admin-link" onclick="openBadges()">🏆 Badges</button>
+        <button class="admin-link" onclick="openMembers()">👨‍👩‍👧 Gezin</button>
         <button class="admin-link" onclick="openAdmin()">⚙️ Beheer</button>
       </div>
       ${versionLine()}
@@ -1823,10 +1892,248 @@ function renderAuth(){
   `;
 }
 
+// --- Gezinsleden beheren (screen 'members') ---
+// Los van "Beheer taken": hier leven de accounts (kinderen + mede-ouders),
+// daar de klusjes. Kind-accounts worden aangemaakt via een TWEEDE, tijdelijke
+// app-instantie zodat de ouder ingelogd blijft (createUser logt de maker in).
+
+function membersArray(rol){
+  return Object.keys(membersCache)
+    .filter(uid => (membersCache[uid].rol || 'kind') === rol)
+    .map(uid => ({ uid, ...membersCache[uid] }))
+    .sort((a, b) => String(a.weergavenaam).localeCompare(String(b.weergavenaam)));
+}
+
+function copyFamilyCode(){
+  const code = metaCache && metaCache.gezinscode;
+  if (!code) return;
+  const fallback = () => prompt('Kopieer de gezinscode:', code);
+  try {
+    navigator.clipboard.writeText(code).then(() => {
+      const b = document.getElementById('copyCodeBtn');
+      if (b) b.textContent = '✅';
+    }, fallback);
+  } catch (e) { fallback(); }
+}
+
+// Maakt (of hergebruikt) het kind-account in een tijdelijke secundaire app en
+// geeft de kid-uid terug. Volgorde die de rules respecteert (PLAN-v16 fase 4):
+//   1. secundair: createUser(username@kids…, pin) → ingelogd als kind;
+//   2. secundair (als kind): userIndex/{kidUid} = familyId (mag: eigen uid);
+//   3. primair (als ouder): members/{kidUid} = {rol:'kind', …} (mag: ouder).
+// Bestaat het e-mailadres al, dan proberen we secundair in te loggen met de
+// opgegeven pin: lukt dat én hoort het account nog nergens (of al bij dít
+// gezin — een eerder gestrande poging), dan hechten we het alsnog aan. Anders
+// is de naam echt bezet.
+async function createChildAccount(username, pin){
+  const secApp = initializeApp(firebaseConfig, 'secondary-' + Date.now());
+  const secAuth = getAuth(secApp);
+  const secDb = getDatabase(secApp);
+  try {
+    let kidUser;
+    try {
+      kidUser = (await createUserWithEmailAndPassword(secAuth, kidEmail(username), pin)).user;
+    } catch (err){
+      if (!err || err.code !== 'auth/email-already-in-use') throw err;
+      try {
+        kidUser = (await signInWithEmailAndPassword(secAuth, kidEmail(username), pin)).user;
+      } catch (e2){
+        throw { code: 'name-taken' };
+      }
+      const idx = await get(ref(secDb, BASE_ROOT + 'userIndex/' + kidUser.uid));
+      if (idx.exists() && idx.val() !== familyId) throw { code: 'name-taken' };
+    }
+    // als kind de eigen wegwijzer zetten (self-only volgens de rules)
+    await set(ref(secDb, BASE_ROOT + 'userIndex/' + kidUser.uid), familyId);
+    return kidUser.uid;
+  } finally {
+    try { await signOut(secAuth); } catch (e) {}
+    try { await deleteApp(secApp); } catch (e) {}
+  }
+}
+
+async function addChildMember(){
+  const rawName = prompt('Gebruikersnaam van het kind (waarmee het inlogt):');
+  if (rawName === null) return;
+  const username = normalizeUsername(rawName);
+  if (username.length < 2){
+    alert('Gebruik minstens 2 letters of cijfers (spaties en leestekens tellen niet mee).');
+    return;
+  }
+  const display = (prompt('Weergavenaam (zoals op de kaart):',
+    rawName.trim().charAt(0).toUpperCase() + rawName.trim().slice(1)) || '').trim();
+  if (!display) return;
+  const pin = prompt('Pincode (minstens 6 cijfers):');
+  if (pin === null) return;
+  if (!/^\d{6,}$/.test(pin.trim())){
+    alert('De pincode moet uit minstens 6 cijfers bestaan.');
+    return;
+  }
+  try {
+    const kidUid = await createChildAccount(username, pin.trim());
+    if (membersCache[kidUid]){
+      alert(`"${display}" is al lid van dit gezin.`);
+      return;
+    }
+    // als ouder (primaire app) het lid vastleggen
+    await update(dbRef('members/' + kidUid), {
+      rol: 'kind', weergavenaam: display, gebruikersnaam: username,
+      kleur: nextFreeColor(), actief: true
+    });
+    alert(`${display} is toegevoegd. Inloggen kan met gebruikersnaam "${username}" en de gekozen pincode.`);
+  } catch (err){
+    if (err && err.code === 'name-taken'){
+      alert('Deze naam is al in gebruik, kies een andere.');
+    } else if (err && err.code === 'auth/weak-password'){
+      alert('De pincode moet uit minstens 6 cijfers bestaan.');
+    } else if (err && err.code === 'auth/network-request-failed'){
+      alert('Geen internetverbinding. Probeer het opnieuw.');
+    } else {
+      alert('Kind toevoegen is niet gelukt. Probeer het opnieuw.');
+    }
+  }
+}
+
+// Pincode wijzigen vereist de HUIDIGE pin (beslispunt uit het plan): zonder
+// Admin-SDK/Cloud Function kan een client een andermans wachtwoord niet
+// resetten. Een vergeten pin is dus een bekende beperking — het kind-account
+// kan dan alleen via een nieuw account (andere naam) opnieuw meedoen.
+async function changeChildPin(uid){
+  const m = membersCache[uid];
+  if (!m || !m.gebruikersnaam) return;
+  const oldPin = prompt(`Huidige pincode van ${m.weergavenaam}:\n(zonder de huidige pin kan de pincode niet gewijzigd worden)`);
+  if (oldPin === null) return;
+  const newPin = prompt('Nieuwe pincode (minstens 6 cijfers):');
+  if (newPin === null) return;
+  if (!/^\d{6,}$/.test(newPin.trim())){
+    alert('De nieuwe pincode moet uit minstens 6 cijfers bestaan.');
+    return;
+  }
+  const secApp = initializeApp(firebaseConfig, 'secondary-' + Date.now());
+  const secAuth = getAuth(secApp);
+  try {
+    const cred = await signInWithEmailAndPassword(secAuth, kidEmail(m.gebruikersnaam), oldPin.trim());
+    await updatePassword(cred.user, newPin.trim());
+    alert('Pincode gewijzigd.');
+  } catch (err){
+    if (err && (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential')){
+      alert('De huidige pincode klopt niet.');
+    } else if (err && err.code === 'auth/weak-password'){
+      alert('De nieuwe pincode moet uit minstens 6 cijfers bestaan.');
+    } else {
+      alert('Pincode wijzigen is niet gelukt. Probeer het opnieuw.');
+    }
+  } finally {
+    try { await signOut(secAuth); } catch (e) {}
+    try { await deleteApp(secApp); } catch (e) {}
+  }
+}
+
+function renameMember(uid){
+  const m = membersCache[uid];
+  if (!m) return;
+  const naam = (prompt('Weergavenaam:', m.weergavenaam) || '').trim();
+  if (!naam) return;
+  update(dbRef('members/' + uid), { weergavenaam: naam });
+}
+
+function cycleMemberColor(uid){
+  const m = membersCache[uid];
+  if (!m) return;
+  const i = KID_COLORS.indexOf(m.kleur);
+  update(dbRef('members/' + uid), { kleur: KID_COLORS[(i + 1) % KID_COLORS.length] });
+}
+
+// Deactiveren = zachte pauze: het kind verdwijnt (vanaf fase 6) van de kaarten
+// maar historiek, badges en het account blijven bestaan. Aanbevolen boven
+// verwijderen.
+function toggleMemberActive(uid){
+  const m = membersCache[uid];
+  if (!m) return;
+  update(dbRef('members/' + uid), { actief: m.actief === false });
+}
+
+function deleteMember(uid){
+  const m = membersCache[uid];
+  if (!m) return;
+  if (!confirm(`${m.weergavenaam} uit het gezin verwijderen?\n\nTaakhistoriek en badges blijven bewaard, maar ${m.weergavenaam} kan niet meer inloggen in dit gezin. Het login-account zelf blijft bestaan (dat kan de app niet verwijderen).\n\nTip: deactiveren (⏸) is meestal beter.`)) return;
+  remove(dbRef('members/' + uid));
+}
+
+function renderMembers(){
+  const kids = membersArray('kind');
+  const parents = membersArray('ouder');
+  const code = metaCache && metaCache.gezinscode;
+
+  const kidRows = kids.map(m => `
+    <div class="admin-task-row">
+      <div class="admin-task-top">
+        <div class="dot" style="background:${m.kleur || 'var(--text3)'}"></div>
+        <div class="admin-task-label">${escapeHtml(m.weergavenaam)}${m.actief === false ? ' <span class="admin-tag">gepauzeerd</span>' : ''}<br>
+          <span class="member-sub">inlognaam: ${escapeHtml(m.gebruikersnaam || '?')}</span></div>
+        <button class="admin-icon-btn" onclick="cycleMemberColor('${m.uid}')" title="Kleur wisselen">🎨</button>
+        <button class="admin-icon-btn" onclick="renameMember('${m.uid}')" title="Weergavenaam wijzigen">✏️</button>
+        <button class="admin-icon-btn" onclick="changeChildPin('${m.uid}')" title="Pincode wijzigen">🔑</button>
+        <button class="admin-icon-btn" onclick="toggleMemberActive('${m.uid}')" title="${m.actief === false ? 'Weer activeren' : 'Pauzeren'}">${m.actief === false ? '▶️' : '⏸️'}</button>
+        <button class="admin-icon-btn danger" onclick="deleteMember('${m.uid}')" title="Uit het gezin verwijderen">${TRASH_ICON}</button>
+      </div>
+    </div>
+  `).join('') || '<div class="admin-vacuum-note">Nog geen kinderen toegevoegd.</div>';
+
+  const parentRows = parents.map(m => `
+    <div class="admin-task-row">
+      <div class="admin-task-top">
+        <div class="dot" style="background:${m.kleur || 'var(--text3)'}"></div>
+        <div class="admin-task-label">${escapeHtml(m.weergavenaam)}${authUser && m.uid === authUser.uid ? ' <span class="admin-tag">jij</span>' : ''}</div>
+        ${authUser && m.uid === authUser.uid ? `<button class="admin-icon-btn" onclick="renameMember('${m.uid}')" title="Weergavenaam wijzigen">✏️</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="admin-header">
+      <button class="admin-back" onclick="backToDay()">‹ Terug</button>
+      <div class="admin-title">Gezin${metaCache && metaCache.naam ? ' — ' + escapeHtml(metaCache.naam) : ''}</div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-role-title">Gezinscode</div>
+      <div class="admin-next-row" style="border-bottom:none;padding-bottom:0;">
+        <span><b class="family-code">${escapeHtml(code || '—')}</b><br>
+        <small>deel deze code met een mede-ouder om aan te sluiten</small></span>
+        ${code ? `<button id="copyCodeBtn" class="admin-icon-btn accent" onclick="copyFamilyCode()" title="Kopieer de gezinscode">📋</button>` : ''}
+      </div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-role-title">Kinderen</div>
+      ${kidRows}
+      <button class="admin-add-btn" onclick="addChildMember()">+ Kind toevoegen</button>
+      <div class="admin-vacuum-note">Een kind logt in met zijn gebruikersnaam en pincode. Pincode kwijt? Die is alleen te wijzigen mét de huidige pin — bewaar ze dus goed.</div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-role-title">Ouders</div>
+      ${parentRows}
+    </div>
+    ${versionLine()}
+  `;
+}
+
 // --- Admin ---
 function openAdmin(){
+  pwTarget = 'admin';
   if (!adminUnlocked){ showPasswordPrompt(); return; }
   screen = 'admin';
+  render();
+}
+
+// Ledenscherm: zelfde wachtwoord-drempel als Beheer (verdwijnt in fase 7,
+// wanneer toegang aan de ouder-rol hangt i.p.v. aan een client-side wachtwoord).
+function openMembers(){
+  pwTarget = 'members';
+  if (!adminUnlocked){ showPasswordPrompt(); return; }
+  screen = 'members';
   render();
 }
 
@@ -1867,7 +2174,7 @@ function submitPassword(){
   }
   adminUnlocked = true;
   closePasswordPrompt();
-  screen = 'admin';
+  screen = pwTarget;
   render();
 }
 
@@ -2095,7 +2402,9 @@ Object.assign(window, {
   postponeVacuum, preponeVacuum, pullVacuumToToday, advanceVacuumTurn, rewindVacuumTurn,
   addFloor, editFloor, deleteFloor, editStreakStart,
   submitPassword, closePasswordPrompt,
-  submitLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily
+  submitLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
+  openMembers, addChildMember, changeChildPin, renameMember, cycleMemberColor,
+  toggleMemberActive, deleteMember, copyFamilyCode
 });
 
 render();
