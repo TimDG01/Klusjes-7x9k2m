@@ -621,6 +621,61 @@ Extra optioneel: kind vinkt eenmalige taak af = verwijderen van `/families/fam1/
 (type Verwijderen, uid `kind1`) → ✅; hetzelfde met de terugkerende `t1` → ❌. Ruim daarna de
 testdata weer op.
 
+### 5.3 Tweede rules-review (na fase 3, sterk model) — ✅ geen blokkers
+
+Volledige review van `firebase-rules-v16.json` tegen de fase-3-implementatie (élke
+`dbRef`/`baseRef`-schrijf en -lees van de app geïnventariseerd en getoetst), op de vier
+gevraagde punten:
+
+1. **Kan een kind schrijven waar het niet mag? Nee.** Zichzelf promoveren kan niet
+   (self-insert vereist `!members/{uid}.exists()` — een kind ís al lid); andermans
+   member-record, `meta`, `settings` (behalve de bedoelde eenmalige-taak-delete en de
+   shift-rotatiestand), andermans `checks`/`snap`/`streaks`: allemaal ouder-only of
+   eigen-uid-only. De platte dag-sleutels (`days/{key}/{kid}-{taskId}`) vallen onder de
+   dag-node (ouder-only) — een kind kan die niet schrijven, wat nu net de fase-5-
+   randvoorwaarde bevestigt (zie bevinding B hieronder).
+2. **Kan een niet-lid gezinsdata lezen? Nee.** De enige `.read` binnen `families` staat
+   op `$familyId` en eist echte membership via `root`; `families` zelf en `familyCodes`
+   zijn niet opsombaar (geen `.read` op de lijstnodes); `userIndex` is strikt self-only.
+   Ook cross-gezin (lid van A leest B) is dicht.
+3. **Kan `/familyCodes` of `/userIndex` misbruikt worden? Geen toegang te winnen.**
+   Een nep-code-entry laten wijzen naar andermans gezin kan alleen als je diens
+   familyId al kent (niet leesbaar; push-keys onvoorspelbaar), en zelfs dan faalt de
+   join erop dat `viaCode` tegen de échte `meta/gezinscode` wordt gecheckt, niet tegen
+   de code-entry. Je eigen `userIndex` vervalsen geeft geen leesrecht (read hangt aan
+   membership) — de app toont dan enkel zelf "Geen verbinding". Restpunten: zie C/D.
+4. **Werkt gezin aanmaken correct? Ja, dankzij de split-create uit fase 3.** Bij een
+   multi-path update is `root` de staat vóór de héle update, dus bootstrap (meta:
+   `!data.exists()`; members: eerste-lid-self-insert; familyCodes: `!data.exists()`;
+   userIndex: self) slaagt, en de settings-schrijf erná slaagt omdat de aanmaker dan
+   een vastgelegd ouder-lid is. Eén atomische create mét settings zou falen — precies
+   het gat dat fase 3 vond en fixte. Join idem: diepere `$memberUid`-allow overstemt de
+   node-level ouder-only regel (RTDB-allow-cascade), gegate op de juiste code.
+
+**Bevindingen (geen blokkers, wel bewust te dragen):**
+- **A (info).** Elke ingelogde gebruiker kan op een nog niet bestaand familyId een
+  meta+members bootstrappen — dat ís "gezin aanmaken" en is onschadelijk: bestaande
+  gezinnen zijn niet kaapbaar (meta bestaat → ouder-only; members bestaat → code-gate)
+  en andermans toekomstige push-key raden is onhaalbaar (~120 bits).
+- **B (randvoorwaarde fase 5, verscherpt).** Vóór kinderen zelf afvinken moet niet
+  alleen de dag-status per uid genest worden (§2.2 → `checks/{uid}`), maar moet ook
+  stofzuigen naar `settings/shifts` verhuisd zijn: het afvinken van een beurt schrijft
+  `settings/vacuum/next|override|lastDone` en `days/{key}/vac`, en die paden zijn
+  ouder-only (de member-uitzonderingen bestaan alleen op `shifts/...` en `days/.../shift`).
+  Eérst fase 6-mechanieken (of dat deel naar voren halen), dán kind-login activeren.
+- **C (laag).** `familyCodes`-entries zijn door niemand te verwijderen of te wijzigen
+  (`!data.exists()`), ook niet door de eigenaar — squatting van losse codes kan (zonder
+  effect, zie punt 3), opruimen kan later met een eigenaar-regel. Geen datalek.
+- **D (laag, afweging).** Een 6-tekens code (32 tekens, ~1,07 mld combinaties) is via
+  de REST-API in dagen te brute-forcen zonder rate limiting; de beloning is enkel
+  "mogen aansluiten als ouder". Voor een gezinsapp acceptabel; App Check of langere
+  codes zijn latere verbeteringen.
+- **E (laag).** Er is nergens `.validate` — een kind kan bv. zijn eigen
+  `streaks/{uid}/badges` vervalsen via directe writes, en records kunnen vormloos zijn.
+  Inherent aan client-only zonder Cloud Functions; hooguit gamification-vals spelen
+  binnen het eigen gezin.
+
+
 ---
 
 ## 6. Risico's & gotchas (checklist voor de bouw)
