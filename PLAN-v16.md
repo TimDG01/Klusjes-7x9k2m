@@ -10,6 +10,13 @@
 > al in fase 5 zijn meegenomen — zie het fase-5-statusblok. Elke fase heeft onderaan §4
 > een eigen "Status: ✅"-blok met wat er precies gebeurd is. Zeg "ga verder met fase 6"
 > (of "vanaf fase X") om te hervatten.
+>
+> **Modeladvies staat per fase-kop in §4** (bouw én, waar relevant, een aparte
+> reviewronde). **Vaste regel: vóór je een fase start, meld expliciet welk
+> model/niveau aanbevolen wordt voor die fase** — ook in een verse sessie, ook als
+> de gebruiker het niet vraagt. Kort overzicht: fase 6 en 8 → Opus/high (+ Opus/high
+> reviewronde erna, onomkeerbaar of algoritmisch lastig werk); fase 7 en 9 →
+> Sonnet of Fable, medium (mechanisch, laag risico).
 > **Branch:** `claude/chores-pwa-v16-plan-11kzki` was de planfase; **alle bouw-commits
 > (fase 1–5) staan op `claude/phase-1-execution-fcxdv1`** — dáár verder werken. `main`
 > blijft live v15 (v16 gaat pas live bij merge). Werkboom is schoon en volledig gepusht.
@@ -284,6 +291,8 @@ effectief plat.
 > "wat is af / volgende stap"-samenvatting.
 
 ### Fase 1 — Firebase-config vervangen + Auth-basis (ouder-login, persistente sessie)
+> **Gebruikt: Fable 5.** Achteraf bekeken een goede fit — mechanisch, laag risico.
+
 **Doel:** app draait op `klusjesv2`, ouder kan inloggen en blijft ingelogd; bestaande
 functionaliteit blijft werken voor een ingelogde ouder.
 - Vervang `firebaseConfig` (regels 152-160) door de klusjesv2-config (zie onder). Geen
@@ -323,6 +332,11 @@ uitloggen keert terug naar het loginscherm. Zie de mismatch-waarschuwing hierbov
 `klusjesv2`-database.
 
 ### Fase 2 — Registratie: nieuw gezin aanmaken + gezinscode
+> **Gebruikt: Fable 5**, met een aparte reviewronde (Opus) die twee echte bugs
+> vond (signOut-race, gestrande accounts) — zie de review-fixes hierboven.
+> Achteraf: voor deze fase (schrijft naar accounts/auth-state) is een reviewronde
+> wél de moeite waard, ook al is de bouw zelf mechanisch.
+
 **Doel:** een ouder kan een gezin oprichten en krijgt een unieke 6-teken code.
 - Startscherm-knop "Nieuw gezin aanmaken": `createUserWithEmailAndPassword` →
   gezinsnaam-prompt → genereer `familyId` (`push`-key) + 6-teken code (hoofdletters+cijfers,
@@ -371,6 +385,11 @@ komt op het dagscherm, en een foute code toont een foutmelding zónder het scher
 laten doorstromen naar de app.
 
 ### Fase 3 — Datastructuur + userIndex + security rules (EERSTE versie) → **STOP**
+> **Gebruikt: Fable 5** voor de bouw, **Opus/high** voor de verplichte rules-review
+> op het STOP-punt (§5.3) — die vond het bootstrap/settings-schrijfgat dat de
+> planfase-Playground-test miste. Bevestigt de vuistregel: bouw mag snel, de
+> beveiligingsregels-review niet.
+
 **Doel:** alle app-data leeft onder `families/{familyId}/`; rules-JSON opgeleverd.
 - Maak `DB_ROOT` dynamisch: na login `familyId` uit `/userIndex/{uid}` → `DB_ROOT =
   'families/'+familyId+'/'`. `dbRef`/`rootUpdate` ongewijzigd → alle paden verhuizen mee.
@@ -444,6 +463,10 @@ review; laat een sterk model ook (1) kind-schrijfrechten, (2) niet-member-leesre
 (3) `familyCodes`/`userIndex`-misbruik nog eens nalopen vóór fase 4.
 
 ### Fase 4 — Scherm "Gezinsleden beheren" + kind-accounts (tweede app-instantie!)
+> **Gebruikt: Fable 5.** De kritieke eis (ouder blijft ingelogd tijdens kind-aanmaak)
+> was scherp genoeg beschreven in het plan dat een snel model het correct bouwde;
+> de test dekte het expliciet af in plaats van op review te vertrouwen.
+
 **Doel:** ouder maakt/beheert kinderen; login-account wordt onderliggend aangemaakt.
 - Apart scherm (nieuw `screen`-type, eigen knop/icoon), LOS van "Beheer taken".
 - Lijst van bestaande kinderen bovenaan; gezinscode met kopieerknop.
@@ -496,6 +519,12 @@ naam → nette NL-fout, pin wijzigen (foute oude pin → fout; juiste → echt g
 hernoemen, pauzeren/activeren en verwijderen. Fase 1–3 blijven groen.
 
 ### Fase 5 — Kind-login (naam + pincode) + afgeschermde kindweergave
+> **Gebruikt: Fable 5.** Deze fase trok ongepland een stuk fase 6 naar voren
+> (per-uid-nesting + dynamische kind-kaarten, wegens rules-bevinding B) — dat
+> verhoogde het risico t.o.v. de oorspronkelijke inschatting. Ging goed, maar met
+> de kennis van nu was hier Sonnet/medium of een korte reviewronde verstandiger
+> geweest gezien de omvang van de refactor.
+
 **Doel:** kind logt kindvriendelijk in en ziet enkel eigen klusjes/streaks/badges.
 - Startscherm-knop "Inloggen als kind": grote knoppen, `inputmode="numeric"` voor de pin.
   Zet naam om naar `{naam}@kids.klusjesv2.app`, `signInWithEmailAndPassword`.
@@ -551,6 +580,16 @@ meegenomen:
   uitvinkbaar door kind, badges-filter, pauze-scherm.
 
 ### Fase 6 — Roterende taken dynamisch + optioneel; hardcoded lies/lenn eruit
+> **Modeladvies: Opus, niveau high.** Algoritmisch het lastigste stuk dat nog rest —
+> rotatie-wiskunde (anker/pointer, §2.3) en het veralgemenen van stofzuigen naar
+> `settings/shifts` mét behoud van ál het fijn-afgestelde gedrag (projectie, ⏮/📥/⏭,
+> doorschuiven). Doe na de bouw een aparte reviewronde, ook Opus/high: rotatie met
+> 1/2/3 kinderen, en of een kind zijn beurt nu echt mag afvinken volgens de rules.
+> (§2.1 kid-sleutel-op-uid, §2.2 dag-status-per-uid en de dynamische kind-kaarten zijn al
+> in fase 5 gedaan — zie het fase-5-statusblok. Wat híer nog rest is dus kleiner dan de
+> oorspronkelijke tekst hieronder suggereert: vooral het `rotation`-model op taken en
+> `settings/shifts` voor stofzuigen.)
+
 **Doel:** §4b volledig; nul verwijzingen naar `lies`/`lenn` of "exact twee kinderen".
 - Vervang de vaste kids-array (856-857, 1313-1314) door de leden-lijst uit `members`
   (rol `kind`, `actief`). CSS: genereer kid-kleuren uit `members/{uid}/kleur` i.p.v. de
@@ -577,6 +616,10 @@ meegenomen:
 - **Commit:** `Fase 6: dynamische, optionele roterende taken; lies/lenn hardcoding verwijderd`.
 
 ### Fase 7 — Beheerwachtwoord verwijderen, beheer via ouder-rol
+> **Modeladvies: Sonnet (of Fable), niveau medium.** Grotendeels verwijderen +
+> toegang aan `isChild()`/ouder-rol hangen — mechanisch en laag risico, geen
+> aparte reviewronde nodig; de gewone testsuite volstaat.
+
 **Doel:** geen client-side wachtwoord meer.
 - Verwijder `ADMIN_PASSWORD` (164), `adminUnlocked` (402), `showPasswordPrompt`/
   `submitPassword`/`closePasswordPrompt` (1382-1425) en de bijhorende CSS/`window`-exports.
@@ -585,6 +628,12 @@ meegenomen:
 - **Commit:** `Fase 7: hardcoded beheerwachtwoord verwijderd; beheer via ouder-rol`.
 
 ### Fase 8 — Migratiehulp voor de oude JSON-export (incl. rotatiestand)
+> **Modeladvies: Opus, niveau high.** Eénmalig en onomkeerbaar — het meest
+> foutgevoelige werk van heel het plan (uid-hersleuteling, rotatiestand exact
+> behouden, streaks/badges/historiek intact). Doe na de bouw een aparte
+> reviewronde, ook Opus/high, en verifieer op een testgezin (of `?test`-sandbox)
+> vóórdat dit ooit op echte data draait.
+
 **Doel:** oude `klusjes-9b7b8`-export omzetten naar de nieuwe structuur, historiek intact.
 - Verborgen ouder-only scherm: plak/upload de geëxporteerde JSON.
 - **Kid-koppeling:** UI om oude `lies`/`lenn` te mappen op de in fase 4 aangemaakte
@@ -610,6 +659,9 @@ meegenomen:
 - **Commit:** `Fase 8: migratiehulp voor oude JSON-export met behoud van rotatiestand`.
 
 ### Fase 9 — Versie naar v16 + opkuis
+> **Modeladvies: Sonnet (of Fable), niveau low–medium.** Versiestring, dode code,
+> laatste manuele acceptatie — triviaal, geen reviewronde nodig.
+
 - `VERSION` (178) → `'klusjes-pwa v16'`. NL-accountmodel-comment bovenaan (§3). Dode
   code/`?test`-beslissing (§2.6) opruimen. Laatste manuele acceptatie.
 - **Commit:** `Fase 9: versie v16 + opkuis`.
