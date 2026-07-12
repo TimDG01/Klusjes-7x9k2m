@@ -1,17 +1,18 @@
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
-> **Status (laatst bijgewerkt na fase 6b):** Fase **1 t/m 6 (5 + 6a + 6b) zijn gebouwd,
-> getest en gepusht** — ouder-login met persistente sessie, gezin aanmaken/aansluiten via
-> code, álle app-data genest per gezin onder `families/{familyId}/`, gezinsleden +
-> kind-accounts beheren, kind-login met afgeschermde weergave, stofzuigen veralgemeend tot
-> herbruikbare **beurt-taken** (`settings/shifts`) die een kind zelf kan afvinken, en de
-> A/B-buckets vervangen door een per-taak **ring+pointer rotatiemodel** (§2.3; lost ook 3+
-> kinderen op, met automatische migratie van oude bucketdata). De rules-review na fase 3 is
-> gebeurd (geen blokkers — zie §5.3). **Volgende stap: fase 7** (beheerwachtwoord eruit,
-> beheer via ouder-rol). Daarna fase 8–9. Elke fase heeft onderaan §4 een eigen
-> "Status: ✅"-blok. Zeg "ga verder met fase 7" (of "vanaf fase X") om te hervatten.
-> **Aanbevolen review:** fase 6 (6a+6b) raakt intricate rotatie-logica — een aparte
-> Opus/high-review vóór fase 7 is verstandig (staat nog open).
+> **Status (laatst bijgewerkt na fase 7):** Fase **1 t/m 7 zijn gebouwd, getest en
+> gepusht** — ouder-login met persistente sessie, gezin aanmaken/aansluiten via code, álle
+> app-data genest per gezin onder `families/{familyId}/`, gezinsleden + kind-accounts
+> beheren, kind-login met afgeschermde weergave, stofzuigen veralgemeend tot herbruikbare
+> **beurt-taken** (`settings/shifts`) die een kind zelf kan afvinken, de A/B-buckets
+> vervangen door een per-taak **ring+pointer rotatiemodel** (§2.3; lost ook 3+ kinderen op,
+> met automatische migratie van oude bucketdata), en het **client-side beheerwachtwoord
+> geschrapt** — beheer hangt nu aan de ouder-rol (`isParent()`). De rules-review na fase 3
+> is gebeurd (geen blokkers — zie §5.3) en fase 6 (6a+6b) is nagelezen (geen blokkers).
+> **Volgende stap: fase 8** (migratiehulp voor de oude JSON-export — Opus/high, onomkeerbaar,
+> aparte reviewronde). Daarna fase 9 (VERSION → v16 + opschonen). Elke fase heeft onderaan
+> §4 een eigen "Status: ✅"-blok. Zeg "ga verder met fase 8" (of "vanaf fase X") om te
+> hervatten.
 >
 > **Modeladvies staat per fase-kop in §4** (bouw én, waar relevant, een aparte
 > reviewronde). **Vaste regel: vóór je een fase start, meld expliciet welk
@@ -692,6 +693,21 @@ i.p.v. de verdwenen "Vaste taken"-sectie).
 - `openAdmin` (1375): toegang ⇔ ingelogde rol `ouder` (kinderen zien de knop niet).
 - **Test:** ouder ziet beheer zonder prompt; kind kan er niet bij.
 - **Commit:** `Fase 7: hardcoded beheerwachtwoord verwijderd; beheer via ouder-rol`.
+
+**Status: ✅ gebouwd & getest.** Het client-side beheerwachtwoord is helemaal weg:
+`ADMIN_PASSWORD`, `adminUnlocked`, `pwTarget`, `showPasswordPrompt`/`submitPassword`/
+`closePasswordPrompt`, de `.pw-*` CSS en de `window`-exports zijn geschrapt (en de
+`adminUnlocked`-reset uit `teardownFamily`). `openAdmin`/`openMembers` gaten nu op een
+**positieve rolcheck** `isParent()` (nieuw naast `isChild()` — `rol === 'ouder'`): alleen
+een ingelogde ouder komt binnen, een kind wordt geweigerd zowel via de verborgen knoppen
+als programmatiek. Geen wachtwoordvenster meer — de ouder landt meteen op Beheer/Gezin.
+Dit was een UI-drempel, geen echte beveiliging (de Firebase-rules doen het echte werk
+sinds fase 3); vervangen door de rol is netter én sluit aan op het multi-gezin-model.
+
+**Tests (`test-fase7.js`):** ouder opent Beheer én Gezin zonder dat er ooit een
+`#pwmodal` verschijnt; een ingelogd kind ziet de knoppen niet en `window.openAdmin()`/
+`openMembers()` doen niets. Fase 1–6b bleven groen (hun tests lieten de nu verdwenen
+wachtwoordstap vallen).
 
 ### Fase 8 — Migratiehulp voor de oude JSON-export (incl. rotatiestand)
 > **Modeladvies: Opus, niveau high.** Eénmalig en onomkeerbaar — het meest

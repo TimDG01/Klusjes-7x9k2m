@@ -73,13 +73,6 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .celebration-title{font-size:20px;font-weight:700;margin-bottom:6px;}
 .celebration-sub{font-size:14px;color:var(--text2);margin-bottom:20px;}
 .celebration-close{background:var(--green);color:white;font-weight:600;padding:11px 28px;border-radius:12px;font-size:15px;}
-.pw-input{width:100%;font-size:16px;padding:11px 12px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin:6px 0 4px;text-align:center;}
-.pw-error{font-size:12px;color:var(--red);min-height:16px;margin-bottom:12px;}
-.pw-actions{display:flex;gap:10px;}
-.pw-actions button{flex:1;font-weight:600;padding:11px 0;border-radius:12px;font-size:15px;}
-.pw-cancel{background:var(--track);color:var(--text);}
-.pw-ok{background:var(--green);color:#fff;}
-.pw-ok:disabled{opacity:.6;}
 
 .auth-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;gap:14px;}
 .auth-card{background:var(--card);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;width:100%;}
@@ -177,7 +170,6 @@ const auth = getAuth(firebaseApp);
 // Zonder try/catch zou een rejectie hier de hele module (incl. render) afbreken.
 try { await setPersistence(auth, browserLocalPersistence); } catch (e) {}
 
-const ADMIN_PASSWORD = 'Klusjes.01';
 
 const START = new Date(2026, 5, 26); // 26 juni 2026 — het schema loopt vanaf hier onbeperkt door
 // Reeksen & badges tellen pas vanaf deze dag. Alles ervoor (oude /days-historiek
@@ -232,6 +224,11 @@ function memberName(uid){
 }
 function isChild(){
   return !!(authUser && membersCache[authUser.uid] && membersCache[authUser.uid].rol === 'kind');
+}
+// Beheer hangt sinds fase 7 aan de ouder-rol i.p.v. een client-side wachtwoord.
+// Positieve rolcheck: alleen een ingelogd lid met rol 'ouder' mag beheren.
+function isParent(){
+  return !!(authUser && membersCache[authUser.uid] && membersCache[authUser.uid].rol === 'ouder');
 }
 // lijntekeningen i.p.v. emoji's (🗑 ⏭ ⏮): kleur-emoji's negeren CSS `color` en de
 // zwarte ⏭/⏮-glyfen verdwijnen op een donkere achtergrond — deze SVG's volgen currentColor
@@ -502,8 +499,6 @@ let current = new Date();
 if (current < START) current = new Date(START);
 
 let screen = 'auth'; // 'auth' | 'day' | 'admin' | 'badges' | 'members'
-let adminUnlocked = false;
-let pwTarget = 'admin'; // welk scherm het wachtwoordvenster na ontgrendeling opent
 
 let authUser = null;
 let authLoaded = false;
@@ -1060,7 +1055,6 @@ function teardownFamily(){
   streakStartKey = DEFAULT_STREAK_START;
   celebratedDays = new Set();
   loadError = null;
-  adminUnlocked = false; // beheer-ontgrendeling hoort niet te overleven naar een volgend account
 }
 
 // Zet de gezins-scope en start de listeners. Aangeroepen door de login-resolutie
@@ -2311,68 +2305,19 @@ function explainAddParent(){
 }
 
 // --- Admin ---
+// Beheer en het ledenscherm hangen sinds fase 7 aan de ouder-rol i.p.v. een
+// client-side wachtwoord: alleen een ingelogde ouder kan hier komen. De knoppen
+// zijn voor kinderen al verborgen; deze routes zitten ook programmatiek dicht.
 function openAdmin(){
-  if (isChild()) return; // kinderen hebben geen beheer — knop is al verborgen, route ook dicht
-  pwTarget = 'admin';
-  if (!adminUnlocked){ showPasswordPrompt(); return; }
+  if (!isParent()) return;
   screen = 'admin';
   render();
 }
 
-// Ledenscherm: zelfde wachtwoord-drempel als Beheer (verdwijnt in fase 7,
-// wanneer toegang aan de ouder-rol hangt i.p.v. aan een client-side wachtwoord).
 function openMembers(){
-  if (isChild()) return;
-  pwTarget = 'members';
-  if (!adminUnlocked){ showPasswordPrompt(); return; }
+  if (!isParent()) return;
   screen = 'members';
   render();
-}
-
-// Gemaskeerd wachtwoordvenster i.p.v. prompt() (die de tekens leesbaar toont).
-function showPasswordPrompt(){
-  if (document.getElementById('pwmodal')) return;
-  const div = document.createElement('div');
-  div.id = 'pwmodal';
-  div.className = 'celebration';
-  div.innerHTML = `
-    <div class="celebration-card">
-      <div class="celebration-title">Wachtwoord</div>
-      <input id="pwinput" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="pw-input" placeholder="Wachtwoord">
-      <div id="pwerror" class="pw-error"></div>
-      <div class="pw-actions">
-        <button class="pw-cancel" onclick="closePasswordPrompt()">Annuleren</button>
-        <button class="pw-ok" onclick="submitPassword()">OK</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(div);
-  const inp = document.getElementById('pwinput');
-  inp.focus();
-  inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter'){ e.preventDefault(); submitPassword(); }
-    else if (e.key === 'Escape'){ e.preventDefault(); closePasswordPrompt(); }
-  });
-}
-
-function submitPassword(){
-  const inp = document.getElementById('pwinput');
-  if (!inp) return;
-  if (inp.value !== ADMIN_PASSWORD){
-    document.getElementById('pwerror').textContent = 'Fout wachtwoord';
-    inp.value = '';
-    inp.focus();
-    return;
-  }
-  adminUnlocked = true;
-  closePasswordPrompt();
-  screen = pwTarget;
-  render();
-}
-
-function closePasswordPrompt(){
-  const m = document.getElementById('pwmodal');
-  if (m) m.remove();
 }
 
 function backToDay(){
@@ -2713,7 +2658,6 @@ Object.assign(window, {
   shiftPrepone, shiftPostpone, shiftPull, advanceShiftTurn, rewindShiftTurn,
   addShift, renameShift, deleteShift, addShiftLine, editShiftLine, deleteShiftLine,
   toggleShiftMember, toggleShiftWeekday,
-  submitPassword, closePasswordPrompt,
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
   openMembers, addChildMember, changeChildPin, renameMember, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent
