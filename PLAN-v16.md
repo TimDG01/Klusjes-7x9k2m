@@ -764,9 +764,11 @@ naar `checks/{uid}/{taskId}` (push-sleutels met dubbele streep `lenn--Ox…` cor
 `snap/{kid}-{tid}` → `snap/{uid}/{tid}`. Stofzuigen → één `settings/shifts/vacuum` met
 `next:{uid,lineIdx}` (of berekend via de geporte `getVacuum` als `next` ontbreekt),
 `override`/`lastDone`/`weekdays`/`floors→lines` letterlijk over. `streaks/{lies|lenn}` →
-`streaks/{uid}` (days + `b{n}`-badges). `settings/streakStart` overgenomen indien aanwezig —
-ontbreekt hij (zoals in de echte export), dan valt v16 op dezelfde default `2026-7-9` terug als
-v15, dus niets verschuift. De `/test`-tak in de export wordt volledig **genegeerd**; `meta` en
+`streaks/{uid}` (days + `b{n}`-badges). **`settings/streakStart` wordt altijd expliciet
+vastgezet** (uit de export indien aanwezig, anders de v15/v16-default `2026-7-9`) — zo hangt de
+reeksvloer nooit af van een toevallig gelijke standaardwaarde. De reeksvlaggen van voor die vloer
+tellen sowieso niet mee, en oude past-day-vlaggen worden door v16 nooit verwijderd (add-only),
+dus de reeksen komen exact zoals ze nu staan over. De `/test`-tak in de export wordt volledig **genegeerd**; `meta` en
 `members` van het v16-gezin blijven ongemoeid.
 
 **Tests (`test-fase8.js`):** end-to-end tegen de nep-Firebase met een fixture in de echte

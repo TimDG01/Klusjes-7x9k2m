@@ -127,6 +127,7 @@ try { await setPersistence(auth, browserLocalPersistence); } catch (e) {}
 const START = new Date(2026, 5, 26);            // 26 juni 2026
 const FLOORS_V16 = ['gelijkvloers','Verdiep ouders','Verdiep kinderen'];
 const DEFAULT_VAC_WEEKDAYS = [1,5];
+const DEFAULT_STREAK_START = '2026-7-9';          // zelfde default als v15 én v16
 const SHIFT_ID = 'vacuum';                        // sleutel van de stofzuig-beurt-taak (= DEFAULT_SHIFTS)
 const OLD_KIDS = ['lies','lenn'];
 const OLD_KID_NAMES = { lies:'Lies', lenn:'Lenn' };
@@ -246,9 +247,14 @@ function convert(root, liesUid, lennUid){
     stats.streaks[k] = { days: Object.keys(s.days||{}).length, badges: Object.keys(badges).length };
   }
 
-  const streakStart = (root.settings && typeof root.settings.streakStart === 'string') ? root.settings.streakStart : null;
+  // Reeks-startdatum expliciet vastpinnen: staat hij in de export, neem die over;
+  // zo niet, pin dan de v15/v16-default zodat de reeksvloer nooit afhangt van een
+  // toevallig gelijke standaardwaarde (streaks zijn te belangrijk om impliciet te laten).
+  const streakStart = (root.settings && typeof root.settings.streakStart === 'string')
+    ? root.settings.streakStart : DEFAULT_STREAK_START;
+  const streakStartFromExport = !!(root.settings && typeof root.settings.streakStart === 'string');
 
-  return { tasks, shifts, days, streaks, streakStart, stats, next, lines };
+  return { tasks, shifts, days, streaks, streakStart, streakStartFromExport, stats, next, lines };
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +348,7 @@ function renderSummary(){
       <li><b>Stofzuigen:</b> weekdagen [${c.shifts[SHIFT_ID].weekdays.join(', ')}], ${c.lines.length} verdieping(en) — volgende beurt: <b>${esc(nextKid?nextKid.naam:'?')} — ${esc(c.lines[c.next.lineIdx]||'?')}</b></li>
       <li><b>Dagen historiek:</b> ${s.days} (met ${s.snaps} bevroren eenmalige taken)</li>
       <li><b>Reeksen &amp; badges:</b> ${st}</li>
-      <li><b>Reeks-startdatum:</b> ${c.streakStart ? esc(c.streakStart) : '(niet in export — standaard blijft gelden)'}</li>
+      <li><b>Reeks-startdatum (vloer):</b> ${esc(c.streakStart)} ${c.streakStartFromExport ? '(uit je export)' : '(niet in export — standaardvloer, expliciet vastgezet)'}</li>
     </ul>`;
   const test = $('testMode').checked;
   const path = (test ? 'test/' : '') + 'families/' + familyId + '/';
