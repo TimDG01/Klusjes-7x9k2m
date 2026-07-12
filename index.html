@@ -80,6 +80,14 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .auth-sub{font-size:14px;color:var(--text2);margin-bottom:18px;}
 .auth-links{display:flex;flex-direction:column;gap:10px;margin-top:18px;}
 .auth-link{font-size:13px;font-weight:600;color:var(--blue);}
+/* Gedeelde invoer/knop-stijl van álle auth-formulieren (login, aanmaken,
+   aansluiten én kind-login). Kind gebruikt dezelfde stijl, enkel groter
+   (.kid-input/.kid-btn hieronder), zodat kind- en ouder-inloggen er identiek
+   uitzien — geen apart "pop-up"-achtig kader meer. */
+.pw-input{width:100%;font-size:16px;padding:11px 12px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin:6px 0 4px;text-align:center;}
+.pw-error{font-size:12px;color:var(--red);min-height:16px;margin-bottom:12px;}
+.pw-ok{background:var(--green);color:#fff;font-weight:600;font-size:15px;padding:12px 0;border-radius:12px;}
+.pw-ok:disabled{opacity:.6;}
 .kid-input{font-size:20px;padding:14px 12px;}
 .kid-btn{font-size:17px;padding:14px 0;}
 
