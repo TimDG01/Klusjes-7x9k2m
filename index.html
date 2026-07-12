@@ -227,14 +227,6 @@ function activeKids(){
     .sort()
     .map(uid => ({ uid, name: membersCache[uid].weergavenaam || '?', kleur: membersCache[uid].kleur || KID_COLORS[0] }));
 }
-// Rolverdeling: dagelijkse A/B-wissel op positie in de kids-lijst — met twee
-// kinderen exact het oude gedrag (even dag: eerste kind = A). Interim tot §2.3.
-function roleFor(pos, idx){
-  return (idx + pos) % 2 === 0 ? 'A' : 'B';
-}
-function kidPos(uid){
-  return activeKids().findIndex(k => k.uid === uid);
-}
 function memberName(uid){
   return (membersCache[uid] && membersCache[uid].weergavenaam) || '?';
 }
@@ -432,15 +424,14 @@ function badgeSVG(design, size){
   </svg>`;
 }
 
+// Platte taken met rotatie (§2.3). members:[] = alle actieve kinderen; pointer 0 en
+// 1 zijn de twee "fasen" (voorheen rol A en B) — met twee kinderen exact het oude
+// A/B-gedrag, en het schaalt vanzelf naar 3+ kinderen. interval afwezig = dagelijks.
 const DEFAULT_TASKS = {
-  A: {
-    a1: { label:'Tafel afruimen', recurring:true, order:0 },
-    a2: { label:'Vaatwas legen', recurring:true, order:1 }
-  },
-  B: {
-    b1: { label:'Tafel afkuisen', recurring:true, order:0 },
-    b2: { label:'Vaatwas vullen & starten', recurring:true, order:1 }
-  }
+  t_afruimen: { label:'Tafel afruimen', recurring:true, order:0, members:[], pointer:0 },
+  t_vaatweg:  { label:'Vaatwas legen', recurring:true, order:1, members:[], pointer:0 },
+  t_afkuisen: { label:'Tafel afkuisen', recurring:true, order:2, members:[], pointer:1 },
+  t_vaatvul:  { label:'Vaatwas vullen & starten', recurring:true, order:3, members:[], pointer:1 }
 };
 
 const ALL_WEEKDAYS = [0,1,2,3,4,5,6];
@@ -529,8 +520,11 @@ let authMode = 'login'; // 'login' | 'create' | 'join' — welk auth-formulier g
 let pendingAuthError = null;
 let pendingAuthMode = null;
 
-let tasksCache = { A:{}, B:{} }; // + één bucket per kind-uid (vaste taken)
+let tasksCache = {}; // { taskId: { label, recurring, order, weekdays?, members?, interval?, anchorIdx?, pointer? } }
 let tasksLoaded = false;
+// ruwe oude-bucketvorm die nog gemigreerd moet worden; een ouder schrijft de platte
+// vorm weg zodra zowel tasks als members geladen zijn (zie maybeMigrateTasks)
+let rawOldTasks = null;
 
 let metaCache = null;   // { naam, gezinscode, aangemaakt }
 let metaLoaded = false;
@@ -724,10 +718,13 @@ function versionLine(){
   return `${BASE_ROOT ? '<div class="testmode">TESTMODUS — oefendata, telt niet mee</div>' : ''}${showLogout ? '<button class="admin-link" onclick="logout()">Uitloggen</button>' : ''}<div class="version">${VERSION}</div>`;
 }
 
-function tasksArray(role){
-  const obj = tasksCache[role] || {};
-  return Object.keys(obj)
-    .map(id => ({ id, ...obj[id] }))
+// --- Taak-rotatie (§2.3): geen A/B-buckets meer. Taken staan plat in
+// settings/tasks/{taskId} met optioneel `members` (de rotatie-ring), `interval`
+// ('daily'|'weekly'), `anchorIdx` en `pointer`. Wie vandaag aan de beurt is volgt
+// uit één formule. Vaste taak = precies één deelnemer; leeg/afwezig = alle kinderen.
+function taskList(){
+  return Object.keys(tasksCache)
+    .map(id => ({ id, ...tasksCache[id] }))
     .sort((a,b) => (a.order||0) - (b.order||0));
 }
 
@@ -735,8 +732,65 @@ function taskWeekdays(t){
   return Array.isArray(t.weekdays) ? t.weekdays : ALL_WEEKDAYS;
 }
 
-function tasksArrayForDay(role, dow){
-  return tasksArray(role).filter(t => taskWeekdays(t).includes(dow));
+// De ring van een taak: opgegeven deelnemers (gefilterd op nog-actieve kinderen),
+// of leeg/afwezig = álle actieve kinderen. Zelfde idee als bij de beurt-taken.
+function taskRing(t){
+  const active = uid => membersCache[uid] && membersCache[uid].rol === 'kind' && membersCache[uid].actief !== false;
+  const m = Array.isArray(t.members) ? t.members.filter(active) : [];
+  return m.length ? m : activeKids().map(k => k.uid);
+}
+
+// Wie is op dagindex idx aan de beurt voor taak t (of null als er niemand is).
+// interval 'weekly' laat de beurt per week i.p.v. per dag doorschuiven.
+function taskAssignee(t, idx){
+  const ring = taskRing(t);
+  if (!ring.length) return null;
+  const anchor = Number.isInteger(t.anchorIdx) ? t.anchorIdx : 0;
+  const ptr = Number.isInteger(t.pointer) ? t.pointer : 0;
+  const steps = t.interval === 'weekly' ? Math.floor((idx - anchor) / 7) : (idx - anchor);
+  const n = ring.length;
+  return ring[(((ptr + steps) % n) + n) % n];
+}
+
+// Een vaste taak = precies één (actieve) deelnemer → nooit echte rotatie (👤-marker).
+function isFixedTask(t){
+  const active = uid => membersCache[uid] && membersCache[uid].rol === 'kind' && membersCache[uid].actief !== false;
+  const m = Array.isArray(t.members) ? t.members.filter(active) : [];
+  return m.length === 1;
+}
+
+// De taken die kind `uid` op dag (idx, dow) toegewezen krijgt, op volgorde.
+function tasksForKidDay(uid, idx, dow){
+  return taskList().filter(t => taskWeekdays(t).includes(dow) && taskAssignee(t, idx) === uid);
+}
+
+// --- Migratie van de oude A/B-bucketvorm naar de platte rotatievorm ---
+// Oude vorm: settings/tasks/{A|B|uid}/{taskId}. Nieuwe vorm: settings/tasks/{taskId}
+// met members/pointer. A-bucket → pointer 0 (start bij het eerste kind), B → pointer 1
+// (start bij het tweede), kind-uid-bucket → vaste taak (members:[uid]).
+function looksLikeBuckets(v){
+  return v && Object.values(v).some(x => x && typeof x === 'object' && !('label' in x)
+    && Object.values(x).some(t => t && typeof t === 'object' && 'label' in t));
+}
+function migrateTaskBuckets(v){
+  const out = {};
+  Object.keys(v).forEach(bucket => {
+    const tasks = v[bucket];
+    if (!tasks || typeof tasks !== 'object') return;
+    if ('label' in tasks){ out[bucket] = tasks; return; } // al een platte taak
+    Object.keys(tasks).forEach(tid => {
+      const t = tasks[tid];
+      if (!t || typeof t !== 'object' || !('label' in t)) return;
+      const rec = { label: t.label, recurring: t.recurring !== false, order: t.order || 0 };
+      if (t.recurring === false) rec.recurring = false;
+      if (Array.isArray(t.weekdays)) rec.weekdays = t.weekdays;
+      if (bucket === 'A'){ rec.members = []; rec.pointer = 0; }
+      else if (bucket === 'B'){ rec.members = []; rec.pointer = 1; }
+      else { rec.members = [bucket]; } // kind-uid-bucket → vaste taak
+      out[tid] = rec;
+    });
+  });
+  return out;
 }
 
 // Bevroren eenmalige taken van deze dag (days/{key}/snap/{uid}/{taskId}) voor één
@@ -768,11 +822,7 @@ function isChecked(uid, taskId){
 // het verleden: gebruikt de húidige instellingen. Stofzuigen telt bewust niet mee
 // — een doorgeschoven beurt mag een oude reeks niet achteraf breken.
 function kidScheduledCount(kidKey, d){
-  const pos = kidPos(kidKey);
-  if (pos < 0) return 0; // (nog) geen actief kind-lid: telt niet, breekt niet
-  const dow = d.getDay();
-  const role = roleFor(pos, dayIndex(d));
-  return tasksArrayForDay(role, dow).length + tasksArrayForDay(kidKey, dow).length;
+  return tasksForKidDay(kidKey, dayIndex(d), d.getDay()).length;
 }
 
 // Loopt de hele historiek (START → vandaag) voorwaarts door de vlaggen en bepaalt:
@@ -878,9 +928,20 @@ function initFamily(){
       return; // wacht op de her-fire van deze listener met de echte data
     }
     loadError = null;
-    const v = snap.val();
-    // alle buckets meenemen (A/B + per-kind-uid); A/B altijd aanwezig
-    tasksCache = { ...v, A: v.A || {}, B: v.B || {} };
+    const v = snap.val() || {};
+    if (looksLikeBuckets(v)){
+      // oude A/B-bucketvorm → platte rotatievorm. Altijd in-memory tonen zodat de
+      // app meteen werkt; de persistente migratie doet maybeMigrateTasks zodra ook
+      // members geladen is (een kind mag settings niet schrijven).
+      tasksCache = migrateTaskBuckets(v);
+      tasksLoaded = true;
+      rawOldTasks = v;
+      maybeMigrateTasks();
+      render();
+      return;
+    }
+    rawOldTasks = null;
+    tasksCache = v;
     tasksLoaded = true;
     render();
   }, () => {
@@ -948,11 +1009,12 @@ function initFamily(){
     render();
   }));
 
-  // --- gezinsleden (voor het ledenscherm; fase 6 gaat hier ook de kaarten op bouwen) ---
+  // --- gezinsleden (de kaarten + rotatie-ring bouwen hierop) ---
   familyUnsubs.push(onValue(dbRef('members'), snap => {
     loadError = null;
     membersCache = snap.val() || {};
     membersLoaded = true;
+    maybeMigrateTasks(); // members is nu geladen → een uitgestelde taak-migratie kan alsnog
     render();
   }, () => {
     loadError = 'Geen verbinding met de database. Probeer de app opnieuw te openen.';
@@ -960,6 +1022,18 @@ function initFamily(){
   }));
 
   attachDayListener(current);
+}
+
+// Schrijft de gemigreerde (platte) taken één keer weg zodra zowel de oude vorm
+// gedetecteerd is (rawOldTasks) als members geladen is en de ingelogde gebruiker
+// een ouder is. Wordt vanuit beide listeners aangeroepen; wie als tweede laadt,
+// voert het uit. De set() her-vuurt de taken-listener met de nieuwe vorm.
+function maybeMigrateTasks(){
+  if (!rawOldTasks) return;
+  if (!(authUser && membersCache[authUser.uid] && membersCache[authUser.uid].rol === 'ouder')) return;
+  const migrated = migrateTaskBuckets(rawOldTasks);
+  rawOldTasks = null;
+  set(dbRef('settings/tasks'), migrated);
 }
 
 // Koppelt alle gezinslisteners af en zet de caches en laad-gates terug naar hun
@@ -978,7 +1052,8 @@ function teardownFamily(){
   tasksLoaded = vacuumLoaded = dayLoaded = streaksLoaded = false;
   metaCache = null; metaLoaded = false;
   membersCache = {}; membersLoaded = false;
-  tasksCache = { A:{}, B:{} };
+  tasksCache = {};
+  rawOldTasks = null;
   shiftsCache = {};
   streaksCache = {};
   dayState = {};
@@ -1152,15 +1227,12 @@ function render(){
   // zijn eigen kaart; een ouder ziet iedereen.
   const kids = activeKids()
     .filter(k => !isChild() || k.uid === authUser.uid)
-    .map((k, i) => {
-      const pos = kidPos(k.uid);
-      const role = roleFor(pos, idx);
-      return {
-        key: k.uid, name: k.name, kleur: k.kleur, role,
-        // roterende roltaken eerst, daarna de vaste kind-taken (👤)
-        tasks: tasksArrayForDay(role, dow).concat(tasksArrayForDay(k.uid, dow).map(t => ({ ...t, fixed:true })))
-      };
-    });
+    .map(k => ({
+      key: k.uid, name: k.name, kleur: k.kleur,
+      // de taken die dit kind vandaag toegewezen krijgt (rotatie + vaste taken door
+      // elkaar, op volgorde); vaste taken (één deelnemer) krijgen de 👤-marker
+      tasks: tasksForKidDay(k.uid, idx, dow).map(t => ({ ...t, fixed: isFixedTask(t) }))
+    }));
 
   const isToday = dayIndex(current) === dayIndex(new Date());
   const cDay = dayKey(current);
@@ -1270,7 +1342,7 @@ function renderCard(k){
     taskRow(k.key, t.id, t.label, isChecked(k.key, t.id), t.fixed)
   ).concat((k.snaps || []).map(s =>
     // bevroren eenmalige taak: blijft afgevinkt zichtbaar; terug aanklikken herstelt ze
-    taskRow(k.key, s.id, s.label, isChecked(k.key, s.id), s.bucket === k.key)
+    taskRow(k.key, s.id, s.label, isChecked(k.key, s.id), isFixedTask(s))
   )).join('');
 
   const shiftRows = (k.shifts || []).map(({ sh, info }) => shiftRow(k.key, sh, info)).join('');
@@ -1282,7 +1354,6 @@ function renderCard(k){
       <div class="card-header">
         <div class="dot" style="background:${k.kleur}"></div>
         <div class="name">${escapeHtml(k.name)}</div>
-        <div class="role-badge" style="color:${k.kleur};background:${k.kleur}26">Rol ${k.role}</div>
       </div>
       ${streakStrip(k)}
       ${tasks}
@@ -1445,14 +1516,19 @@ function toggleTask(uid, taskId){
   const key = dayKey(current);
   const frozenSnap = dayState.snap && dayState.snap[uid] && dayState.snap[uid][taskId];
 
+  // volledige rotatie-eigenschappen bewaren zodat een eenmalige taak exact hersteld
+  // kan worden (label/weekdays/deelnemers/interval/anker/pointer)
+  const copyRotation = (from, to) => {
+    if (Array.isArray(from.weekdays)) to.weekdays = from.weekdays;
+    if (Array.isArray(from.members)) to.members = from.members;
+    if (from.interval) to.interval = from.interval;
+    if (Number.isInteger(from.anchorIdx)) to.anchorIdx = from.anchorIdx;
+    if (Number.isInteger(from.pointer)) to.pointer = from.pointer;
+    return to;
+  };
+
   if (newVal){
-    const pos = kidPos(uid);
-    const role = pos >= 0 ? roleFor(pos, dayIndex(current)) : null;
-    // taak kan in de roterende rol-bucket zitten óf in de vaste kind-bucket
-    let bucket = role, task = role && tasksCache[role] && tasksCache[role][taskId];
-    if (!task && tasksCache[uid] && tasksCache[uid][taskId]){
-      bucket = uid; task = tasksCache[uid][taskId];
-    }
+    const task = tasksCache[taskId];
     if (!task && !frozenSnap){
       // rij bestaat niet meer (bv. net in een andere sessie verwijderd): geen
       // wees-vinkje schrijven voor iets dat de volgende render toch verdwijnt
@@ -1460,17 +1536,16 @@ function toggleTask(uid, taskId){
     }
     playChime();
     if (task && task.recurring === false){
-      // bevriezen in de dag (zoals days/{key}/vac) + definitie verwijderen + afvinken,
-      // atomisch in één multi-path update: een gedeeltelijk gelande write zou anders
-      // de rij doen verdwijnen (snap kwijt) of de taak elders laten terugkeren.
-      // Een kind mag dit van de rules óók (eigen checks/snap + delete van een
-      // eenmalige taakdefinitie is de expliciete kind-uitzondering).
-      const snap = { label: task.label, bucket, order: task.order || 0 };
-      if (Array.isArray(task.weekdays)) snap.weekdays = task.weekdays;
+      // bevriezen in de dag + definitie verwijderen + afvinken, atomisch in één
+      // multi-path update. Een kind mag dit van de rules óók: eigen checks/snap +
+      // het verwijderen van een eenmalige taakdefinitie (recurring===false) onder
+      // settings/tasks/{taskId} is de expliciete kind-uitzondering — die klopt nu
+      // exact omdat de taak plat op settings/tasks/{taskId} staat (geen bucket meer).
+      const snap = copyRotation(task, { label: task.label, order: task.order || 0 });
       rootUpdate({
         [`days/${key}/checks/${uid}/${taskId}`]: true,
         [`days/${key}/snap/${uid}/${taskId}`]: snap,
-        [`settings/tasks/${bucket}/${taskId}`]: null
+        [`settings/tasks/${taskId}`]: null
       });
     } else {
       set(dbRef(`days/${key}/checks/${uid}/${taskId}`), true);
@@ -1485,12 +1560,11 @@ function toggleTask(uid, taskId){
         alert('Oeps — een eenmalige taak terugzetten kan alleen een ouder. Vraag het even.');
         return;
       }
-      const rec = { label: frozenSnap.label, recurring: false, order: frozenSnap.order || 0 };
-      if (Array.isArray(frozenSnap.weekdays)) rec.weekdays = frozenSnap.weekdays;
+      const rec = copyRotation(frozenSnap, { label: frozenSnap.label, recurring: false, order: frozenSnap.order || 0 });
       rootUpdate({
         [`days/${key}/checks/${uid}/${taskId}`]: false,
         [`days/${key}/snap/${uid}/${taskId}`]: null,
-        [`settings/tasks/${frozenSnap.bucket}/${taskId}`]: rec
+        [`settings/tasks/${taskId}`]: rec
       });
     } else {
       set(dbRef(`days/${key}/checks/${uid}/${taskId}`), false);
@@ -2313,9 +2387,7 @@ function renderAdmin(){
       <button class="admin-back" onclick="backToDay()">‹ Terug</button>
       <div class="admin-title">Beheer taken</div>
     </div>
-    ${renderAdminRole('A', 'Rol A')}
-    ${renderAdminRole('B', 'Rol B')}
-    ${activeKids().map(k => renderAdminRole(k.uid, `Vaste taken — ${escapeHtml(k.name)}`)).join('')}
+    ${renderAdminTasks()}
     ${renderAdminShifts()}
     ${renderAdminStreak()}
     ${versionLine()}
@@ -2364,29 +2436,54 @@ function renderWeekdayPicker(activeDays, handlerPrefix){
   `;
 }
 
-function renderAdminRole(role, title){
-  const rows = tasksArray(role).map(t => {
+// Eén taaklijst; elke taak toont wie meedraait (rotatie of vast), het interval, de
+// weekdagen en — bij echte rotatie — wie vandaag aan de beurt is met ⏮/⏭ om de
+// startvolgorde bij te stellen. Geen A/B-buckets meer.
+function renderAdminTasks(){
+  const kids = activeKids();
+  const idx = dayIndex(clampedToday());
+  const rows = taskList().map(t => {
     const days = taskWeekdays(t);
+    const explicit = Array.isArray(t.members) && t.members.length > 0;
+    const memberChips = kids.map(k => {
+      const on = explicit ? t.members.includes(k.uid) : true;
+      return `<button class="admin-day-btn ${on ? 'active' : ''}" style="flex:0 0 auto;padding:0 10px;" onclick="toggleTaskMember('${t.id}','${k.uid}')">${escapeHtml(k.name)}</button>`;
+    }).join('');
+    const ring = taskRing(t);
+    const assignee = taskAssignee(t, idx);
+    const rotates = ring.length > 1;
+    const intervalLabel = t.interval === 'weekly' ? 'Wekelijks' : 'Dagelijks';
+    const turnRow = rotates ? `
+      <div class="admin-next-row">
+        <span>Vandaag aan de beurt: <b>${escapeHtml(memberName(assignee))}</b><br>
+        <small>${intervalLabel.toLowerCase()} wisselend</small></span>
+        <button class="admin-icon-btn accent" onclick="rewindTaskPointer('${t.id}')" title="Startvolgorde terug">${SKIP_BACK_ICON}</button>
+        <button class="admin-icon-btn accent" onclick="advanceTaskPointer('${t.id}')" title="Startvolgorde door">${SKIP_FWD_ICON}</button>
+      </div>` : `<div class="admin-vacuum-note">Vaste taak van ${escapeHtml(memberName(ring[0]) || '—')}.</div>`;
     return `
     <div class="admin-task-row">
       <div class="admin-task-top">
         <span class="admin-tag">${t.recurring ? 'Terugkerend' : 'Eenmalig'}</span>
         <div class="admin-task-label">${escapeHtml(t.label)}</div>
-        <button class="admin-icon-btn" onclick="toggleRecurring('${role}','${t.id}')">🔁</button>
-        <button class="admin-icon-btn" onclick="editTaskLabel('${role}','${t.id}')">✏️</button>
-        <button class="admin-icon-btn danger" onclick="deleteTaskAdmin('${role}','${t.id}')">${TRASH_ICON}</button>
+        <button class="admin-icon-btn" onclick="toggleRecurring('${t.id}')" title="Terugkerend / eenmalig">🔁</button>
+        <button class="admin-icon-btn" onclick="toggleTaskInterval('${t.id}')" title="Dagelijks / wekelijks wisselen">${t.interval === 'weekly' ? '📅' : '🗓️'}</button>
+        <button class="admin-icon-btn" onclick="editTaskLabel('${t.id}')" title="Naam wijzigen">✏️</button>
+        <button class="admin-icon-btn danger" onclick="deleteTaskAdmin('${t.id}')" title="Taak verwijderen">${TRASH_ICON}</button>
       </div>
-      ${renderWeekdayPicker(days, `toggleWeekday('${role}','${t.id}',`)}
+      ${renderWeekdayPicker(days, `toggleWeekday('${t.id}',`)}
       ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
+      <div class="admin-weekday-row" style="flex-wrap:wrap;margin-top:6px;">${memberChips || '<span class="admin-vacuum-note">Nog geen kinderen.</span>'}</div>
+      ${turnRow}
     </div>
   `;
   }).join('');
 
   return `
     <div class="admin-section">
-      <div class="admin-role-title">${title}</div>
+      <div class="admin-role-title">Taken</div>
       ${rows}
-      <button class="admin-add-btn" onclick="addTaskAdmin('${role}')">+ Taak toevoegen</button>
+      <button class="admin-add-btn" onclick="addTaskAdmin()">+ Taak toevoegen</button>
+      <div class="admin-vacuum-note">Kies per taak wie meedraait: één kind = vaste taak, meer kinderen = rotatie (dagelijks of wekelijks). Met ⏮/⏭ stel je in wie begint.</div>
     </div>
   `;
 }
@@ -2533,38 +2630,73 @@ function toggleShiftMember(shiftId, uid){
   update(dbRef('settings/shifts/' + shiftId), { members: isAll ? [] : next });
 }
 
-function editTaskLabel(role, id){
-  const t = tasksCache[role] && tasksCache[role][id];
+function editTaskLabel(id){
+  const t = tasksCache[id];
   if (!t) return;
   const label = prompt('Naam van de taak:', t.label);
   if (!label) return;
-  update(dbRef(`settings/tasks/${role}/${id}`), { label });
+  update(dbRef(`settings/tasks/${id}`), { label });
 }
 
-function toggleRecurring(role, id){
-  const t = tasksCache[role] && tasksCache[role][id];
+function toggleRecurring(id){
+  const t = tasksCache[id];
   if (!t) return;
-  update(dbRef(`settings/tasks/${role}/${id}`), { recurring: !t.recurring });
+  update(dbRef(`settings/tasks/${id}`), { recurring: !t.recurring });
 }
 
-function deleteTaskAdmin(role, id){
+function toggleTaskInterval(id){
+  const t = tasksCache[id];
+  if (!t) return;
+  update(dbRef(`settings/tasks/${id}`), { interval: t.interval === 'weekly' ? 'daily' : 'weekly' });
+}
+
+function deleteTaskAdmin(id){
   if (!confirm('Deze taak verwijderen?')) return;
-  remove(dbRef(`settings/tasks/${role}/${id}`));
+  remove(dbRef(`settings/tasks/${id}`));
 }
 
-function addTaskAdmin(role){
+function addTaskAdmin(){
   const label = prompt('Nieuwe taak:');
   if (!label) return;
   const recurring = confirm('Terugkerende taak (elke dag)?\nOK = ja, terugkerend\nAnnuleren = eenmalig');
-  push(dbRef(`settings/tasks/${role}`), { label, recurring, order: Date.now() });
+  // standaard: alle kinderen (leeg members), dagelijkse rotatie vanaf pointer 0
+  push(dbRef('settings/tasks'), { label, recurring, order: Date.now(), members: [], pointer: 0 });
 }
 
-function toggleWeekday(role, id, dayNum){
-  const t = tasksCache[role] && tasksCache[role][id];
+function toggleWeekday(id, dayNum){
+  const t = tasksCache[id];
   if (!t) return;
   const days = taskWeekdays(t);
   const next = days.includes(dayNum) ? days.filter(d => d !== dayNum) : [...days, dayNum].sort((a,b) => a-b);
-  update(dbRef(`settings/tasks/${role}/${id}`), { weekdays: next });
+  update(dbRef(`settings/tasks/${id}`), { weekdays: next });
+}
+
+// Deelnemer aan/uit (zelfde patroon als bij shifts): leeg members = iedereen; bij
+// het eerste uitzetten materialiseren we de expliciete lijst; wordt het weer exact
+// "alle actieve kinderen", dan terug naar leeg.
+function toggleTaskMember(id, uid){
+  const t = tasksCache[id]; if (!t) return;
+  const explicit = Array.isArray(t.members) && t.members.length > 0;
+  const cur = explicit ? t.members.slice() : activeKids().map(k => k.uid);
+  const next = cur.includes(uid) ? cur.filter(u => u !== uid) : [...cur, uid];
+  if (!next.length){ alert('Er moet minstens één kind meedraaien.'); return; }
+  const allKids = activeKids().map(k => k.uid);
+  const isAll = next.length === allKids.length && allKids.every(u => next.includes(u));
+  update(dbRef(`settings/tasks/${id}`), { members: isAll ? [] : next });
+}
+
+// Startvolgorde bijstellen: verschuift de pointer één plaats (wie vandaag begint).
+function advanceTaskPointer(id){
+  const t = tasksCache[id]; if (!t) return;
+  const len = taskRing(t).length || 1;
+  const ptr = ((((Number.isInteger(t.pointer) ? t.pointer : 0) + 1) % len) + len) % len;
+  update(dbRef(`settings/tasks/${id}`), { pointer: ptr });
+}
+function rewindTaskPointer(id){
+  const t = tasksCache[id]; if (!t) return;
+  const len = taskRing(t).length || 1;
+  const ptr = ((((Number.isInteger(t.pointer) ? t.pointer : 0) - 1) % len) + len) % len;
+  update(dbRef(`settings/tasks/${id}`), { pointer: ptr });
 }
 
 function toggleShiftWeekday(shiftId, dayNum){
@@ -2576,8 +2708,8 @@ function toggleShiftWeekday(shiftId, dayNum){
 
 Object.assign(window, {
   toggleTask, toggleShift, changeDay, goToday, openAdmin, backToDay, openBadges,
-  editTaskLabel, toggleRecurring, deleteTaskAdmin, addTaskAdmin,
-  toggleWeekday, editStreakStart,
+  editTaskLabel, toggleRecurring, toggleTaskInterval, deleteTaskAdmin, addTaskAdmin,
+  toggleWeekday, toggleTaskMember, advanceTaskPointer, rewindTaskPointer, editStreakStart,
   shiftPrepone, shiftPostpone, shiftPull, advanceShiftTurn, rewindShiftTurn,
   addShift, renameShift, deleteShift, addShiftLine, editShiftLine, deleteShiftLine,
   toggleShiftMember, toggleShiftWeekday,

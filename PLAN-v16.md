@@ -1,16 +1,17 @@
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
-> **Status (laatst bijgewerkt na fase 6a):** Fase **1 t/m 5 + 6a zijn gebouwd, getest en
-> gepusht** — ouder-login met persistente sessie, gezin aanmaken/aansluiten via code,
-> álle app-data genest per gezin onder `families/{familyId}/`, gezinsleden + kind-accounts
-> beheren, kind-login met afgeschermde weergave, en stofzuigen veralgemeend tot
-> herbruikbare **beurt-taken** (`settings/shifts`) die een kind nu zelf kan afvinken. De
-> rules-review na fase 3 is gebeurd (geen blokkers — zie §5.3). **Volgende stap: fase 6b**
-> (het per-taak `rotation`-model §2.3; A/B-buckets vervangen — lost ook 3+ kinderen op).
-> Daarna fase 7–9. Elke fase heeft onderaan §4 een eigen "Status: ✅"-blok. Zeg "ga verder
-> met fase 6b" (of "vanaf fase X") om te hervatten.
-> **Aanbevolen review:** 6a raakt intricate rotatie-logica — een aparte Opus/high-review
-> vóór 6b is verstandig (staat nog open).
+> **Status (laatst bijgewerkt na fase 6b):** Fase **1 t/m 6 (5 + 6a + 6b) zijn gebouwd,
+> getest en gepusht** — ouder-login met persistente sessie, gezin aanmaken/aansluiten via
+> code, álle app-data genest per gezin onder `families/{familyId}/`, gezinsleden +
+> kind-accounts beheren, kind-login met afgeschermde weergave, stofzuigen veralgemeend tot
+> herbruikbare **beurt-taken** (`settings/shifts`) die een kind zelf kan afvinken, en de
+> A/B-buckets vervangen door een per-taak **ring+pointer rotatiemodel** (§2.3; lost ook 3+
+> kinderen op, met automatische migratie van oude bucketdata). De rules-review na fase 3 is
+> gebeurd (geen blokkers — zie §5.3). **Volgende stap: fase 7** (beheerwachtwoord eruit,
+> beheer via ouder-rol). Daarna fase 8–9. Elke fase heeft onderaan §4 een eigen
+> "Status: ✅"-blok. Zeg "ga verder met fase 7" (of "vanaf fase X") om te hervatten.
+> **Aanbevolen review:** fase 6 (6a+6b) raakt intricate rotatie-logica — een aparte
+> Opus/high-review vóór fase 7 is verstandig (staat nog open).
 >
 > **Modeladvies staat per fase-kop in §4** (bouw én, waar relevant, een aparte
 > reviewronde). **Vaste regel: vóór je een fase start, meld expliciet welk
@@ -648,11 +649,37 @@ andere kind + volgende lijn; admin maakt en verwijdert een beurt-taak. Fase 1–
 groen (fase 5 kreeg één datum-robuustheidsfix: eenmalige taak nu in de vaste kind-sectie
 i.p.v. "Rol B", zodat de dagindex-pariteit de test niet meer beïnvloedt).
 
-**Fase 6b — rotatiemodel (§2.3): NOG TE DOEN.** Het per-taak `rotation`-record
-(deelnemers/interval/anker/pointer) en het schrappen van de A/B-buckets als concept. Nu
-draait de rolverdeling nog op `roleFor(positie, dagindex)` (A/B-flip) — exact het oude
-gedrag voor 2 kinderen, maar bij 3+ kinderen delen er twee rol A. 6b lost dat op. Los
-reviewbaar; jullie 2 kinderen draaien intussen correct.
+**Fase 6b — rotatiemodel (§2.3): ✅ gebouwd & getest.** De A/B-buckets zijn als concept
+verdwenen. Taken staan nu **plat** onder `settings/tasks/{taskId}: { label, recurring,
+order, weekdays?, members?, interval?, anchorIdx?, pointer? }`. De rolverdeling draait niet
+meer op `roleFor(positie, dagindex)` maar op een per-taak **ring + pointer**:
+- `taskRing(t)` = de deelnemersvolgorde. `members` leeg/afwezig = alle actieve kinderen;
+  anders exact de opgegeven subset (gefilterd op nog-actieve kind-leden). **Eén deelnemer =
+  vaste taak** (`isFixedTask`, toont het 👤-merkje — vervangt de oude kid-vaste buckets).
+- `taskAssignee(t, dayIdx)` = `ring[((pointer + steps) % n + n) % n]`, met
+  `steps = interval==='weekly' ? floor((dayIdx-anchorIdx)/7) : (dayIdx-anchorIdx)`. Dagelijks
+  (default) + wekelijks interval; `anchorIdx`/`pointer` verschuifbaar. **Voor 2 kinderen met
+  pointer 0 vs 1 is dit exact het oude A/B-gedrag** (getest: taak wisselt dagelijks van kind);
+  3+ kinderen roteren nu netjes rond i.p.v. dat er twee "rol A" delen.
+- `tasksForKidDay(uid, idx, dow)` vervangt de oude rol-lookup in de renderloop en in
+  `kidScheduledCount`. `toggleTask(uid, taskId)` schrijft naar het platte pad; de one-off
+  freeze/restore bewaart nu de hele rotatie (`copyRotation`: weekdays/members/interval/
+  anchorIdx/pointer) in de snap en zet ze bij uitvinken terug.
+- **Admin:** één "Taken"-sectie (`renderAdminTasks`) i.p.v. vier bucket-secties. Per taak:
+  deelnemer-chips aan/uit (`toggleTaskMember`), interval-toggle (`toggleTaskInterval`),
+  pointer ⏮/⏭ (`advanceTaskPointer`/`rewindTaskPointer`), label bewerken, terugkerend/
+  eenmalig, verwijderen. Alle handlers nemen nu `(taskId)` i.p.v. `(bucket, taskId)`.
+- **Backward-compat migratie:** een bestaande database met oude A/B/uid-buckets wordt bij
+  het laden herkend (`looksLikeBuckets`) en in het geheugen omgezet (`migrateTaskBuckets`:
+  A→pointer 0, B→pointer 1, uid-bucket→`members:[uid]`), en **één keer** platgeschreven
+  door de eerste ingelogde ouder (`maybeMigrateTasks`, getriggerd door zowel de taken- als
+  de leden-listener — wie als tweede laadt vuurt de write). Geen aparte migratiestap nodig.
+
+**Tests (`test-fase6b.js`):** (1) een taak wisselt dagelijks tussen de twee kinderen
+(reproduceert A/B); (2) een taak vastzetten op één kind via deelnemerkeuze blijft elke dag
+bij dat kind; (3) oude A/B/uid-bucketdata wordt correct gemigreerd (A→p0, B→p1, kind→vast)
+en rendert nog. Fase 1–5 + 6a blijven groen (test-fase5 aangepast: de "Taken"-sectie
+i.p.v. de verdwenen "Vaste taken"-sectie).
 
 ### Fase 7 — Beheerwachtwoord verwijderen, beheer via ouder-rol
 > **Modeladvies: Sonnet (of Fable), niveau medium.** Grotendeels verwijderen +
