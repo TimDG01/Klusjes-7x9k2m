@@ -771,6 +771,13 @@ precies waar rules meestal lekken:
    volledige lijst opsombaar; schrijven enkel als je het gezin aanmaakt/bezit.
 5. **Kind schrijft alleen eigen vinkjes/streaks:** vergt de per-uid-neststructuur (§2.2 A),
    anders niet strak afdwingbaar.
+6. **`/test`-sandbox (`?test`) heeft een eigen open regel nodig.** In testmodus prefixt de app
+   elk pad met `test/`, dus `families`/`userIndex`/`familyCodes` leven dan gespiegeld onder
+   `/test`. De strenge regels hierboven verwijzen intern naar `root.child('families')` —
+   die kloppen NIET onder `test/families`. Daarom is `/test` bewust **volledig open voor
+   ingelogde gebruikers** (`.read`/`.write`: `auth != null`), zoals in v15. Ontbreekt die
+   regel, dan wordt élke schrijf onder `/test` geweigerd → "aanmaak mislukt" / "Geen
+   verbinding". Staat in `firebase-rules-v16.json`; moet handmatig mee in de console.
 
 Lever de rules met NL-commentaar per blok zodat het tweede model gericht kan controleren.
 

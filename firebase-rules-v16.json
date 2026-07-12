@@ -26,6 +26,20 @@
     },
 
     // =====================================================================
+    // /test : wegwerp-sandbox voor ?test. In testmodus prefixt de app elk pad
+    // met 'test/', zodat alle bovenstaande takken (families/userIndex/familyCodes)
+    // hier gespiegeld onder leven. Bewust VOLLEDIG open voor ingelogde gebruikers:
+    // de strenge regels hierboven verwijzen intern naar root.child('families') —
+    // dus die kloppen NIET onder test/families. Voor een sandbox is één open regel
+    // het juiste antwoord (zoals in v15). Een ontbrekende /test-regel = alles onder
+    // /test wordt geweigerd → "aanmaak mislukt" / "Geen verbinding".
+    // =====================================================================
+    "test": {
+      ".read":  "auth != null",
+      ".write": "auth != null"
+    },
+
+    // =====================================================================
     // GEZINSDATA — alles per gezin genest onder families/{familyId}/
     // =====================================================================
     "families": {
