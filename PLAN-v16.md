@@ -1,13 +1,24 @@
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
-> **Status:** Fase 1, 2 én 3 gebouwd en getest (klusjesv2-config, ouder-login met
-> persistente sessie, gezin aanmaken/aansluiten via code, en álle app-data genest per
-> gezin onder `families/{familyId}/`). **Fase 3 eindigt met een STOP voor een
-> rules-review** — zie het fase-3-blok onderaan §4. Zeg "ga verder vanaf fase X" om te
-> hervatten.
-> **Branch:** `claude/chores-pwa-v16-plan-11kzki` voor de planfase; de bouwfase draait
-> in deze sessie op `claude/phase-1-execution-fcxdv1`, `main` blijft live v15.
-> **Nieuw Firebase-project:** `klusjesv2` (config staat in fase 1 hieronder).
+> **Status (laatst bijgewerkt na fase 5):** Fase **1 t/m 5 zijn gebouwd, getest en
+> gepusht** — ouder-login met persistente sessie, gezin aanmaken/aansluiten via code,
+> álle app-data genest per gezin onder `families/{familyId}/`, gezinsleden + kind-accounts
+> beheren, en kind-login met afgeschermde weergave. De rules-review na fase 3 is gebeurd
+> (geen blokkers — zie §5.3). **Volgende stap: fase 6** (volwaardig rotatiemodel §2.3 +
+> stofzuigen als herbruikbare beurt-taak `settings/shifts`); die is nu een stuk kleiner
+> omdat de per-uid-nesting én de dynamische kind-kaarten (geen hardcoded lies/lenn meer)
+> al in fase 5 zijn meegenomen — zie het fase-5-statusblok. Elke fase heeft onderaan §4
+> een eigen "Status: ✅"-blok met wat er precies gebeurd is. Zeg "ga verder met fase 6"
+> (of "vanaf fase X") om te hervatten.
+> **Branch:** `claude/chores-pwa-v16-plan-11kzki` was de planfase; **alle bouw-commits
+> (fase 1–5) staan op `claude/phase-1-execution-fcxdv1`** — dáár verder werken. `main`
+> blijft live v15 (v16 gaat pas live bij merge). Werkboom is schoon en volledig gepusht.
+> **Nieuw Firebase-project:** `klusjesv2` (config in fase 1); Auth (e-mail/wachtwoord)
+> staat aan, de rules uit `firebase-rules-v16.json` staan erop.
+> **Testen:** headless Playwright tegen een inline fake-Firebase (geen netwerk) —
+> `test-fase1..5.js` in de scratchpad, allemaal groen; een klikbare demo (nepdata) is als
+> Artifact gepubliceerd. De scratchpad-testbestanden staan buiten de repo; een verse
+> sessie kan ze opnieuw genereren volgens het CLAUDE.md-testpatroon.
 >
 > **Rules/data-model mismatch — OPGELOST in fase 3.** Vanaf fase 3 is `DB_ROOT`
 > dynamisch `families/{familyId}/` (na login opgezocht via `userIndex/{uid}`), dus alle
