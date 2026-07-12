@@ -9,10 +9,12 @@
 > met automatische migratie van oude bucketdata), en het **client-side beheerwachtwoord
 > geschrapt** — beheer hangt nu aan de ouder-rol (`isParent()`). De rules-review na fase 3
 > is gebeurd (geen blokkers — zie §5.3) en fase 6 (6a+6b) is nagelezen (geen blokkers).
-> **Volgende stap: fase 8** (migratiehulp voor de oude JSON-export — Opus/high, onomkeerbaar,
-> aparte reviewronde). Daarna fase 9 (VERSION → v16 + opschonen). Elke fase heeft onderaan
-> §4 een eigen "Status: ✅"-blok. Zeg "ga verder met fase 8" (of "vanaf fase X") om te
-> hervatten.
+> Fase **8** (migratiehulp) is óók gebouwd en getest, maar bewust als **los bestand
+> `migratie.html`** i.p.v. in de app (op verzoek — de eenmalige migratie hoort niet in de
+> dagelijkse app). **Volgende stap: fase 9** (VERSION → v16 + opschonen; klein). Elke fase
+> heeft onderaan §4 een eigen "Status: ✅"-blok. Zeg "ga verder met fase 9" om te hervatten.
+> Openstaand bij de gebruiker: de `/test`-regel in de console plaatsen, en zelf de
+> `?test`-dry-run van de migratie doen vóór de echte migratie + de overstap naar `main`.
 >
 > **Modeladvies staat per fase-kop in §4** (bouw én, waar relevant, een aparte
 > reviewronde). **Vaste regel: vóór je een fase start, meld expliciet welk
@@ -739,6 +741,39 @@ wachtwoordstap vallen).
 - **Test:** na migratie is dezelfde persoon aan de beurt voor zowel rol als stofzuigen;
   streaks/badges/historiek van Lies & Lenn staan er nog.
 - **Commit:** `Fase 8: migratiehulp voor oude JSON-export met behoud van rotatiestand`.
+
+**Status: ✅ gebouwd & getest — als LOS bestand `migratie.html` (op verzoek).** Bewuste
+afwijking van de plan-tekst: de migratie zit **niet** in de app (`index.html`) als verborgen
+scherm, maar in een **apart, zelfstandig bestand `migratie.html`** dat niet naar `main` gaat.
+Reden (akkoord met de gebruiker): de migratie is een eenmalige, gevoelige actie die alleen de
+ouder doet — die hoort niet in de dagelijkse app, en zo komt de migratiecode er nooit in.
+Werking: (1) ouder logt in (e-mail+wachtwoord, nodig want de rules laten alleen ouder-schrijf
+toe); (2) de pagina zoekt het gezin op via `userIndex`, leest de leden en **koppelt `lies`/`lenn`
+automatisch** op gebruikersnaam (met dropdowns om te overriden); (3) JSON plakken; (4) knop
+"Controleer & toon wat er komt" toont een samenvatting + de exacte JSON die weggeschreven wordt;
+(5) een aparte, rode knop schrijft definitief weg. Een **testmodus-vinkje** schrijft eerst naar
+`/test` (met meta/leden/`userIndex` meegespiegeld) zodat de ouder het resultaat via de app met
+`?test` kan bekijken vóór de echte run.
+
+Omzetting exact volgens plan, geverifieerd tegen een **echte export** (de gebruiker leverde er
+een): A-bucket → `members:[liesUid,lennUid]` pointer 0; B-bucket → `members:[lennUid,liesUid]`
+pointer 0 (beide met anker 0 — reproduceert `getRoles` voor álle dagen, want v15 en v16 delen
+dezelfde `START`); `lies`/`lenn`-buckets → vaste taak (`members:[uid]`). `days/*` hersleuteld
+naar `checks/{uid}/{taskId}` (push-sleutels met dubbele streep `lenn--Ox…` correct gesplitst),
+`{kid}-vac` → `checks/{uid}/shift-vacuum`, `vac:{kid,floor}` → `days/{key}/shift/vacuum:{uid,line}`,
+`snap/{kid}-{tid}` → `snap/{uid}/{tid}`. Stofzuigen → één `settings/shifts/vacuum` met
+`next:{uid,lineIdx}` (of berekend via de geporte `getVacuum` als `next` ontbreekt),
+`override`/`lastDone`/`weekdays`/`floors→lines` letterlijk over. `streaks/{lies|lenn}` →
+`streaks/{uid}` (days + `b{n}`-badges). `settings/streakStart` overgenomen indien aanwezig —
+ontbreekt hij (zoals in de echte export), dan valt v16 op dezelfde default `2026-7-9` terug als
+v15, dus niets verschuift. De `/test`-tak in de export wordt volledig **genegeerd**; `meta` en
+`members` van het v16-gezin blijven ongemoeid.
+
+**Tests (`test-fase8.js`):** end-to-end tegen de nep-Firebase met een fixture in de echte
+exportvorm — inloggen + auto-koppeling, rotatiestand (A/B/vast), stofzuigen (next/override/
+lastDone/lijnen), dag-hersleuteling per uid incl. `shift-vacuum` en de dubbele-streep-push-
+sleutels, reeksdagen per uid, en het negeren van de oude `/test`-tak. Draait níét tegen de
+echte databank. De ouder doet zelf nog de `?test`-dry-run als tweede controlelaag.
 
 ### Fase 9 — Versie naar v16 + opkuis
 > **Modeladvies: Sonnet (of Fable), niveau low–medium.** Versiestring, dode code,
