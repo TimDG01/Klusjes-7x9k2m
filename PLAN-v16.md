@@ -1,15 +1,16 @@
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
-> **Status (laatst bijgewerkt na fase 5):** Fase **1 t/m 5 zijn gebouwd, getest en
+> **Status (laatst bijgewerkt na fase 6a):** Fase **1 t/m 5 + 6a zijn gebouwd, getest en
 > gepusht** — ouder-login met persistente sessie, gezin aanmaken/aansluiten via code,
 > álle app-data genest per gezin onder `families/{familyId}/`, gezinsleden + kind-accounts
-> beheren, en kind-login met afgeschermde weergave. De rules-review na fase 3 is gebeurd
-> (geen blokkers — zie §5.3). **Volgende stap: fase 6** (volwaardig rotatiemodel §2.3 +
-> stofzuigen als herbruikbare beurt-taak `settings/shifts`); die is nu een stuk kleiner
-> omdat de per-uid-nesting én de dynamische kind-kaarten (geen hardcoded lies/lenn meer)
-> al in fase 5 zijn meegenomen — zie het fase-5-statusblok. Elke fase heeft onderaan §4
-> een eigen "Status: ✅"-blok met wat er precies gebeurd is. Zeg "ga verder met fase 6"
-> (of "vanaf fase X") om te hervatten.
+> beheren, kind-login met afgeschermde weergave, en stofzuigen veralgemeend tot
+> herbruikbare **beurt-taken** (`settings/shifts`) die een kind nu zelf kan afvinken. De
+> rules-review na fase 3 is gebeurd (geen blokkers — zie §5.3). **Volgende stap: fase 6b**
+> (het per-taak `rotation`-model §2.3; A/B-buckets vervangen — lost ook 3+ kinderen op).
+> Daarna fase 7–9. Elke fase heeft onderaan §4 een eigen "Status: ✅"-blok. Zeg "ga verder
+> met fase 6b" (of "vanaf fase X") om te hervatten.
+> **Aanbevolen review:** 6a raakt intricate rotatie-logica — een aparte Opus/high-review
+> vóór 6b is verstandig (staat nog open).
 >
 > **Modeladvies staat per fase-kop in §4** (bouw én, waar relevant, een aparte
 > reviewronde). **Vaste regel: vóór je een fase start, meld expliciet welk
@@ -614,6 +615,44 @@ meegenomen:
   beurt-taak met 2 lijnen + 2 kinderen = identiek aan oud stofzuiggedrag; streak/badge
   blijft werken.
 - **Commit:** `Fase 6: dynamische, optionele roterende taken; lies/lenn hardcoding verwijderd`.
+
+**Fase 6 opgesplitst in 6a (beurt-taken) + 6b (rotatiemodel).**
+
+**Fase 6a — beurt-taken (§2.4): ✅ gebouwd & getest.** Stofzuigen is niet meer
+hardgecodeerd; het is één van mogelijk meerdere beurt-taken onder
+`settings/shifts/{shiftId}: { name, weekdays[], lines[], members[]?, next?, override?,
+lastDone?, order? }`, met bevroren historiek in `days/{key}/shift/{shiftId}: {uid,line}`
+en per-kind afvinken in `days/{key}/checks/{uid}/shift-{shiftId}`. Alle stofzuigfuncties
+zijn geparametriseerd per shift (`shiftPendingDay`/`shiftEffectiveNext`/`shiftAdvance`/
+`shiftForDay`/`shiftsForKid` + `toggleShift`/`shiftPull`/`shiftPrepone`/`shiftPostpone`).
+De pointer bewaart de **uid** (niet een `memberIdx`) — robuuster dan het plan-voorstel
+als de ledenlijst wijzigt; `lines` vervangt `floors`. Lege `members` = alle actieve
+kinderen; de ring filtert steeds op nog-actieve kind-leden. **Belangrijkste ontgrendeling:
+een kind mag nu zijn eigen beurt afvinken** (de rules laten `checks/{uid}`,
+`days/{key}/shift` en `settings/shifts/{id}/next|override|lastDone` door leden schrijven);
+de verplaats-knoppen (⏮/📥/⏭) blijven ouder-only. Admin: `renderAdminShifts` met per
+beurt-taak naam/weekdagen/lijnen(CRUD)/deelnemers(aan-uit)/volgende beurt (⏮/⏭), plus
+beurt-taak aanmaken/verwijderen.
+
+> **Bewuste afwijking van de plan-tekst (met akkoord "schone herbouw"):** de legacy-
+> kalenderformule (`getVacuum`, de `'legacy'`-rendermode) is **uit het live render-pad**
+> gehaald. Op klusjesv2 is elke shift vers met een geldige start, dus die tak vuurde hier
+> nooit; ze wordt niet meer meegesleept in het shift-render-pad. De fase-8-migratie
+> berekent zelf de begin-pointer uit de oude `settings/vacuum`-data (los van dit pad).
+> Dit schrapt een hele klasse randgevallen uit deze refactor.
+
+**Tests (`test-fase6a.js`):** beurt-taak verschijnt op de openstaande dag bij het juiste
+kind; **een ingelogd kind vinkt zijn eigen beurt af** (historiek bevroren, kind-vinkje +
+pointer-doorschuiven geschreven — de kernontgrendeling); de rotatie schuift door naar het
+andere kind + volgende lijn; admin maakt en verwijdert een beurt-taak. Fase 1–5 blijven
+groen (fase 5 kreeg één datum-robuustheidsfix: eenmalige taak nu in de vaste kind-sectie
+i.p.v. "Rol B", zodat de dagindex-pariteit de test niet meer beïnvloedt).
+
+**Fase 6b — rotatiemodel (§2.3): NOG TE DOEN.** Het per-taak `rotation`-record
+(deelnemers/interval/anker/pointer) en het schrappen van de A/B-buckets als concept. Nu
+draait de rolverdeling nog op `roleFor(positie, dagindex)` (A/B-flip) — exact het oude
+gedrag voor 2 kinderen, maar bij 3+ kinderen delen er twee rol A. 6b lost dat op. Los
+reviewbaar; jullie 2 kinderen draaien intussen correct.
 
 ### Fase 7 — Beheerwachtwoord verwijderen, beheer via ouder-rol
 > **Modeladvies: Sonnet (of Fable), niveau medium.** Grotendeels verwijderen +
