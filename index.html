@@ -1427,15 +1427,17 @@ function toggleShift(shiftId, kidKey){
         lastDone: key
       });
     }
-  } else {
+  } else if (sh.lastDone === key && sh.next){
+    // het NET-afgevinkte ongedaan maken: momentopname weg, pointer terug, en de
+    // beurt keert terug naar déze dag (afvinken wiste de override; zonder dit
+    // herstel zou een verplaatste beurt terugspringen naar de volgende geplande dag
+    // en lijken te verdwijnen). shiftForDay toont ze daarna weer als 'pending'.
     remove(dbRef(`days/${key}/shift/${shiftId}`));
-    if (sh.lastDone === key && sh.next){
-      // het net-afgevinkte ongedaan maken: pointer terug, beurt keert terug naar
-      // déze dag (afvinken wiste de override; zonder dit herstel zou een verplaatste
-      // beurt terugspringen naar de volgende geplande dag en lijken te verdwijnen)
-      update(dbRef('settings/shifts/' + shiftId), { next: shiftAdvance(sh, sh.next, -1), lastDone: null, override: key });
-    }
+    update(dbRef('settings/shifts/' + shiftId), { next: shiftAdvance(sh, sh.next, -1), lastDone: null, override: key });
   }
+  // Een OUDERE bevroren beurt (niet de laatst-gedane) uitvinken: de momentopname
+  // LATEN staan, zodat de rij zichtbaar en her-aanvinkbaar blijft (het vinkje staat
+  // nu op false). Zonder de legacy-formule zou weghalen de rij anders doen verdwijnen.
 }
 
 function toggleTask(uid, taskId){
