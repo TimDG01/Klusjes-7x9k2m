@@ -2247,6 +2247,15 @@ function renameMember(uid){
   update(dbRef('members/' + uid), { weergavenaam: naam });
 }
 
+// Gezinsnaam achteraf aanpassen (typo bij het aanmaken). Ouder-only — de rules
+// laten meta-schrijven toch alleen door een ouder toe.
+function renameFamily(){
+  if (!isParent()) return;
+  const naam = (prompt('Gezinsnaam:', (metaCache && metaCache.naam) || '') || '').trim();
+  if (!naam) return;
+  update(dbRef('meta'), { naam });
+}
+
 function cycleMemberColor(uid){
   const m = membersCache[uid];
   if (!m) return;
@@ -2306,6 +2315,7 @@ function renderMembers(){
     <div class="admin-header">
       <button class="admin-back" onclick="backToDay()">‹ Terug</button>
       <div class="admin-title">Gezin${metaCache && metaCache.naam ? ' — ' + escapeHtml(metaCache.naam) : ''}</div>
+      <button class="admin-icon-btn" onclick="renameFamily()" title="Gezinsnaam wijzigen">✏️</button>
     </div>
 
     <div class="admin-section">
@@ -2702,7 +2712,7 @@ Object.assign(window, {
   addShift, renameShift, deleteShift, addShiftLine, editShiftLine, deleteShiftLine,
   toggleShiftMember, toggleShiftWeekday,
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
-  openMembers, addChildMember, changeChildPin, renameMember, cycleMemberColor,
+  openMembers, addChildMember, changeChildPin, renameMember, renameFamily, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent
 });
 
