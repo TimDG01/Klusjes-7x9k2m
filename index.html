@@ -161,6 +161,23 @@ import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.
 import { getDatabase, ref, onValue, get, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+// =====================================================================
+// KLUSJES-PWA v16 — accountmodel & datamodel in het kort
+// ---------------------------------------------------------------------
+// Meerdere gezinnen in één app (Firebase-project klusjesv2).
+//  • Ouder logt in met e-mail + wachtwoord. Kind logt in met gebruikersnaam
+//    + pincode → intern omgezet naar {naam}@kids.klusjesv2.app (zie kidEmail).
+//  • Na login wijst userIndex/{uid} naar het gezin; álle gezinsdata leeft
+//    genest onder families/{familyId}/ (meta, members, settings, days, streaks).
+//  • dbRef(path)/rootUpdate(obj) prefixen automatisch de gezins-scope
+//    (families/{fid}/) plus BASE_ROOT; baseRef() is voor de wegwijzers
+//    (userIndex/familyCodes) die je vóór je gezin al nodig hebt.
+//  • Beheer hangt aan de ouder-rol (isParent), niet meer aan een wachtwoord.
+//  • ?test schrijft alles onder /test/… (oefendata; rode TESTMODUS-melding) —
+//    bewust behouden: handig voor veilig testen en de migratie-dry-run.
+//  • Eenmalige overzet van oude v15-data: los bestand migratie.html (niet in de app).
+// =====================================================================
+
 const firebaseConfig = {
   apiKey: "AIzaSyBMLoS2ybJV-G0cYOIP_PHcc3BAbdAXI2c",
   authDomain: "klusjesv2.firebaseapp.com",
@@ -191,7 +208,7 @@ function streakStartIdx(){
   return Math.max(0, dayIndex(d));
 }
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v15';
+const VERSION = 'klusjes-pwa v16';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de

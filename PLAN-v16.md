@@ -11,10 +11,11 @@
 > is gebeurd (geen blokkers — zie §5.3) en fase 6 (6a+6b) is nagelezen (geen blokkers).
 > Fase **8** (migratiehulp) is óók gebouwd en getest, maar bewust als **los bestand
 > `migratie.html`** i.p.v. in de app (op verzoek — de eenmalige migratie hoort niet in de
-> dagelijkse app). **Volgende stap: fase 9** (VERSION → v16 + opschonen; klein). Elke fase
-> heeft onderaan §4 een eigen "Status: ✅"-blok. Zeg "ga verder met fase 9" om te hervatten.
-> Openstaand bij de gebruiker: de `/test`-regel in de console plaatsen, en zelf de
-> `?test`-dry-run van de migratie doen vóór de echte migratie + de overstap naar `main`.
+> dagelijkse app). Fase **9** (VERSION → v16 + opkuis) is klaar. **De codekant van v16 is
+> af** — alle fases 1 t/m 9 gebouwd, getest en gepusht op deze branch; `main` blijft v15.
+> Wat rest is niet-code en ligt bij de gebruiker: de `/test`-regel in de console plaatsen, de
+> `?test`-dry-run van de migratie doen, dan de échte migratie, en ten slotte zelf beslissen
+> om v16 live te zetten (branch naar `main`).
 >
 > **Modeladvies staat per fase-kop in §4** (bouw én, waar relevant, een aparte
 > reviewronde). **Vaste regel: vóór je een fase start, meld expliciet welk
@@ -224,9 +225,12 @@ migratie 1-op-1 uit `settings/vacuum` overgezet (§ fase 8), met behoud van de p
 > met 1, 3 of meer deelnemers klopt.
 
 ### 2.6 `?test`-sandbox
-In v16 is data al per-gezin gescheiden, dus de oude `?test`-prefix is grotendeels
-overbodig. Aanbeveling: laten vallen óf vervangen door een expliciet "testgezin".
-Lage prioriteit; parkeren tot fase 9.
+In v16 is data al per-gezin gescheiden, dus de oude `?test`-prefix leek grotendeels
+overbodig. **Beslissing in fase 9: `?test` behouden.** Het bleek juist waardevol —
+veilig testen op een echt toestel zonder de productiedata te raken, én de dry-run van de
+migratie (`migratie.html` schrijft in testmodus onder `/test`, met meta/leden meegespiegeld,
+zodat de app met `?test` het resultaat kan tonen). Vereist wel de `/test`-regel in de rules
+(zie §5, gotcha 6). Niet vervangen door een "testgezin"; de sandbox doet precies wat nodig is.
 
 ---
 
@@ -784,6 +788,16 @@ echte databank. De ouder doet zelf nog de `?test`-dry-run als tweede controlelaa
 - `VERSION` (178) → `'klusjes-pwa v16'`. NL-accountmodel-comment bovenaan (§3). Dode
   code/`?test`-beslissing (§2.6) opruimen. Laatste manuele acceptatie.
 - **Commit:** `Fase 9: versie v16 + opkuis`.
+
+**Status: ✅ gebouwd & getest.** `VERSION` → `'klusjes-pwa v16'` (voettekst toont nu v16).
+Bovenaan het script staat een beknopt NL-accountmodel/datamodel-commentaar (multi-gezin, ouder-
+vs kind-login, gezins-scoping via `dbRef`/`rootUpdate`, ouder-rol i.p.v. wachtwoord, `?test`,
+en de losse `migratie.html`). **`?test`-beslissing (§2.6): behouden** — het is de basis van de
+migratie-dry-run en van veilig testen op een toestel, dus niet geschrapt. Dode-code-check
+gedaan: alle Firebase-imports worden gebruikt (`deleteApp`/`updatePassword`/`remove`/`push`/
+`onValue` allemaal live), geen wees-functies gevonden na de fase 6b/7-opkuis — bewust niets
+speculatief verwijderd (risico > baat). Fase 1–8 blijven groen. Codekant v16 is af; wat rest
+is niet-code: de gebruiker doet de echte migratie en de overstap naar `main` zelf.
 
 ---
 
