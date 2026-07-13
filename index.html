@@ -509,10 +509,21 @@ function defaultDisplayName(email){
 // Een kind logt in met gebruikersnaam + pincode. De app zet dat om naar een
 // synthetisch e-mailadres {genormaliseerde-naam}@kids.klusjesv2.app met de
 // pincode als wachtwoord — Firebase weigert dubbele e-mailadressen, dus
-// gebruikersnamen zijn gratis globaal uniek. Pincode ≥ 6 cijfers (Firebase-
-// minimum); dit is een lichte drempel tegen broers/zussen, geen sterke
-// beveiliging.
+// gebruikersnamen zijn gratis globaal uniek. Dit is een lichte drempel tegen
+// broers/zussen, geen sterke beveiliging.
 const KIDS_EMAIL_DOMAIN = 'kids.klusjesv2.app';
+// Pincode: minstens 4 cijfers. Firebase eist echter ≥ 6 tekens als wachtwoord,
+// dus een korte pin (bv. 4 cijfers) vullen we intern aan met PIN_PAD tot ≥ 6.
+// Een pin van 6+ blijft ongewijzigd → bestaande accounts (met 6-cijferpin)
+// blijven gewoon werken. Deze omzetting MOET overal identiek gebeuren
+// (aanmaken, pin wijzigen, inloggen), anders matcht de login niet.
+const PIN_MIN = 4;
+const PIN_PAD = '00';
+function isValidPin(pin){ return new RegExp('^\\d{' + PIN_MIN + ',}$').test(String(pin || '').trim()); }
+function pinToPassword(pin){
+  const p = String(pin || '').trim();
+  return p.length >= 6 ? p : p + PIN_PAD; // korte pin → +2 tot minstens 6
+}
 // gebruikersnaam → e-mail-local-part: kleine letters, accenten weg, alleen a-z0-9
 function normalizeUsername(name){
   return String(name || '').trim().toLowerCase()
@@ -1851,7 +1862,7 @@ function submitKidLogin(){
   authError = null;
   authBusy = true;
   render();
-  signInWithEmailAndPassword(auth, kidEmail(username), pin).catch(() => {
+  signInWithEmailAndPassword(auth, kidEmail(username), pinToPassword(pin)).catch(() => {
     authBusy = false;
     authError = 'Naam of pincode klopt niet. Probeer opnieuw.';
     render();
@@ -2140,13 +2151,14 @@ async function createChildAccount(username, pin){
   const secAuth = getAuth(secApp);
   const secDb = getDatabase(secApp);
   try {
+    const pw = pinToPassword(pin);
     let kidUser;
     try {
-      kidUser = (await createUserWithEmailAndPassword(secAuth, kidEmail(username), pin)).user;
+      kidUser = (await createUserWithEmailAndPassword(secAuth, kidEmail(username), pw)).user;
     } catch (err){
       if (!err || err.code !== 'auth/email-already-in-use') throw err;
       try {
-        kidUser = (await signInWithEmailAndPassword(secAuth, kidEmail(username), pin)).user;
+        kidUser = (await signInWithEmailAndPassword(secAuth, kidEmail(username), pw)).user;
       } catch (e2){
         throw { code: 'name-taken' };
       }
@@ -2173,10 +2185,10 @@ async function addChildMember(){
   const display = (prompt('Weergavenaam (zoals op de kaart):',
     rawName.trim().charAt(0).toUpperCase() + rawName.trim().slice(1)) || '').trim();
   if (!display) return;
-  const pin = prompt('Pincode (minstens 6 cijfers):');
+  const pin = prompt('Pincode (minstens 4 cijfers):');
   if (pin === null) return;
-  if (!/^\d{6,}$/.test(pin.trim())){
-    alert('De pincode moet uit minstens 6 cijfers bestaan.');
+  if (!isValidPin(pin)){
+    alert('De pincode moet uit minstens 4 cijfers bestaan.');
     return;
   }
   try {
@@ -2195,7 +2207,7 @@ async function addChildMember(){
     if (err && err.code === 'name-taken'){
       alert('Deze naam is al in gebruik, kies een andere.');
     } else if (err && err.code === 'auth/weak-password'){
-      alert('De pincode moet uit minstens 6 cijfers bestaan.');
+      alert('De pincode moet uit minstens 4 cijfers bestaan.');
     } else if (err && err.code === 'auth/network-request-failed'){
       alert('Geen internetverbinding. Probeer het opnieuw.');
     } else {
@@ -2213,23 +2225,23 @@ async function changeChildPin(uid){
   if (!m || !m.gebruikersnaam) return;
   const oldPin = prompt(`Huidige pincode van ${m.weergavenaam}:\n(zonder de huidige pin kan de pincode niet gewijzigd worden)`);
   if (oldPin === null) return;
-  const newPin = prompt('Nieuwe pincode (minstens 6 cijfers):');
+  const newPin = prompt('Nieuwe pincode (minstens 4 cijfers):');
   if (newPin === null) return;
-  if (!/^\d{6,}$/.test(newPin.trim())){
-    alert('De nieuwe pincode moet uit minstens 6 cijfers bestaan.');
+  if (!isValidPin(newPin)){
+    alert('De nieuwe pincode moet uit minstens 4 cijfers bestaan.');
     return;
   }
   const secApp = initializeApp(firebaseConfig, 'secondary-' + Date.now());
   const secAuth = getAuth(secApp);
   try {
-    const cred = await signInWithEmailAndPassword(secAuth, kidEmail(m.gebruikersnaam), oldPin.trim());
-    await updatePassword(cred.user, newPin.trim());
+    const cred = await signInWithEmailAndPassword(secAuth, kidEmail(m.gebruikersnaam), pinToPassword(oldPin));
+    await updatePassword(cred.user, pinToPassword(newPin));
     alert('Pincode gewijzigd.');
   } catch (err){
     if (err && (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential')){
       alert('De huidige pincode klopt niet.');
     } else if (err && err.code === 'auth/weak-password'){
-      alert('De nieuwe pincode moet uit minstens 6 cijfers bestaan.');
+      alert('De nieuwe pincode moet uit minstens 4 cijfers bestaan.');
     } else {
       alert('Pincode wijzigen is niet gelukt. Probeer het opnieuw.');
     }
