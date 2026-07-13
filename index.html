@@ -149,6 +149,11 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .admin-weekday-row{display:flex;gap:4px;}
 .admin-day-btn{flex:1;height:30px;border-radius:7px;font-size:11px;font-weight:600;text-transform:capitalize;background:var(--track);color:var(--text2);display:flex;align-items:center;justify-content:center;}
 .admin-day-btn.active{background:var(--green);color:#fff;}
+/* Kind-knopjes ("wie draait mee") — bewust anders dan de dagknopjes: ronde pil
+   in de eigen kleur van het kind (zelfde kleur als zijn kaart op het dagscherm),
+   zodat "wie" en "wanneer" niet als twee rijen identieke knoppen lezen. */
+.admin-kid-btn{flex:0 0 auto;padding:0 14px;border-radius:999px;text-transform:none;}
+.admin-kid-btn.active{background:var(--kidkleur,var(--green));color:#fff;}
 .admin-never{font-size:11px;color:var(--red);}
 .admin-vacuum-note{font-size:12px;color:var(--text2);margin-top:6px;}
 .admin-next-row{display:flex;align-items:center;gap:6px;font-size:14px;padding:10px 0 6px;border-bottom:1px solid var(--border);}
@@ -2424,7 +2429,7 @@ function renderAdminTasks(){
     const explicit = Array.isArray(t.members) && t.members.length > 0;
     const memberChips = kids.map(k => {
       const on = explicit ? t.members.includes(k.uid) : true;
-      return `<button class="admin-day-btn ${on ? 'active' : ''}" style="flex:0 0 auto;padding:0 10px;" onclick="toggleTaskMember('${t.id}','${k.uid}')">${escapeHtml(k.name)}</button>`;
+      return `<button class="admin-day-btn admin-kid-btn ${on ? 'active' : ''}" style="--kidkleur:${k.kleur}" onclick="toggleTaskMember('${t.id}','${k.uid}')">${escapeHtml(k.name)}</button>`;
     }).join('');
     const ring = taskRing(t);
     const assignee = taskAssignee(t, idx);
@@ -2502,7 +2507,7 @@ function renderAdminShifts(){
     const explicit = Array.isArray(sh.members) && sh.members.length > 0;
     const memberChips = kids.map(k => {
       const on = explicit ? sh.members.includes(k.uid) : true;
-      return `<button class="admin-day-btn ${on ? 'active' : ''}" style="flex:0 0 auto;padding:0 10px;" onclick="toggleShiftMember('${sh.id}','${k.uid}')">${escapeHtml(k.name)}</button>`;
+      return `<button class="admin-day-btn admin-kid-btn ${on ? 'active' : ''}" style="--kidkleur:${k.kleur}" onclick="toggleShiftMember('${sh.id}','${k.uid}')">${escapeHtml(k.name)}</button>`;
     }).join('');
     return `
       <div class="admin-section">
