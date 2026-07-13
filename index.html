@@ -89,6 +89,11 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .pw-ok{background:var(--green);color:#fff;font-weight:600;font-size:15px;padding:12px 0;border-radius:12px;}
 .pw-ok:disabled{opacity:.6;}
 .kid-input{font-size:20px;padding:14px 12px;}
+/* Pincode-veld: geen echt type=password, zodat de browser er geen "wachtwoord
+   gelekt"-controle op loslaat (korte cijfercodes staan altijd in lek-databases).
+   Wel gemaskeerd met bolletjes via -webkit-text-security (WebKit/iOS — het
+   doeltoestel is een iOS home-screen-bookmark). */
+.pin-mask{-webkit-text-security:disc;}
 .kid-btn{font-size:17px;padding:14px 0;}
 
 .footer-row{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;}
@@ -2070,7 +2075,7 @@ function renderAuth(){
           <div class="auth-title">Hoi!</div>
           <div class="auth-sub">Vul je naam en je pincode in.</div>
           <input id="authKidName" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" class="pw-input kid-input" placeholder="Je naam" onkeydown="if(event.key==='Enter')document.getElementById('authKidPin').focus()">
-          <input id="authKidPin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" class="pw-input kid-input" placeholder="Pincode" onkeydown="if(event.key==='Enter')submitKidLogin()">
+          <input id="authKidPin" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="pw-input kid-input pin-mask" placeholder="Pincode" onkeydown="if(event.key==='Enter')submitKidLogin()">
           <div class="pw-error">${escapeHtml(authError || '')}</div>
           <button class="pw-ok kid-btn" style="width:100%" onclick="submitKidLogin()" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Even wachten…' : 'Inloggen'}</button>
           <div class="auth-links"><button class="auth-link" onclick="switchAuthMode('login')">‹ Ik ben een ouder</button></div>
