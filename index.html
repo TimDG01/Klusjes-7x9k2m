@@ -131,6 +131,14 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .celebration-badge svg{display:block;margin:0 auto;animation:pop-in .6s cubic-bezier(.2,1.4,.4,1);}
 .celebration-badge-name{font-size:15px;margin-top:8px;}
 
+/* Bezig-overlay bij trage leden-acties (bv. kind toevoegen): een echte
+   draaiende ring-spinner, zodat de app niet bevroren lijkt terwijl er op de
+   databank gewacht wordt (net als het authBusy-patroon, maar met spinner). */
+.busy-overlay{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(0,0,0,.5);}
+.busy-spinner{width:44px;height:44px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:spin .8s linear infinite;}
+.busy-text{color:#fff;font-size:15px;font-weight:600;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
 .admin-header{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
 .admin-back{font-size:14px;font-weight:600;color:var(--blue);background:var(--card);padding:8px 14px;border-radius:10px;}
 .admin-title{font-size:18px;font-weight:700;flex:1;}
@@ -555,6 +563,7 @@ let authUser = null;
 let authLoaded = false;
 let authError = null;
 let authBusy = false;
+let memberBusy = false; // toont de bezig-overlay tijdens een trage leden-actie (nu: kind toevoegen)
 let familyInited = false;
 let familyResolving = false; // voorkomt dubbele gezins-resolutie bij snelle auth-events
 let familyId = null;
@@ -2196,6 +2205,10 @@ async function addChildMember(){
     alert('De pincode moet uit minstens 4 cijfers bestaan.');
     return;
   }
+  // Vanaf hier draait een netwerk-round-trip (account aanmaken + members-write):
+  // de bezig-overlay tonen zodat de app niet vastgevroren lijkt tijdens het wachten.
+  memberBusy = true;
+  render();
   try {
     const kidUid = await createChildAccount(username, pin.trim());
     if (membersCache[kidUid]){
@@ -2218,6 +2231,11 @@ async function addChildMember(){
     } else {
       alert('Kind toevoegen is niet gelukt. Probeer het opnieuw.');
     }
+  } finally {
+    // overlay weer weg (ook bij de vroege return hierboven en bij elke fout);
+    // render() toont meteen de bijgewerkte ledenlijst
+    memberBusy = false;
+    render();
   }
 }
 
@@ -2347,7 +2365,7 @@ function renderMembers(){
     <div class="admin-section">
       <div class="admin-role-title">Kinderen</div>
       ${kidRows}
-      <button class="admin-add-btn" onclick="addChildMember()">+ Kind toevoegen</button>
+      <button class="admin-add-btn" onclick="addChildMember()" ${memberBusy ? 'disabled' : ''}>${memberBusy ? 'Bezig…' : '+ Kind toevoegen'}</button>
       <div class="admin-vacuum-note">Een kind logt in met zijn gebruikersnaam en pincode. Pincode kwijt? Die is alleen te wijzigen mét de huidige pin — bewaar ze dus goed.</div>
     </div>
 
@@ -2358,6 +2376,7 @@ function renderMembers(){
       <div class="admin-vacuum-note">Een mede-ouder maakt zijn eigen account aan en sluit aan met de gezinscode hierboven.</div>
     </div>
     ${versionLine()}
+    ${memberBusy ? '<div class="busy-overlay"><div class="busy-spinner"></div><div class="busy-text">Kind toevoegen…</div></div>' : ''}
   `;
 }
 
