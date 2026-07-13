@@ -781,6 +781,16 @@ lastDone/lijnen), dag-hersleuteling per uid incl. `shift-vacuum` en de dubbele-s
 sleutels, reeksdagen per uid, en het negeren van de oude `/test`-tak. Draait níét tegen de
 echte databank. De ouder doet zelf nog de `?test`-dry-run als tweede controlelaag.
 
+**Rules-fix (na gebruikerstest):** de eerste versie schreef `days` en `streaks` als één heel
+blok weg (`update(families/{fid}, {days:…, streaks:…})`). Dat lukte in `/test` (open regel)
+maar werd op de échte databank geweigerd: de rules geven ouder-schrijf op `days/$dayKey` en
+`streaks/$childId`, **niet** op de `days`/`streaks`-knoop zelf, en er staat geen `.write` op
+`families/$familyId`. Opgelost door `days` en `streaks` **per sleutel** te schrijven
+(`days/{dagkey}`, `streaks/{uid}`) in hetzelfde atomische multi-path `update`; `settings/*`
+mag wél als blok (de `.write` staat op de `settings`-knoop). `test-fase8.js` heeft nu een
+structurele wacht die controleert dat het update-object géén heel `days`/`streaks`-blok bevat
+(de nep-DB dwingt zelf geen rules af, vandaar de vormcontrole).
+
 ### Fase 9 — Versie naar v16 + opkuis
 > **Modeladvies: Sonnet (of Fable), niveau low–medium.** Versiestring, dode code,
 > laatste manuele acceptatie — triviaal, geen reviewronde nodig.

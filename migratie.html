@@ -359,17 +359,26 @@ function renderSummary(){
   $('rawOut').textContent = JSON.stringify(payloadFor(test), null, 2);
 }
 
-function payloadFor(test){
+// Bouwt het multi-path update-object (relatief t.o.v. families/{fid}). CRUCIAAL:
+// days en streaks worden PER SLEUTEL geschreven (days/{dagkey}, streaks/{uid}),
+// NIET als één heel 'days'/'streaks'-blok. De security-rules geven ouder-schrijf
+// op days/$dayKey en streaks/$childId — er staat GEEN .write op de days/streaks-
+// knoop zelf, dus een blok-schrijf wordt geweigerd op de echte databank (het
+// werkte enkel in /test, waar de open /test-regel alles bovenaan al toestaat).
+// settings/* mag wél als blok: daar staat de .write op de settings-knoop.
+function buildFam(test){
   const c = converted;
-  const fam = { 'settings/tasks': c.tasks, 'settings/shifts': c.shifts, 'days': c.days, 'streaks': c.streaks };
+  const fam = { 'settings/tasks': c.tasks, 'settings/shifts': c.shifts };
   if (c.streakStart) fam['settings/streakStart'] = c.streakStart;
-  const out = { ['families/'+familyId]: fam };
+  for (const dk of Object.keys(c.days)) fam['days/' + dk] = c.days[dk];
+  for (const uid of Object.keys(c.streaks)) fam['streaks/' + uid] = c.streaks[uid];
   if (test){ // in testmodus ook meta+leden meespiegelen zodat de app met ?test alles kan tonen
-    out['families/'+familyId].meta = metaCache;
-    out['families/'+familyId].members = membersCache;
+    fam['meta'] = metaCache;
+    fam['members'] = membersCache;
   }
-  return out;
+  return fam;
 }
+function payloadFor(test){ return { ['families/'+familyId]: buildFam(test) }; }
 
 $('btnBack').addEventListener('click', () => { show('previewCard', false); $('dataCard').scrollIntoView({behavior:'smooth'}); });
 
@@ -378,11 +387,7 @@ $('btnWrite').addEventListener('click', async () => {
   const base = test ? 'test/' : '';
   $('btnWrite').disabled = true; msg('writeMsg','Bezig met wegschrijven…','');
   try {
-    const c = converted;
-    const fam = { 'settings/tasks': c.tasks, 'settings/shifts': c.shifts, 'days': c.days, 'streaks': c.streaks };
-    if (c.streakStart) fam['settings/streakStart'] = c.streakStart;
-    if (test){ fam['meta'] = metaCache; fam['members'] = membersCache; }
-    await update(ref(db, base + 'families/' + familyId), fam);
+    await update(ref(db, base + 'families/' + familyId), buildFam(test));
     if (test){
       // wegwijzers zodat ?test meteen op dit gezin landt (ouder + kinderen)
       await set(ref(db, 'test/userIndex/' + auth.currentUser.uid), familyId);
@@ -403,6 +408,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, ch => ({'&':'&a
 
 // Handig voor geautomatiseerde verificatie (fake-SDK test):
 window.__convert = convert;
+window.__buildFam = buildFam;
 </script>
 </body>
 </html>
