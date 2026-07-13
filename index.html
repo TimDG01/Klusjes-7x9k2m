@@ -133,8 +133,13 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .admin-role-title{font-size:15px;font-weight:700;margin-bottom:10px;}
 .admin-task-row{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);}
 .admin-task-row:last-of-type{border-bottom:none;}
-.admin-task-top{display:flex;align-items:center;gap:8px;}
-.admin-task-label{flex:1;font-size:14px;}
+/* flex-wrap + de knoppen gegroepeerd in .admin-task-actions: past de rij niet op
+   een smal scherm, dan zakt de knoppengroep als geheel naar een eigen regel
+   (rechts uitgelijnd) i.p.v. buiten beeld geduwd te worden of het label tot een
+   sliert te knijpen. min-width geeft het label een leesbare ondergrens. */
+.admin-task-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.admin-task-label{flex:1;font-size:14px;min-width:88px;overflow-wrap:break-word;}
+.admin-task-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex:0 0 auto;}
 .admin-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;background:var(--track);color:var(--text2);}
 .admin-icon-btn{font-size:16px;padding:4px 6px;}
 .admin-icon-btn svg{display:block;}
@@ -2271,11 +2276,13 @@ function renderMembers(){
         <div class="dot" style="background:${m.kleur || 'var(--text3)'}"></div>
         <div class="admin-task-label">${escapeHtml(m.weergavenaam)}${m.actief === false ? ' <span class="admin-tag">gepauzeerd</span>' : ''}<br>
           <span class="member-sub">inlognaam: ${escapeHtml(m.gebruikersnaam || '?')}</span></div>
-        <button class="admin-icon-btn" onclick="cycleMemberColor('${m.uid}')" title="Kleur wisselen">🎨</button>
-        <button class="admin-icon-btn" onclick="renameMember('${m.uid}')" title="Weergavenaam wijzigen">✏️</button>
-        <button class="admin-icon-btn" onclick="changeChildPin('${m.uid}')" title="Pincode wijzigen">🔑</button>
-        <button class="admin-icon-btn" onclick="toggleMemberActive('${m.uid}')" title="${m.actief === false ? 'Weer activeren' : 'Pauzeren'}">${m.actief === false ? '▶️' : '⏸️'}</button>
-        <button class="admin-icon-btn danger" onclick="deleteMember('${m.uid}')" title="Uit het gezin verwijderen">${TRASH_ICON}</button>
+        <span class="admin-task-actions">
+          <button class="admin-icon-btn" onclick="cycleMemberColor('${m.uid}')" title="Kleur wisselen">🎨</button>
+          <button class="admin-icon-btn" onclick="renameMember('${m.uid}')" title="Weergavenaam wijzigen">✏️</button>
+          <button class="admin-icon-btn" onclick="changeChildPin('${m.uid}')" title="Pincode wijzigen">🔑</button>
+          <button class="admin-icon-btn" onclick="toggleMemberActive('${m.uid}')" title="${m.actief === false ? 'Weer activeren' : 'Pauzeren'}">${m.actief === false ? '▶️' : '⏸️'}</button>
+          <button class="admin-icon-btn danger" onclick="deleteMember('${m.uid}')" title="Uit het gezin verwijderen">${TRASH_ICON}</button>
+        </span>
       </div>
     </div>
   `).join('') || '<div class="admin-vacuum-note">Nog geen kinderen toegevoegd.</div>';
@@ -2435,10 +2442,12 @@ function renderAdminTasks(){
       <div class="admin-task-top">
         <span class="admin-tag">${t.recurring ? 'Terugkerend' : 'Eenmalig'}</span>
         <div class="admin-task-label">${escapeHtml(t.label)}</div>
-        <button class="admin-icon-btn" onclick="toggleRecurring('${t.id}')" title="Terugkerend / eenmalig">🔁</button>
-        <button class="admin-icon-btn" onclick="toggleTaskInterval('${t.id}')" title="Dagelijks / wekelijks wisselen">${t.interval === 'weekly' ? '📅' : '🗓️'}</button>
-        <button class="admin-icon-btn" onclick="editTaskLabel('${t.id}')" title="Naam wijzigen">✏️</button>
-        <button class="admin-icon-btn danger" onclick="deleteTaskAdmin('${t.id}')" title="Taak verwijderen">${TRASH_ICON}</button>
+        <span class="admin-task-actions">
+          <button class="admin-icon-btn" onclick="toggleRecurring('${t.id}')" title="Terugkerend / eenmalig">🔁</button>
+          <button class="admin-icon-btn" onclick="toggleTaskInterval('${t.id}')" title="Dagelijks / wekelijks wisselen">${t.interval === 'weekly' ? '📅' : '🗓️'}</button>
+          <button class="admin-icon-btn" onclick="editTaskLabel('${t.id}')" title="Naam wijzigen">✏️</button>
+          <button class="admin-icon-btn danger" onclick="deleteTaskAdmin('${t.id}')" title="Taak verwijderen">${TRASH_ICON}</button>
+        </span>
       </div>
       ${renderWeekdayPicker(days, `toggleWeekday('${t.id}',`)}
       ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
@@ -2482,8 +2491,10 @@ function renderAdminShifts(){
       <div class="admin-task-row">
         <div class="admin-task-top">
           <div class="admin-task-label">${escapeHtml(f)}</div>
-          <button class="admin-icon-btn" onclick="editShiftLine('${sh.id}',${i})">✏️</button>
-          <button class="admin-icon-btn danger" onclick="deleteShiftLine('${sh.id}',${i})">${TRASH_ICON}</button>
+          <span class="admin-task-actions">
+            <button class="admin-icon-btn" onclick="editShiftLine('${sh.id}',${i})">✏️</button>
+            <button class="admin-icon-btn danger" onclick="deleteShiftLine('${sh.id}',${i})">${TRASH_ICON}</button>
+          </span>
         </div>
       </div>
     `).join('');
@@ -2497,8 +2508,10 @@ function renderAdminShifts(){
       <div class="admin-section">
         <div class="admin-task-top" style="margin-bottom:10px;">
           <div class="admin-role-title" style="margin:0;flex:1;">🔁 ${escapeHtml(sh.name || 'Beurt')}</div>
-          <button class="admin-icon-btn" onclick="renameShift('${sh.id}')" title="Naam wijzigen">✏️</button>
-          <button class="admin-icon-btn danger" onclick="deleteShift('${sh.id}')" title="Beurt-taak verwijderen">${TRASH_ICON}</button>
+          <span class="admin-task-actions">
+            <button class="admin-icon-btn" onclick="renameShift('${sh.id}')" title="Naam wijzigen">✏️</button>
+            <button class="admin-icon-btn danger" onclick="deleteShift('${sh.id}')" title="Beurt-taak verwijderen">${TRASH_ICON}</button>
+          </span>
         </div>
         ${renderWeekdayPicker(days, `toggleShiftWeekday('${sh.id}',`)}
         ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
