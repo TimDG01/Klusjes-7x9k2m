@@ -814,9 +814,21 @@ function isFixedTask(t){
   return m.length === 1;
 }
 
+// Sleutel van de dag op dagindex `idx` (voor de exacte-dag-zichtbaarheid hieronder).
+function dayKeyForIdx(idx){
+  const d = new Date(START); d.setDate(d.getDate() + idx);
+  return dayKey(d);
+}
+
 // De taken die kind `uid` op dag (idx, dow) toegewezen krijgt, op volgorde.
+// `onDay` (bv. een doorgeschoven beurt, zie shiftPostpone) pint een taak op één exacte
+// dag i.p.v. een weekdag-patroon; afwezig = het gewone weekdag-gedrag (schema-additief).
 function tasksForKidDay(uid, idx, dow){
-  return taskList().filter(t => taskWeekdays(t).includes(dow) && taskAssignee(t, idx) === uid);
+  return taskList().filter(t => {
+    if (taskAssignee(t, idx) !== uid) return false;
+    if (t.onDay) return t.onDay === dayKeyForIdx(idx);
+    return taskWeekdays(t).includes(dow);
+  });
 }
 
 // --- Migratie van de oude A/B-bucketvorm naar de platte rotatievorm ---
@@ -1513,6 +1525,15 @@ function shiftPrepone(shiftId){
   update(dbRef('settings/shifts/' + shiftId), { override: dayKey(nd), next: { uid: n.uid, lineIdx: n.lineIdx } });
 }
 
+// Doorschuiven (⏭): de openstaande beurt wordt LOSGEMAAKT tot een gewone eenmalige
+// taak op de volgende dag (voor dezelfde persoon + lijn), en de rotatie schuift meteen
+// door naar de volgende persoon. Zo blijft de beurt-taak draaien i.p.v. stil te staan
+// tot déze ene beurt is afgevinkt (het oude gedrag verzette enkel de override-datum,
+// waardoor dezelfde persoon aan de beurt bleef en de rotatie bevroor). De losse taak is
+// een `recurring:false`-taak — dat hergebruikt het bestaande afvink/bevries/herstel-
+// mechanisme (en de rules laten een kind zo'n taak al afvinken) — met `onDay` (enkel
+// zichtbaar op die exacte dag) en `fromShift` (zodat Beheer ze verbergt). Ouder-only:
+// de ⏭-knop is al `!isChild()`, dus de settings/tasks-schrijf mag.
 function shiftPostpone(shiftId){
   const sh = shiftsArray().find(s => s.id === shiftId);
   const pKey = sh && shiftPendingDay(sh);
@@ -1520,7 +1541,20 @@ function shiftPostpone(shiftId){
   if (!pKey || !n) return;
   const nd = parseDayKey(pKey);
   nd.setDate(nd.getDate() + 1);
-  update(dbRef('settings/shifts/' + shiftId), { override: dayKey(nd), next: { uid: n.uid, lineIdx: n.lineIdx } });
+  const line = shiftLines(sh)[n.lineIdx];
+  const taskId = push(dbRef('settings/tasks')).key;
+  rootUpdate({
+    ['settings/tasks/' + taskId]: {
+      label: `🔁 ${sh.name || 'Beurt'}: ${line}`,
+      recurring: false,
+      members: [n.uid],
+      onDay: dayKey(nd),
+      fromShift: shiftId,
+      order: Date.now()
+    },
+    ['settings/shifts/' + shiftId + '/next']: shiftAdvance(sh, { uid: n.uid, lineIdx: n.lineIdx }, 1),
+    ['settings/shifts/' + shiftId + '/override']: null
+  });
 }
 
 // Beurt aan/afvinken. Mag door het kind zelf (rules: eigen checks + shift-pointer +
@@ -1578,6 +1612,8 @@ function toggleTask(uid, taskId){
     if (from.interval) to.interval = from.interval;
     if (Number.isInteger(from.anchorIdx)) to.anchorIdx = from.anchorIdx;
     if (Number.isInteger(from.pointer)) to.pointer = from.pointer;
+    if (from.onDay) to.onDay = from.onDay;         // exacte-dag-pinning (doorgeschoven beurt)
+    if (from.fromShift) to.fromShift = from.fromShift; // herkomst-vlag (verborgen in Beheer)
     return to;
   };
 
@@ -2470,7 +2506,8 @@ function renderWeekdayPicker(activeDays, handlerPrefix){
 function renderAdminTasks(){
   const kids = activeKids();
   const idx = dayIndex(clampedToday());
-  const rows = taskList().map(t => {
+  // losgemaakte beurten (fromShift) zijn tijdelijke eenmalige taken — niet in Beheer tonen
+  const rows = taskList().filter(t => !t.fromShift).map(t => {
     const days = taskWeekdays(t);
     const explicit = Array.isArray(t.members) && t.members.length > 0;
     const memberChips = kids.map(k => {
