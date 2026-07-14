@@ -162,9 +162,12 @@ A/B buckets are **gone**. Rotation is a per-task **ring + pointer**:
   root-level multi-path `rootUpdate({...})`** — keep them atomic. Restoring a definition is a
   settings write, so **un-checking a frozen one-off is parent-only**; the child UI explains this.
 - **`onDay: 'yyyy-M-d'`** pins a task to one exact day instead of a weekday pattern (absent = normal
-  weekday behavior; schema-additive, `dayKeyForIdx` computes the day). **`fromShift: shiftId`** tags
-  a task as a detached turn (see Shifts) so `renderAdminTasks` hides it from Beheer. Both fields are
-  carried through freeze/restore by `copyRotation`.
+  weekday behavior; schema-additive). Its *effective* day self-heals: `onDayEffIdx(t)` returns
+  `max(onDayIdx, todayIdx)`, so a lapsed unchecked pin slides forward to today instead of vanishing
+  (same idea as a shift's past `override`). **`fromShift: shiftId`** tags a task as a detached turn
+  (see Shifts): `renderAdminTasks` hides it from Beheer, and `renderCard` draws it via `owedShiftRow`
+  (a movable beurt row) instead of a plain `taskRow`. Both fields are carried through freeze/restore
+  by `copyRotation`.
 
 ### Shift tasks (turn tasks — `settings/shifts/{shiftId}`)
 Vacuuming ("Stofzuigen") is no longer hardcoded — it's the first of possibly several **shift tasks**:
@@ -195,12 +198,17 @@ filtered to still-active kids. Key functions: `shiftPendingDay`, `shiftEffective
   Now `shiftPostpone` instead, in one atomic `rootUpdate`: (1) creates a **regular `recurring:false`
   one-off task** for that person on the next day — `{ label:'🔁 {name}: {line}', recurring:false,
   members:[uid], onDay:<nextday>, fromShift:<shiftId>, order }` — reusing the whole one-off
-  freeze/restore machinery (and the child-completable rules path), pinned to the exact next day and
-  hidden from Beheer; and (2) **advances the shift pointer** (`next = shiftAdvance(...,1)`,
-  `override:null`) so the next scheduled day gives the turn to the next person. Net effect: the turn
-  becomes a standalone eenmalige taak the original person still owes, and the rotation keeps running.
-  ⏮/📥 are unchanged (they pull the turn *forward*, no stall). The detached one-off then behaves like
-  any other one-off: it participates in day completion/streaks and disappears when checked off.
+  freeze/restore machinery (and the child-completable rules path), pinned to the next day via `onDay`
+  and hidden from Beheer via `fromShift`; and (2) **advances the shift pointer**
+  (`next = shiftAdvance(...,1)`, `override:null`) so the next scheduled day gives the turn to the next
+  person. Net effect: the turn becomes a standalone owed chore the original person still holds, and
+  the rotation keeps running. ⏮/📥 on the *pending* row are unchanged (they pull it forward, no stall).
+- A detached turn is **not** a plain personal task — it stays **movable**. `owedShiftRow` draws it as
+  a beurt row with ⏮/⏭ (parent-only), and `moveOwedShift(taskId, ±1)` re-pins its `onDay` (never
+  before today, computed from the self-healed effective day). So a parent can keep postponing it day
+  after day, and if ignored it slides to today (via `onDayEffIdx`) rather than disappearing. It still
+  participates in day completion/streaks and, when checked off, freezes into `snap` + removes its
+  definition like any one-off (a child may do this under the existing `recurring===false` rule).
 - **Admin** (`renderAdminShifts`): one section per shift with name / weekdays / lines (CRUD) /
   members (per-kid on-off) / next turn with ⏮/⏭ (`rewindShiftTurn`/`advanceShiftTurn`), plus
   create/delete a shift task. There is no live legacy calendar fallback in the render path — every

@@ -814,19 +814,23 @@ function isFixedTask(t){
   return m.length === 1;
 }
 
-// Sleutel van de dag op dagindex `idx` (voor de exacte-dag-zichtbaarheid hieronder).
-function dayKeyForIdx(idx){
-  const d = new Date(START); d.setDate(d.getDate() + idx);
-  return dayKey(d);
+// Effectieve dagindex van een `onDay`-taak (een doorgeschoven beurt, zie shiftPostpone):
+// zijn vaste dag, maar als die al voorbij is (een blijven-liggen beurt terwijl de klok
+// doortikt) schuift hij mee naar vandaag i.p.v. te verdwijnen — zelfde zelf-herstel als de
+// override van een beurt in shiftPendingDay. Puur lees-pad, geen write. `null` = ongeldig.
+function onDayEffIdx(t){
+  const od = parseDayKey(t.onDay);
+  if (!od) return null;
+  return Math.max(dayIndex(od), dayIndex(clampedToday()));
 }
 
 // De taken die kind `uid` op dag (idx, dow) toegewezen krijgt, op volgorde.
-// `onDay` (bv. een doorgeschoven beurt, zie shiftPostpone) pint een taak op één exacte
-// dag i.p.v. een weekdag-patroon; afwezig = het gewone weekdag-gedrag (schema-additief).
+// `onDay` pint een taak op één exacte dag i.p.v. een weekdag-patroon (met het zelf-herstel
+// hierboven); afwezig = het gewone weekdag-gedrag (schema-additief).
 function tasksForKidDay(uid, idx, dow){
   return taskList().filter(t => {
     if (taskAssignee(t, idx) !== uid) return false;
-    if (t.onDay) return t.onDay === dayKeyForIdx(idx);
+    if (t.onDay){ const e = onDayEffIdx(t); return e != null && idx === e; }
     return taskWeekdays(t).includes(dow);
   });
 }
@@ -1405,10 +1409,16 @@ function render(){
 
 function renderCard(k){
   const tasks = k.tasks.map(t =>
-    taskRow(k.key, t.id, t.label, isChecked(k.key, t.id), t.fixed)
+    // een doorgeschoven beurt (fromShift) is een beurt-rij die verschuifbaar blijft,
+    // geen gewone persoonlijke taak
+    t.fromShift
+      ? owedShiftRow(k.key, t)
+      : taskRow(k.key, t.id, t.label, isChecked(k.key, t.id), t.fixed)
   ).concat((k.snaps || []).map(s =>
     // bevroren eenmalige taak: blijft afgevinkt zichtbaar; terug aanklikken herstelt ze
-    taskRow(k.key, s.id, s.label, isChecked(k.key, s.id), isFixedTask(s))
+    s.fromShift
+      ? owedShiftRow(k.key, s)
+      : taskRow(k.key, s.id, s.label, isChecked(k.key, s.id), isFixedTask(s))
   )).join('');
 
   const shiftRows = (k.shifts || []).map(({ sh, info }) => shiftRow(k.key, sh, info)).join('');
@@ -1453,6 +1463,32 @@ function taskRow(uid, taskId, label, done, fixed){
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}</div>
       ${fixed ? '<span class="fixed-mark" title="Vaste taak">👤</span>' : ''}
+    </div>
+  `;
+}
+
+// Rij voor een DOORGESCHOVEN beurt: opgeslagen als eenmalige taak (recurring:false +
+// fromShift + onDay, zie shiftPostpone), maar getekend als een beurt die — anders dan een
+// gewone persoonlijke taak — verschuifbaar blijft. Afvinken loopt via toggleTask (bevriezen
+// + definitie weg). De ⏮/⏭-knoppen zijn ouder-only en herschikken enkel de onDay-dag;
+// ⏮ verdwijnt zodra de beurt al op vandaag staat (eerder dan vandaag kan niet).
+function owedShiftRow(uid, t){
+  const done = isChecked(uid, t.id);
+  let buttons = '';
+  if (!done && !isChild()){
+    const eff = onDayEffIdx(t);
+    const todayIdx = dayIndex(clampedToday());
+    // ⏮ een dag eerder — enkel als de beurt in de toekomst staat (vóór vandaag kan niet)
+    if (eff != null && eff > todayIdx){
+      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();moveOwedShift('${t.id}',-1)" title="Een dag eerder">${SKIP_BACK_ICON}</button>`;
+    }
+    buttons += `<button class="postpone-btn" onclick="event.stopPropagation();moveOwedShift('${t.id}',1)" title="Doorschuiven naar de volgende dag">${SKIP_FWD_ICON}</button>`;
+  }
+  return `
+    <div class="task" onclick="toggleTask('${uid}','${t.id}')">
+      <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
+      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(t.label)}<span class="vac-tag">beurt</span></div>
+      ${buttons}
     </div>
   `;
 }
@@ -1555,6 +1591,23 @@ function shiftPostpone(shiftId){
     ['settings/shifts/' + shiftId + '/next']: shiftAdvance(sh, { uid: n.uid, lineIdx: n.lineIdx }, 1),
     ['settings/shifts/' + shiftId + '/override']: null
   });
+}
+
+// Een al doorgeschoven beurt (onDay-taak) nóg verder verschuiven: één dag terug (⏮) of
+// vooruit (⏭), nooit vóór vandaag. Rekent vanaf de effectieve dag (self-heal), zodat een
+// blijven-liggen beurt vanaf vandaag verder schuift. Ouder-only settings-schrijf (de
+// knoppen zijn al !isChild()); enkel de onDay-dag wijzigt.
+function moveOwedShift(taskId, delta){
+  if (isChild()) return;
+  const t = tasksCache[taskId];
+  if (!t || !t.onDay) return;
+  const eff = onDayEffIdx(t);
+  if (eff == null) return;
+  const todayIdx = dayIndex(clampedToday());
+  let target = eff + delta;
+  if (target < todayIdx) target = todayIdx;
+  const nd = new Date(START); nd.setDate(nd.getDate() + target);
+  set(dbRef('settings/tasks/' + taskId + '/onDay'), dayKey(nd));
 }
 
 // Beurt aan/afvinken. Mag door het kind zelf (rules: eigen checks + shift-pointer +
@@ -2781,7 +2834,7 @@ Object.assign(window, {
   toggleTask, toggleShift, changeDay, goToday, openAdmin, backToDay, openBadges,
   editTaskLabel, toggleRecurring, toggleTaskInterval, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleTaskMember, advanceTaskPointer, rewindTaskPointer, editStreakStart,
-  shiftPrepone, shiftPostpone, shiftPull, advanceShiftTurn, rewindShiftTurn,
+  shiftPrepone, shiftPostpone, shiftPull, moveOwedShift, advanceShiftTurn, rewindShiftTurn,
   addShift, renameShift, deleteShift, addShiftLine, editShiftLine, deleteShiftLine,
   toggleShiftMember, toggleShiftWeekday,
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
