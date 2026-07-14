@@ -84,13 +84,28 @@
           ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder'",
 
           "tasks": {
-            // Uitzondering voor een kind: enkel het VERWIJDEREN van een reeds
-            // bestaande EENMALIGE taak (recurring===false) — dat is wat er gebeurt
-            // wanneer een kind een eenmalige taak afvinkt. Aanmaken/bewerken van
-            // taken of het aanraken van terugkerende taken blijft ouder-only. (FIX #5)
-            // (Een eenmalige taak weer UITvinken = definitie herstellen = ouder-actie.)
+            // Uitzonderingen voor een kind (verder blijft alles ouder-only):
+            //  1. het VERWIJDEREN van een reeds bestaande EENMALIGE taak
+            //     (recurring===false) — dat is wat er gebeurt wanneer een kind een
+            //     eenmalige taak afvinkt. (FIX #5)
+            //     (Een eenmalige taak weer UITvinken = definitie herstellen = ouder-actie.)
+            //  2. het AANMAKEN van een doorgeschoven eigen beurt: een kind met de
+            //     per-kind vlag members/{uid}/magVerschuiven === true mag via ⏭ zijn
+            //     eigen beurt losmaken tot een eenmalige taak — d.w.z. een NIEUW
+            //     record (data bestaat nog niet) dat recurring===false is, een
+            //     fromShift-herkomst draagt en als enige deelnemer het kind zélf
+            //     heeft. Zet een ouder de vlag uit, dan weigert deze regel meteen
+            //     weer — de schakelaar in Beheer is dus server-side afgedwongen.
             "$taskId": {
-              ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || (root.child('families').child($familyId).child('members').child(auth.uid).exists() && !newData.exists() && data.child('recurring').val() === false))"
+              ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || (root.child('families').child($familyId).child('members').child(auth.uid).exists() && !newData.exists() && data.child('recurring').val() === false) || (root.child('families').child($familyId).child('members').child(auth.uid).child('magVerschuiven').val() === true && !data.exists() && newData.child('recurring').val() === false && newData.child('fromShift').exists() && newData.child('members').child('0').val() === auth.uid))",
+
+              // 3. het VERSCHUIVEN (⏮/⏭) van zo'n eigen doorgeschoven beurt: enkel
+              //    de dag-pin (onDay) is dan schrijfbaar, en alleen op een taak die
+              //    een fromShift-herkomst heeft én van het kind zelf is. De
+              //    ouder-toegang op $taskId hierboven cascadeert al naar dit veld.
+              "onDay": {
+                ".write": "auth != null && root.child('families').child($familyId).child('members').child(auth.uid).child('magVerschuiven').val() === true && data.parent().child('fromShift').exists() && data.parent().child('members').child('0').val() === auth.uid"
+              }
             }
           },
 

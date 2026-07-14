@@ -94,9 +94,15 @@ there is the most common way to introduce a silent (console-error-only) bug.
   PIN is a known limitation — client-side you can't reset another account's password without the
   Admin SDK / a Cloud Function.
 - **Members.** `families/{fid}/members/{uid}: { rol:'ouder'|'kind', weergavenaam, gebruikersnaam?,
-  kleur, actief }`. `activeKids()` returns active child members (sorted by uid — stable across
-  renames); kid colors come from the member record. Removing a child is a **soft-delete**
-  (`actief:false`) so history/streaks survive; the login account itself can't be deleted client-side.
+  kleur, actief, magVerschuiven? }`. `activeKids()` returns active child members (sorted by uid —
+  stable across renames); kid colors come from the member record. Removing a child is a
+  **soft-delete** (`actief:false`) so history/streaks survive; the login account itself can't be
+  deleted client-side. `magVerschuiven` is the per-kid permission flag "may move own shift turns"
+  (absent = no): it lives on the member record deliberately — no extra listener (membersCache
+  already loads) and the security rules read the same flag server-side, so toggling it off is
+  actually enforced, not just hidden UI. Read via `kidMayMove(uid)`; the combined
+  "may the *logged-in* user move kid X's turn" check is `mayMoveShiftOf(uid)` (parent: always;
+  child: own turn + flag).
 - Bootstrap ordering matters: creating a family writes `meta`+`members`+`familyCodes`+`userIndex`
   first, and `settings/*` in a **second** update — the settings rule is parent-only based on the
   *pre-write* `root`, so the creator must already be a recorded parent-member before seeding
@@ -188,7 +194,9 @@ filtered to still-active kids. Key functions: `shiftPendingDay`, `shiftEffective
 - Per-kid check-off writes `days/{key}/checks/{uid}/shift-{shiftId}`. **A child can complete their
   own turn** (rules allow member writes to `checks/{uid}`, `days/.../shift`, and the shift pointer
   fields `next`/`override`/`lastDone`). The two move buttons (⏮ `shiftPrepone` one day earlier,
-  ⏭ `shiftPostpone` one day later) are **parent-only** (`!isChild()`) — that's schedule management.
+  ⏭ `shiftPostpone` one day later) are gated by `mayMoveShiftOf(uid)`: parents always, a child only
+  for its **own** turn and only when its `magVerschuiven` member flag is on (the Beheer
+  "Instellingen" toggle). The same check guards the handlers themselves, not just the buttons.
   (There is no "pull to today" button — stepping is enough.)
 - Un-checking a turn only rewinds the pointer when the day matches `lastDone` (the just-completed
   turn); older checked days toggle freely. That rewind also restores `override` to the day (check-off
@@ -205,9 +213,10 @@ filtered to still-active kids. Key functions: `shiftPendingDay`, `shiftEffective
   person. Net effect: the turn becomes a standalone owed chore the original person still holds, and
   the rotation keeps running. ⏮ on the *pending* row is unchanged (it pulls the turn one day earlier).
 - A detached turn is **not** a plain personal task — it stays **movable**. `owedShiftRow` draws it as
-  a beurt row with ⏮/⏭ (parent-only), and `moveOwedShift(taskId, ±1)` re-pins its `onDay` (never
-  before today, computed from the self-healed effective day). So a parent can keep postponing it day
-  after day, and if ignored it slides to today (via `onDayEffIdx`) rather than disappearing. It still
+  a beurt row with ⏮/⏭ (gated by `mayMoveShiftOf`, like the pending row), and
+  `moveOwedShift(taskId, ±1)` re-pins its `onDay` (never before today, computed from the self-healed
+  effective day). So it can keep being postponed day after day, and if ignored it slides to today
+  (via `onDayEffIdx`) rather than disappearing. It still
   participates in day completion/streaks and, when checked off, freezes into `snap` + removes its
   definition like any one-off (a child may do this under the existing `recurring===false` rule).
 - **Admin** (`renderAdminShifts`): one section per shift with name / weekdays / lines (CRUD) /
@@ -258,8 +267,9 @@ No client-side password anymore — access is the **parent role** (`isParent()`;
 the buttons and the `openAdmin`/`openMembers` routes are guarded). **Beheer** (`renderAdmin`) has one
 **Taken** section (`renderAdminTasks` — per task: participant chips `toggleTaskMember`, interval
 toggle `toggleTaskInterval`, pointer ⏮/⏭, label edit, recurring/one-off, delete; `fromShift` tasks
-are filtered out), one section per shift (`renderAdminShifts`), and **Reeksen & badges**
-(`renderAdminStreak`). The separate **Gezin** screen (`renderMembers`) manages children (add/rename/
+are filtered out), one section per shift (`renderAdminShifts`), an **Instellingen** section
+(`renderAdminSettings` — currently one row of per-kid chips toggling `magVerschuiven` via
+`toggleKidMayMove`; new per-kid flags belong here), and **Reeksen & badges** (`renderAdminStreak`). The separate **Gezin** screen (`renderMembers`) manages children (add/rename/
 color/PIN/pause/delete) and shows the family code. All mutations are `prompt()`/`confirm()`-based to
 match the no-forms style; the exception is weekday selection, done via 7 individual toggle buttons
 (`renderWeekdayPicker`, click-to-flip-and-write) because a 7-way multi-select is where `prompt()`
@@ -271,17 +281,24 @@ with per-block NL comments). They are path-scoped and enforce the real access co
 password was only a UI deterrent):
 - Everything is auth-gated and scoped to your own family (membership checked via `root.child(
   'families').child($familyId).child('members').child(auth.uid)`).
-- `meta`/`members`/`settings` (task & shift **definitions**) are **parent-only**, with two deliberate
+- `meta`/`members`/`settings` (task & shift **definitions**) are **parent-only**, with deliberate
   member exceptions: a child may **delete a `recurring===false` task** under `settings/tasks/{id}`
   (that's what completing a one-off does) and may write the **shift rotation state**
-  (`shifts/{id}/next|override|lastDone`). A child may write its own `days/.../checks/{uid}`,
-  `days/.../snap/{uid}`, `days/.../shift`, and `streaks/{uid}` — nothing else.
+  (`shifts/{id}/next|override|lastDone`). A child whose `magVerschuiven` member flag is **true** may
+  additionally **create** a detached own turn (a new `settings/tasks` record with `recurring:false`
+  + `fromShift` + `members[0] === auth.uid`) and **re-pin its `onDay`** — both conditions read the
+  flag from `root`, so a parent flipping the Beheer toggle off revokes this server-side. A child may
+  write its own `days/.../checks/{uid}`, `days/.../snap/{uid}`, `days/.../shift`, and
+  `streaks/{uid}` — nothing else.
 - `/familyCodes` is a targeted lookup (not enumerable, write-once); `/userIndex/{uid}` is strict
   self-only; `/test` is fully open to any authenticated user (the sandbox — the strict family rules
   reference `root.child('families')`, which wouldn't match under `test/families`).
-- **This means the ⏭-postpone fix needs no new rule**: the detached turn is a `recurring:false` task
-  the parent creates (parent may write settings) and the child completes via the existing one-off
-  exception; the pointer advance uses the existing member-writable `shifts/{id}/next|override`.
+- **The parent-driven ⏭-postpone needs no rule of its own** (parent may write settings; the child
+  completes the detached turn via the one-off exception; the pointer advance uses the member-writable
+  `shifts/{id}/next|override`). The **kid-driven** move feature is what required the two
+  `magVerschuiven`-gated exceptions above — shipping the app without re-pasting the updated
+  `firebase-rules-v16.json` leaves the Beheer toggle working for ⏮ only (⏭ by a child then fails
+  silently at the rules).
 - **Adding a genuinely new synced top-level path is still a manual Console step** (add its rule, and
   the `/test` mirror) — a missing rule shows "Geen verbinding"/hangs. There are no `.validate` rules,
   so records are trusted by shape (a child could only fudge its own family's gamification).

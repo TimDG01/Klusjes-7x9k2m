@@ -273,6 +273,19 @@ function memberName(uid){
 function isChild(){
   return !!(authUser && membersCache[authUser.uid] && membersCache[authUser.uid].rol === 'kind');
 }
+// Per-kind vlag (Beheer → Instellingen): mag dit kind zijn éigen beurten verschuiven
+// (⏮/⏭)? Leeft op het ledenrecord (members/{uid}/magVerschuiven) — geen aparte
+// listener nodig én de security rules lezen dezelfde vlag server-side mee, dus
+// uitzetten is echt afgedwongen. Afwezig = uit (ouder-only blijft de default).
+function kidMayMove(uid){
+  return !!(membersCache[uid] && membersCache[uid].magVerschuiven === true);
+}
+// Mag de INGELOGDE gebruiker de beurt van kind `uid` verschuiven? Ouder: altijd.
+// Kind: enkel zijn eigen beurt, en enkel met de magVerschuiven-vlag aan.
+function mayMoveShiftOf(uid){
+  if (!isChild()) return true;
+  return !!(authUser && uid === authUser.uid && kidMayMove(uid));
+}
 // Beheer hangt sinds fase 7 aan de ouder-rol i.p.v. een client-side wachtwoord.
 // Positieve rolcheck: alleen een ingelogd lid met rol 'ouder' mag beheren.
 function isParent(){
@@ -1470,12 +1483,13 @@ function taskRow(uid, taskId, label, done, fixed){
 // Rij voor een DOORGESCHOVEN beurt: opgeslagen als eenmalige taak (recurring:false +
 // fromShift + onDay, zie shiftPostpone), maar getekend als een beurt die — anders dan een
 // gewone persoonlijke taak — verschuifbaar blijft. Afvinken loopt via toggleTask (bevriezen
-// + definitie weg). De ⏮/⏭-knoppen zijn ouder-only en herschikken enkel de onDay-dag;
+// + definitie weg). De ⏮/⏭-knoppen herschikken enkel de onDay-dag: ouders altijd,
+// het kind zelf enkel met de magVerschuiven-vlag aan (mayMoveShiftOf);
 // ⏮ verdwijnt zodra de beurt al op vandaag staat (eerder dan vandaag kan niet).
 function owedShiftRow(uid, t){
   const done = isChecked(uid, t.id);
   let buttons = '';
-  if (!done && !isChild()){
+  if (!done && mayMoveShiftOf(uid)){
     const eff = onDayEffIdx(t);
     const todayIdx = dayIndex(clampedToday());
     // ⏮ een dag eerder — enkel als de beurt in de toekomst staat (vóór vandaag kan niet)
@@ -1495,7 +1509,8 @@ function owedShiftRow(uid, t){
 
 // Eén beurt-rij op de kaart. Aan/afvinken kan door het kind zelf én de ouder (de
 // rules laten checks/{uid}, days/{key}/shift en de shift-pointer door leden schrijven).
-// De verplaatsknoppen (⏮/⏭) zijn ouder-only — dat is roosterbeheer.
+// De verplaatsknoppen (⏮/⏭) zijn voor ouders — en voor het kind zelf als zijn
+// magVerschuiven-vlag aanstaat (Beheer → Instellingen), zie mayMoveShiftOf.
 function shiftRow(kidKey, sh, info){
   const done = isChecked(kidKey, 'shift-' + sh.id);
   const label = `🔁 ${escapeHtml(sh.name || 'Beurt')}: ${escapeHtml(info.line)}`;
@@ -1510,7 +1525,7 @@ function shiftRow(kidKey, sh, info){
   `;
   }
   let buttons = '';
-  if (!done && info.mode === 'pending' && info.lineIdx != null && !isChild()){
+  if (!done && info.mode === 'pending' && info.lineIdx != null && mayMoveShiftOf(info.uid)){
     const todayIdx = dayIndex(clampedToday());
     const pKey = shiftPendingDay(sh);
     const pIdx = pKey ? dayIndex(parseDayKey(pKey)) : null;
@@ -1532,11 +1547,12 @@ function shiftRow(kidKey, sh, info){
 
 
 // Zet de openstaande beurt één dag vroeger, maar nooit vroeger dan vandaag.
+// Ouders altijd; het kind zelf enkel met de magVerschuiven-vlag (mayMoveShiftOf).
 function shiftPrepone(shiftId){
   const sh = shiftsArray().find(s => s.id === shiftId);
   const pKey = sh && shiftPendingDay(sh);
   const n = sh && shiftEffectiveNext(sh);
-  if (!pKey || !n) return;
+  if (!pKey || !n || !mayMoveShiftOf(n.uid)) return;
   const nd = parseDayKey(pKey);
   nd.setDate(nd.getDate() - 1);
   if (dayIndex(nd) < dayIndex(clampedToday())) return;
@@ -1550,13 +1566,14 @@ function shiftPrepone(shiftId){
 // waardoor dezelfde persoon aan de beurt bleef en de rotatie bevroor). De losse taak is
 // een `recurring:false`-taak — dat hergebruikt het bestaande afvink/bevries/herstel-
 // mechanisme (en de rules laten een kind zo'n taak al afvinken) — met `onDay` (enkel
-// zichtbaar op die exacte dag) en `fromShift` (zodat Beheer ze verbergt). Ouder-only:
-// de ⏭-knop is al `!isChild()`, dus de settings/tasks-schrijf mag.
+// zichtbaar op die exacte dag) en `fromShift` (zodat Beheer ze verbergt). Ouders altijd;
+// het kind zelf enkel met de magVerschuiven-vlag — de settings/tasks-schrijf van het kind
+// wordt dan toegestaan door de fromShift-uitzondering in firebase-rules-v16.json.
 function shiftPostpone(shiftId){
   const sh = shiftsArray().find(s => s.id === shiftId);
   const pKey = sh && shiftPendingDay(sh);
   const n = sh && shiftEffectiveNext(sh);
-  if (!pKey || !n) return;
+  if (!pKey || !n || !mayMoveShiftOf(n.uid)) return;
   const nd = parseDayKey(pKey);
   nd.setDate(nd.getDate() + 1);
   const line = shiftLines(sh)[n.lineIdx];
@@ -1577,12 +1594,14 @@ function shiftPostpone(shiftId){
 
 // Een al doorgeschoven beurt (onDay-taak) nóg verder verschuiven: één dag terug (⏮) of
 // vooruit (⏭), nooit vóór vandaag. Rekent vanaf de effectieve dag (self-heal), zodat een
-// blijven-liggen beurt vanaf vandaag verder schuift. Ouder-only settings-schrijf (de
-// knoppen zijn al !isChild()); enkel de onDay-dag wijzigt.
+// blijven-liggen beurt vanaf vandaag verder schuift. Ouders altijd; het kind zelf enkel
+// met de magVerschuiven-vlag (de rules dwingen dat ook server-side af, zie de
+// onDay-uitzondering in firebase-rules-v16.json); enkel de onDay-dag wijzigt.
 function moveOwedShift(taskId, delta){
-  if (isChild()) return;
   const t = tasksCache[taskId];
   if (!t || !t.onDay) return;
+  const owner = Array.isArray(t.members) ? t.members[0] : null;
+  if (!mayMoveShiftOf(owner)) return;
   const eff = onDayEffIdx(t);
   if (eff == null) return;
   const todayIdx = dayIndex(clampedToday());
@@ -2488,9 +2507,34 @@ function renderAdmin(){
     </div>
     ${renderAdminTasks()}
     ${renderAdminShifts()}
+    ${renderAdminSettings()}
     ${renderAdminStreak()}
     ${versionLine()}
   `;
+}
+
+// Instellingen: per-kind vlaggen. Voorlopig één: mag het kind zijn eigen beurten
+// zelf verschuiven (⏮/⏭)? Chips per actief kind, zelfde patroon als de
+// deelnemer-chips bij taken/beurt-taken (klik = omzetten en wegschrijven).
+function renderAdminSettings(){
+  const kids = activeKids();
+  const chips = kids.map(k =>
+    `<button class="admin-day-btn admin-kid-btn ${kidMayMove(k.uid) ? 'active' : ''}" style="--kidkleur:${k.kleur}" onclick="toggleKidMayMove('${k.uid}')">${escapeHtml(k.name)}</button>`
+  ).join('');
+  return `
+    <div class="admin-section">
+      <div class="admin-role-title">Instellingen</div>
+      <div class="admin-role-title" style="font-size:13px;margin:12px 0 6px;">Zelf beurten verschuiven</div>
+      <div class="admin-weekday-row" style="flex-wrap:wrap;">${chips || '<span class="admin-vacuum-note">Nog geen kinderen in het gezin.</span>'}</div>
+      <div class="admin-vacuum-note">Aangevinkte kinderen mogen hun eigen beurt zelf een dag vervroegen of doorschuiven (⏮/⏭). Uit = alleen een ouder kan verschuiven.</div>
+    </div>
+  `;
+}
+
+// Vlag omzetten op het ledenrecord (ouder-only via de members-rule).
+function toggleKidMayMove(uid){
+  if (!isParent()) return;
+  update(dbRef('members/' + uid), { magVerschuiven: !kidMayMove(uid) });
 }
 
 // Reeks-startdatum: dagen vóór deze datum tellen niet mee voor reeksen & badges.
@@ -2816,7 +2860,7 @@ Object.assign(window, {
   toggleTask, toggleShift, changeDay, goToday, openAdmin, backToDay, openBadges,
   editTaskLabel, toggleRecurring, toggleTaskInterval, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleTaskMember, advanceTaskPointer, rewindTaskPointer, editStreakStart,
-  shiftPrepone, shiftPostpone, moveOwedShift, advanceShiftTurn, rewindShiftTurn,
+  shiftPrepone, shiftPostpone, moveOwedShift, toggleKidMayMove, advanceShiftTurn, rewindShiftTurn,
   addShift, renameShift, deleteShift, addShiftLine, editShiftLine, deleteShiftLine,
   toggleShiftMember, toggleShiftWeekday,
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
