@@ -1495,7 +1495,7 @@ function owedShiftRow(uid, t){
 
 // Eén beurt-rij op de kaart. Aan/afvinken kan door het kind zelf én de ouder (de
 // rules laten checks/{uid}, days/{key}/shift en de shift-pointer door leden schrijven).
-// De verplaatsknoppen (⏮/📥/⏭) zijn ouder-only — dat is roosterbeheer.
+// De verplaatsknoppen (⏮/⏭) zijn ouder-only — dat is roosterbeheer.
 function shiftRow(kidKey, sh, info){
   const done = isChecked(kidKey, 'shift-' + sh.id);
   const label = `🔁 ${escapeHtml(sh.name || 'Beurt')}: ${escapeHtml(info.line)}`;
@@ -1510,23 +1510,16 @@ function shiftRow(kidKey, sh, info){
   `;
   }
   let buttons = '';
-  if (!done && info.lineIdx != null && !isChild()){
+  if (!done && info.mode === 'pending' && info.lineIdx != null && !isChild()){
     const todayIdx = dayIndex(clampedToday());
     const pKey = shiftPendingDay(sh);
     const pIdx = pKey ? dayIndex(parseDayKey(pKey)) : null;
-    if (info.mode === 'pending'){
-      // drietal: vorige dag, naar vandaag, volgende dag — de eerste twee alleen
-      // als de beurt in de toekomst staat (eerder dan vandaag kan niet)
-      if (pIdx != null && pIdx > todayIdx){
-        buttons += `<button class="postpone-btn" onclick="event.stopPropagation();shiftPrepone('${sh.id}')" title="Een dag eerder">${SKIP_BACK_ICON}</button>`;
-        buttons += `<button class="postpone-btn" onclick="event.stopPropagation();shiftPull('${sh.id}','${info.uid}',${info.lineIdx},null)" title="Haal deze beurt naar vandaag">📥</button>`;
-      }
-      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();shiftPostpone('${sh.id}')" title="Doorschuiven naar de volgende dag">${SKIP_FWD_ICON}</button>`;
-    } else if (info.mode === 'done' && dayIndex(current) < todayIdx){
-      // bij een snapshot-rij ('done') moet de momentopname mee verhuizen, anders
-      // blijft de beurt dubbel staan — vandaar de dag-key als vierde argument
-      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();shiftPull('${sh.id}','${info.uid}',${info.lineIdx},'${dayKey(current)}')" title="Haal deze beurt naar vandaag">📥</button>`;
+    // ⏮ vorige dag + ⏭ volgende dag; ⏮ enkel als de beurt in de toekomst staat
+    // (eerder dan vandaag kan niet)
+    if (pIdx != null && pIdx > todayIdx){
+      buttons += `<button class="postpone-btn" onclick="event.stopPropagation();shiftPrepone('${sh.id}')" title="Een dag eerder">${SKIP_BACK_ICON}</button>`;
     }
+    buttons += `<button class="postpone-btn" onclick="event.stopPropagation();shiftPostpone('${sh.id}')" title="Doorschuiven naar de volgende dag">${SKIP_FWD_ICON}</button>`;
   }
   return `
     <div class="task" onclick="toggleShift('${sh.id}','${kidKey}')">
@@ -1537,17 +1530,6 @@ function shiftRow(kidKey, sh, info){
   `;
 }
 
-// Haalt een beurt naar vandaag: de combo van de aangeklikte rij wordt de pointer,
-// zodat de rotatie daarna gewoon vanaf die beurt verdergaat.
-function shiftPull(shiftId, uid, lineIdx, fromKey){
-  const sh = shiftsCache[shiftId]; if (!sh) return;
-  const len = shiftLines({ ...sh }).length;
-  update(dbRef('settings/shifts/' + shiftId), {
-    override: dayKey(clampedToday()),
-    next: { uid, lineIdx: ((lineIdx % len) + len) % len }
-  });
-  if (fromKey) remove(dbRef(`days/${fromKey}/shift/${shiftId}`));
-}
 
 // Zet de openstaande beurt één dag vroeger, maar nooit vroeger dan vandaag.
 function shiftPrepone(shiftId){
@@ -2834,7 +2816,7 @@ Object.assign(window, {
   toggleTask, toggleShift, changeDay, goToday, openAdmin, backToDay, openBadges,
   editTaskLabel, toggleRecurring, toggleTaskInterval, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleTaskMember, advanceTaskPointer, rewindTaskPointer, editStreakStart,
-  shiftPrepone, shiftPostpone, shiftPull, moveOwedShift, advanceShiftTurn, rewindShiftTurn,
+  shiftPrepone, shiftPostpone, moveOwedShift, advanceShiftTurn, rewindShiftTurn,
   addShift, renameShift, deleteShift, addShiftLine, editShiftLine, deleteShiftLine,
   toggleShiftMember, toggleShiftWeekday,
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,

@@ -187,8 +187,9 @@ filtered to still-active kids. Key functions: `shiftPendingDay`, `shiftEffective
   from the frozen `days/{key}/shift/{shiftId}` snapshot.
 - Per-kid check-off writes `days/{key}/checks/{uid}/shift-{shiftId}`. **A child can complete their
   own turn** (rules allow member writes to `checks/{uid}`, `days/.../shift`, and the shift pointer
-  fields `next`/`override`/`lastDone`). The three move buttons (⏮ `shiftPrepone`, 📥 `shiftPull`,
-  ⏭ `shiftPostpone`) are **parent-only** (`!isChild()`) — that's schedule management.
+  fields `next`/`override`/`lastDone`). The two move buttons (⏮ `shiftPrepone` one day earlier,
+  ⏭ `shiftPostpone` one day later) are **parent-only** (`!isChild()`) — that's schedule management.
+  (There is no "pull to today" button — stepping is enough.)
 - Un-checking a turn only rewinds the pointer when the day matches `lastDone` (the just-completed
   turn); older checked days toggle freely. That rewind also restores `override` to the day (check-off
   clears it), so a moved turn doesn't snap back to the next scheduled weekday and appear to vanish.
@@ -202,7 +203,7 @@ filtered to still-active kids. Key functions: `shiftPendingDay`, `shiftEffective
   and hidden from Beheer via `fromShift`; and (2) **advances the shift pointer**
   (`next = shiftAdvance(...,1)`, `override:null`) so the next scheduled day gives the turn to the next
   person. Net effect: the turn becomes a standalone owed chore the original person still holds, and
-  the rotation keeps running. ⏮/📥 on the *pending* row are unchanged (they pull it forward, no stall).
+  the rotation keeps running. ⏮ on the *pending* row is unchanged (it pulls the turn one day earlier).
 - A detached turn is **not** a plain personal task — it stays **movable**. `owedShiftRow` draws it as
   a beurt row with ⏮/⏭ (parent-only), and `moveOwedShift(taskId, ±1)` re-pins its `onDay` (never
   before today, computed from the self-healed effective day). So a parent can keep postponing it day
@@ -306,7 +307,7 @@ shift task, and `streaks/{lies|lenn}` → `streaks/{uid}`. It offers a **test-mo
   legible on the dark card background (the skip arrows, near-black as emoji) is an inline outline SVG
   with `stroke="currentColor"` — `TRASH_ICON`, `SKIP_FWD_ICON`, `SKIP_BACK_ICON`, colored via
   `.danger`/`.accent`/`.postpone-btn`. Reach for these, not an emoji, when a glyph needs a specific
-  color. Emoji are fine where color is irrelevant (📥, 🧹/🔁/✏️ labels).
+  color. Emoji are fine where color is irrelevant (🧹/🔁/✏️ labels).
 - `escapeHtml()` must wrap any user-entered free text (task labels, display names, family name) before
   it's interpolated into an `innerHTML` template — stored raw, escaped only at render time. This app
   has shipped a stored-XSS bug here before; don't reintroduce it.
