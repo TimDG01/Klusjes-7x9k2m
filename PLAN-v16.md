@@ -1,3 +1,8 @@
+> **📦 Historisch document.** Dit is het afgeronde bouwlog van v16 — waardevol als
+> naslagwerk voor *waarom* iets zo gebouwd is, maar geen werkdocument. Voor de actuele
+> werkafspraken (checklist, versiebeleid, architectuur-samenvatting): **`CLAUDE.md`**.
+> Voor wat er per versie wijzigde: **`CHANGELOG.md`**.
+
 # Bouwplan Klusjes-PWA v16 — multi-gezin, Firebase Auth, flexibele rotatie
 
 > **Status (laatst bijgewerkt na fase 7):** Fase **1 t/m 7 zijn gebouwd, getest en
