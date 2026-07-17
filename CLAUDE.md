@@ -9,9 +9,8 @@ multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+po
 and completion-driven "shift" turn tasks, streaks & badges. The entire app is **one static
 file, `index.html`** (inline CSS + one `<script type="module">`), zero dependencies, no
 build step, hosted on GitHub Pages from `main`. Companion files: `firebase-rules-v16.json`
-(RTDB security rules, paste-ready for the Firebase Console), `migratie.html` (standalone
-one-off migration tool, never shipped), `PLAN-v16.md` (historical v16 build log — deep
-background only), `CHANGELOG.md` (what changed per version).
+(RTDB security rules, paste-ready for the Firebase Console), `PLAN-v16.md` (historical v16
+build log — deep background only), `CHANGELOG.md` (what changed per version).
 
 ## Workflow for every change (checklist)
 
@@ -93,8 +92,7 @@ unused boilerplate (no `package.json`, no `node_modules`).
   `'test/'` and **every** database path — the family subtree, the two top-level pointers,
   and the keys of root-level multi-path updates — lives under `/test/...`, self-seeded by
   the normal flows; the footer shows a red TESTMODUS marker. `?test` only works if the RTDB
-  rules include the `/test` rule. The migration tool's dry-run also writes under `/test`.
-  Cleanup = delete `/test`.
+  rules include the `/test` rule. Cleanup = delete `/test`.
 - Outbound network to `gstatic.com`/Firebase may be blocked in sandboxed environments
   (proxy 403) — the fake-backend and Node approaches never hit the network.
 
@@ -270,7 +268,7 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   (CRUD) / members (per-kid on-off) / next turn with ⏮/⏭
   (`rewindShiftTurn`/`advanceShiftTurn`), plus create/delete a shift task. There is no live
   legacy calendar fallback in the render path — every shift on `klusjesv2` starts fresh
-  with a valid pointer; `migratie.html` computes the start pointer.
+  with a valid pointer (a one-time historical migration set it; see `PLAN-v16.md` fase 8).
 
 ### Streaks & badges
 - **Day complete** for a kid = the exact id-set `render()` uses for the celebration
@@ -355,18 +353,6 @@ comments). They are path-scoped and enforce the real access control:
   for a child) until the updated rules are pasted.
 - There are no `.validate` rules, so records are trusted by shape (a child could only fudge
   its own family's gamification).
-
-### The migration tool (`migratie.html`)
-A **separate, standalone file** (never shipped to `main`) that converts the old
-`klusjes-9b7b8` JSON export into the v16 structure: it re-keys `lies`/`lenn` → child uids,
-`days/*` → `checks/{uid}` + `snap/{uid}`, `vac` → `days/*/shift/vacuum`, A/B buckets →
-rotating tasks (with `anchorIdx`/`pointer` preserving today's assignment), `lies`/`lenn`
-buckets → fixed tasks, `settings/vacuum` → the first shift task, and `streaks/{lies|lenn}`
-→ `streaks/{uid}`. It offers a **test-mode** dry-run under `/test` (viewable with `?test`)
-before the real, irreversible write. It writes `days`/`streaks` **per key** (not as one
-block) because the rules grant parent writes on `days/$dayKey` and `streaks/$childId`, not
-on the `days`/`streaks` node itself. A one-off, sensitive, parent-only action — it
-deliberately lives outside the daily app.
 
 ### Other conventions worth knowing
 - The schedule is **open-ended with a fixed lower bound**: `START` (26 juni 2026) anchors
