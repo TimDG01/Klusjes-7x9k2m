@@ -9,10 +9,27 @@ regel. Staat er "⚠️ rules": dan moet `firebase-rules-v16.json` opnieuw in de
 Console geplakt worden.
 
 <!-- Sjabloon voor de volgende versie:
-## v16.1 — dd maand jjjj
+## v17.1 — dd maand jjjj
 - Korte omschrijving van de wijziging.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
+
+## v17 — juli 2026 (op branch, nog niet live)
+
+**Push-meldingen — dagelijkse avondherinnering.** Een kind met openstaande klusjes krijgt
+een melding op zijn toestel, ook als de app dicht is. (Volledig bouwplan: `PLAN-v17-meldingen.md`.)
+- Toestel-kant: PWA-`manifest.json` + app-icoon, `firebase-messaging-sw.js` (service worker),
+  een "🔔 Meldingen aan"-knop die per toestel toestemming vraagt en het FCM-token opslaat.
+- Instelbaar per gezin: Beheer → Instellingen → "Dagelijkse herinnering" (`settings/notifyTime`,
+  default 19:00, of "uit").
+- Server-kant zonder betaalkaart: een GitHub Action (`.github/workflows/klusjes-herinnering.yml`)
+  draait elk half uur en `scripts/notify.js` (Firebase Admin SDK) stuurt via FCM wie op zijn
+  ingestelde tijd nog klusjes open heeft. Gratis op het Spark-plan.
+- ⚠️ rules: `firebase-rules-v16.json` uitgebreid (een kind mag zijn eigen `members/{uid}/fcmTokens`
+  schrijven) — opnieuw in de Console plakken.
+- Handmatige stappen (eenmalig): VAPID-sleutel in `index.html`, service-account als GitHub-secret
+  `FIREBASE_SERVICE_ACCOUNT`, rules plakken, en per kind-toestel "Meldingen aan" tikken.
+  Zie `PLAN-v17-meldingen.md` → Fase G.
 
 ## v16 — juli 2026 (live)
 

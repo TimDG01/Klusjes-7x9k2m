@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Klusjes">
 <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1C1C1E" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Klusjesschema</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -183,6 +185,7 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, onValue, get, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getMessaging, getToken, onMessage, isSupported as messagingSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 
 // =====================================================================
 // KLUSJES-PWA v16 — accountmodel & datamodel in het kort
@@ -218,6 +221,31 @@ const auth = getAuth(firebaseApp);
 // Zonder try/catch zou een rejectie hier de hele module (incl. render) afbreken.
 try { await setPersistence(auth, browserLocalPersistence); } catch (e) {}
 
+// --- Push-meldingen (FCM) ---------------------------------------------------
+// De avondherinnering wordt door een GitHub Action + Firebase Admin SDK verstuurd
+// (zie scripts/notify.js). Hier alleen de TOESTEL-kant: toestemming vragen en het
+// push-token opslaan onder members/{uid}/fcmTokens, zodat de server weet waarheen.
+// VAPID_PUBLIC_KEY is de publieke Web-Push-sleutel uit de Firebase Console
+// (Cloud Messaging → Web Push certificates). Openbaar, net als de apiKey. Zolang hij
+// niet is ingevuld, meldt enableNotifications() dat meldingen nog niet klaarstaan.
+const VAPID_PUBLIC_KEY = 'PLAK-HIER-DE-VAPID-PUBLIEKE-SLEUTEL';
+let messaging = null;
+let swRegistration = null;
+// Web push werkt niet overal (bv. iOS enkel als geïnstalleerde PWA). isSupported()
+// beslist of we de opt-in-knop überhaupt tonen. Registreer meteen de SW zodat getToken
+// hem later kan gebruiken; faalt stil (meldingen zijn nice-to-have, nooit blokkerend).
+let pushSupported = false;
+try {
+  pushSupported = ('serviceWorker' in navigator) && ('Notification' in window) && await messagingSupported();
+  if (pushSupported){
+    messaging = getMessaging(firebaseApp);
+    swRegistration = await navigator.serviceWorker.register('firebase-messaging-sw.js');
+    // App op de voorgrond: een binnenkomend dato-bericht niet als systeemmelding tonen
+    // (dat doet de SW enkel wanneer de app dicht is) — hier hooguit een discrete re-render.
+    onMessage(messaging, () => { try { render(); } catch (e) {} });
+  }
+} catch (e) { pushSupported = false; }
+
 
 const START = new Date(2026, 5, 26); // 26 juni 2026 — het schema loopt vanaf hier onbeperkt door
 // Reeksen & badges tellen pas vanaf deze dag. Alles ervoor (oude /days-historiek
@@ -230,8 +258,13 @@ function streakStartIdx(){
   const d = parseDayKey(streakStartKey) || parseDayKey(DEFAULT_STREAK_START);
   return Math.max(0, dayIndex(d));
 }
+// Tijdstip van de dagelijkse push-herinnering, per gezin (bewaard in
+// /settings/notifyTime als "HH:MM" of "uit"). Enkel de server (scripts/notify.js) handelt
+// er echt naar; de app toont/wijzigt het alleen in Beheer. Default 19:00.
+const DEFAULT_NOTIFY_TIME = '19:00';
+let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v16';
+const VERSION = 'klusjes-pwa v17';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -1080,6 +1113,15 @@ function initFamily(){
     render();
   }, () => {}));
 
+  // --- herinneringstijd (instelbaar via Beheer) ---
+  // Zelfde patroon als streakStart: geen laad-gate, niet-fataal. "uit" of een geldige
+  // "HH:MM" worden bewaard; al de rest valt terug op de default.
+  familyUnsubs.push(onValue(dbRef('settings/notifyTime'), snap => {
+    const v = snap.val();
+    notifyTimeKey = (v === 'uit' || (typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v))) ? v : DEFAULT_NOTIFY_TIME;
+    render();
+  }, () => {}));
+
   // --- gezinsgegevens: meta (naam + gezinscode) ---
   // Geen seeding: de bootstrap bij het aanmaken schreef meta al; absent kan
   // praktisch niet, maar wordt als leeg behandeld i.p.v. te blijven hangen.
@@ -1410,6 +1452,7 @@ function render(){
     <div class="footer-row">
       <div class="footer-btns">
         <button class="admin-link" onclick="openBadges()">🏆 Badges</button>
+        ${(pushSupported && isChild() && Notification.permission !== 'granted') ? '<button class="admin-link" onclick="enableNotifications()">🔔 Meldingen aan</button>' : ''}
         ${isChild() ? '' : `<button class="admin-link" onclick="openMembers()">👨‍👩‍👧 Gezin</button>
         <button class="admin-link" onclick="openAdmin()">⚙️ Beheer</button>`}
       </div>
@@ -2157,6 +2200,41 @@ function logout(){
   signOut(auth);
 }
 
+// Push-meldingen aanzetten op DIT toestel: toestemming vragen (moet vanuit een
+// user-gesture — daarom een knop, cruciaal op iOS) en het FCM-token opslaan onder
+// members/{uid}/fcmTokens. Een token kan tekens bevatten die geen geldige Firebase-
+// sleutel zijn (/, ., #, …), dus we bewaren het token als WAARDE onder een opgekuiste
+// sleutel; het server-script leest Object.values(fcmTokens). Alles zacht: meldingen zijn
+// nice-to-have en mogen nooit iets breken.
+async function enableNotifications(){
+  if (!pushSupported || !messaging){
+    alert('Meldingen worden op dit toestel of in deze browser niet ondersteund.');
+    return;
+  }
+  if (!authUser) return;
+  if (VAPID_PUBLIC_KEY.startsWith('PLAK')){
+    alert('Meldingen zijn nog niet ingesteld (de sleutel ontbreekt). Vraag even de beheerder.');
+    return;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted'){
+      alert('Meldingen zijn niet toegestaan. Je kan dit later in de instellingen van je toestel aanzetten.');
+      render();
+      return;
+    }
+    const token = await getToken(messaging, { vapidKey: VAPID_PUBLIC_KEY, serviceWorkerRegistration: swRegistration });
+    if (token){
+      const key = token.replace(/[.#$/\[\]]/g, '_'); // veilige Firebase-sleutel
+      await set(dbRef('members/' + authUser.uid + '/fcmTokens/' + key), token);
+      alert('Meldingen staan aan op dit toestel. 🔔');
+    }
+    render();
+  } catch (e){
+    alert('Meldingen aanzetten lukte niet. Probeer het later opnieuw.');
+  }
+}
+
 function switchAuthMode(mode){
   authMode = mode;
   authError = null;
@@ -2527,6 +2605,14 @@ function renderAdminSettings(){
       <div class="admin-role-title" style="font-size:13px;margin:12px 0 6px;">Zelf beurten verschuiven</div>
       <div class="admin-weekday-row" style="flex-wrap:wrap;">${chips || '<span class="admin-vacuum-note">Nog geen kinderen in het gezin.</span>'}</div>
       <div class="admin-vacuum-note">Aangevinkte kinderen mogen hun eigen beurt zelf een dag vervroegen of doorschuiven (⏮/⏭). Uit = alleen een ouder kan verschuiven.</div>
+
+      <div class="admin-role-title" style="font-size:13px;margin:16px 0 6px;">Dagelijkse herinnering</div>
+      <div class="admin-next-row">
+        <span>Push-melding om: <b>${notifyTimeKey === 'uit' ? 'uit' : escapeHtml(notifyTimeKey)}</b><br>
+        <small>een kind met openstaande klusjes krijgt dan een melding op zijn toestel</small></span>
+        <button class="admin-icon-btn accent" onclick="editNotifyTime()" title="Herinneringstijd wijzigen">✏️</button>
+      </div>
+      <div class="admin-vacuum-note">Werkt alleen op toestellen waar het kind zelf "🔔 Meldingen aan" heeft getikt. Kies "uit" om geen herinneringen te sturen.</div>
     </div>
   `;
 }
@@ -2535,6 +2621,25 @@ function renderAdminSettings(){
 function toggleKidMayMove(uid){
   if (!isParent()) return;
   update(dbRef('members/' + uid), { magVerschuiven: !kidMayMove(uid) });
+}
+
+// Herinneringstijd instellen (ouder-only; settings is al ouder-only in de rules). Een
+// leeg antwoord of "uit" zet de herinneringen af; anders een geldige "HH:MM" (halfuur
+// volstaat, maar elke tijd mag — het server-script stuurt "vanaf dit uur, één keer per dag").
+function editNotifyTime(){
+  if (!isParent()) return;
+  const huidig = notifyTimeKey === 'uit' ? 'uit' : notifyTimeKey;
+  const inp = prompt('Om hoe laat de dagelijkse herinnering sturen? (bv. 19:00, of "uit")', huidig);
+  if (inp === null) return;
+  const v = inp.trim().toLowerCase();
+  if (v === 'uit' || v === ''){ set(dbRef('settings/notifyTime'), 'uit'); return; }
+  const m = v.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59){
+    alert('Ongeldige tijd. Gebruik uu:mm, bijvoorbeeld 19:00 — of "uit".');
+    return;
+  }
+  const hh = String(Number(m[1])).padStart(2, '0');
+  set(dbRef('settings/notifyTime'), hh + ':' + m[2]);
 }
 
 // Reeks-startdatum: dagen vóór deze datum tellen niet mee voor reeksen & badges.
@@ -2865,7 +2970,8 @@ Object.assign(window, {
   toggleShiftMember, toggleShiftWeekday,
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
   openMembers, addChildMember, changeChildPin, renameMember, renameFamily, cycleMemberColor,
-  toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent
+  toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
+  enableNotifications, editNotifyTime
 });
 
 render();

@@ -1,0 +1,11 @@
+{
+  "name": "klusjes-notify",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Dagelijkse push-herinnering voor openstaande klusjes (GitHub Action).",
+  "type": "commonjs",
+  "main": "notify.js",
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

@@ -69,7 +69,15 @@
           //   - mede-ouder: hij levert de juiste gezinscode (viaCode == meta.gezinscode),
           //     server-side gecheckt → wie de code niet kent, geraakt er niet in.
           "$memberUid": {
-            ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || (auth.uid === $memberUid && !root.child('families').child($familyId).child('members').child($memberUid).exists() && newData.child('rol').val() === 'ouder' && (!root.child('families').child($familyId).child('members').exists() || newData.child('viaCode').val() === root.child('families').child($familyId).child('meta').child('gezinscode').val())))"
+            ".write": "auth != null && (root.child('families').child($familyId).child('members').child(auth.uid).child('rol').val() === 'ouder' || (auth.uid === $memberUid && !root.child('families').child($familyId).child('members').child($memberUid).exists() && newData.child('rol').val() === 'ouder' && (!root.child('families').child($familyId).child('members').exists() || newData.child('viaCode').val() === root.child('families').child($familyId).child('meta').child('gezinscode').val())))",
+
+            // Push-tokens (FCM) voor de avondherinnering: een gebruiker mag zijn EIGEN
+            // tokens schrijven op zijn eigen toestel (de rest van members blijft ouder-only;
+            // de diepere .write hier overstemt dat via de RTDB-allow-cascade). Sleutel = het
+            // opgekuiste token, waarde = het echte token; het server-script leest de waarden.
+            "fcmTokens": {
+              ".write": "auth != null && auth.uid === $memberUid"
+            }
           }
         },
 

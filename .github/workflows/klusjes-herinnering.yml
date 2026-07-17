@@ -1,0 +1,38 @@
+name: Klusjes-herinnering
+
+# Draait elk half uur (UTC). Het script (scripts/notify.js) bepaalt per gezin of het NU
+# moet sturen: enkel wanneer de Brusselse tijd het ingestelde uur (settings/notifyTime,
+# default 19:00) heeft bereikt én er die dag nog niet gestuurd is. Zo hoeft de vaste cron
+# de per-gezin-tijd niet te kennen, en vangt "vanaf-tijd, één keer per dag" late/gemiste
+# runs vanzelf op. workflow_dispatch laat je hem handmatig testen.
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+# Voorkom dat overlappende runs tegelijk sturen.
+concurrency:
+  group: klusjes-herinnering
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node opzetten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Dependencies installeren
+        working-directory: scripts
+        run: npm install --no-audit --no-fund
+
+      - name: Herinneringen sturen
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node notify.js

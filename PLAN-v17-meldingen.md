@@ -36,40 +36,40 @@ elk kind dat dan nog klusjes open heeft, krijgt een **push op de gsm terwijl de 
 - [x] Verouderde `migratie.html`-verwijzingen uit `CLAUDE.md` verwijderd.
 
 ### Fase A — Toestel-kant (client)
-- [ ] `manifest.json` (repo-root): standalone PWA-manifest (iOS 16.4+ web push vereist dit).
-- [ ] `index.html <head>`: `<link rel="manifest" href="manifest.json">` (apple-meta-tags blijven).
-- [ ] `firebase-messaging-sw.js` (repo-root): SW met `importScripts(...-compat.js)` +
+- [x] `manifest.json` (repo-root): standalone PWA-manifest (iOS 16.4+ web push vereist dit).
+- [x] `index.html <head>`: `<link rel="manifest" href="manifest.json">` (apple-meta-tags blijven).
+- [x] `firebase-messaging-sw.js` (repo-root): SW met `importScripts(...-compat.js)` +
       `onBackgroundMessage` → `showNotification`. Data-only berichten.
-- [ ] `index.html`: import `firebase-messaging.js`, SW registreren, `getMessaging`.
-- [ ] Opt-in knop "🔔 Meldingen aan" (footer) + `enableNotifications()` → `requestPermission()` →
+- [x] `index.html`: import `firebase-messaging.js`, SW registreren, `getMessaging`.
+- [x] Opt-in knop "🔔 Meldingen aan" (footer) + `enableNotifications()` → `requestPermission()` →
       `getToken({ vapidKey, serviceWorkerRegistration })` → token opslaan. **In window-export.**
-- [ ] Token opslaan onder `members/{uid}/fcmTokens/{token}`.
+- [x] Token opslaan onder `members/{uid}/fcmTokens/{token}`.
 
 ### Fase B — Herinneringstijd instelbaar (Beheer → Instellingen)
-- [ ] Rij "Herinnering om" in `renderAdminSettings` + `editNotifyTime()` → `settings/notifyTime`.
+- [x] Rij "Herinnering om" in `renderAdminSettings` + `editNotifyTime()` → `settings/notifyTime`.
       **In window-export.**
 
 ### Fase C — Security rules (gebruiker plakt in Console)
-- [ ] `firebase-rules-v16.json`: `members/$memberUid/fcmTokens` schrijfbaar door `auth.uid === $memberUid`.
+- [x] `firebase-rules-v16.json`: `members/$memberUid/fcmTokens` schrijfbaar door `auth.uid === $memberUid`.
 
 ### Fase D — Server-kant (GitHub Actions)
-- [ ] `.github/workflows/klusjes-herinnering.yml`: cron `*/30 * * * *` + `workflow_dispatch`.
-- [ ] `scripts/package.json` (enkel `firebase-admin`).
-- [ ] `scripts/notify.js`: admin-init, per-gezin tijd-check (`notifyTime` vs Brussel-nu, `lastNotified`
+- [x] `.github/workflows/klusjes-herinnering.yml`: cron `*/30 * * * *` + `workflow_dispatch`.
+- [x] `scripts/package.json` (enkel `firebase-admin`).
+- [x] `scripts/notify.js`: admin-init, per-gezin tijd-check (`notifyTime` vs Brussel-nu, `lastNotified`
       dedup), open-klusjes per kind, FCM data-only push, token-opkuis.
-- [ ] **Pure "open klusjes"-functie** = port van `dayIndex`/`taskRing`/`taskAssignee`/`tasksForKidDay`
+- [x] **Pure "open klusjes"-functie** = port van `dayIndex`/`taskRing`/`taskAssignee`/`tasksForKidDay`
       (+ `onDay`) en `shiftPendingDay`/`shiftEffectiveNext`/`shiftForDay` uit `index.html`.
 
 ### Fase E — Verificatie (nep-Firebase in Node)
-- [ ] Pure open-klusjes-functie tegen een fixture; vergelijken met app-render.
-- [ ] Tijd-guard + dedup + "uit" testen.
-- [ ] `node --check` op het module-script; client opt-in mock-test.
+- [x] Pure open-klusjes-functie tegen een fixture; vergelijken met app-render.
+- [x] Tijd-guard + dedup + "uit" testen.
+- [x] `node --check` op het module-script; client opt-in mock-test.
 
 ### Fase F — Versie, docs, afronden
-- [ ] `VERSION` → `'klusjes-pwa v17'`.
-- [ ] `CHANGELOG.md`: v17-entry.
-- [ ] `CLAUDE.md`: sectie "Meldingen" (logica-duplicatie + sync-afspraak, nieuwe velden/bestanden).
-- [ ] Committen + pushen naar de branch (**niet** `main`).
+- [x] `VERSION` → `'klusjes-pwa v17'`.
+- [x] `CHANGELOG.md`: v17-entry.
+- [x] `CLAUDE.md`: sectie "Meldingen" (logica-duplicatie + sync-afspraak, nieuwe velden/bestanden).
+- [x] Committen + pushen naar de branch (**niet** `main`).
 
 ### Fase G — Handmatige stappen voor de gebruiker (geen code)
 1. Firebase Console → Cloud Messaging → **Web Push certificates**: VAPID-sleutelpaar; publieke

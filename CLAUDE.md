@@ -4,13 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v16** (`VERSION` = `klusjes-pwa v16`): a Dutch-language family chores app —
+**Klusjes-PWA v17** (`VERSION` = `klusjes-pwa v17`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
-and completion-driven "shift" turn tasks, streaks & badges. The entire app is **one static
-file, `index.html`** (inline CSS + one `<script type="module">`), zero dependencies, no
-build step, hosted on GitHub Pages from `main`. Companion files: `firebase-rules-v16.json`
-(RTDB security rules, paste-ready for the Firebase Console), `PLAN-v16.md` (historical v16
-build log — deep background only), `CHANGELOG.md` (what changed per version).
+and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
+app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
+zero dependencies, no build step, hosted on GitHub Pages from `main`. Push notifications add a
+few companion files (see **Push notifications**): `manifest.json` + `icon-*.png`,
+`firebase-messaging-sw.js` (service worker), and a `scripts/` + `.github/workflows/` server
+side. Other companion files: `firebase-rules-v16.json` (RTDB security rules, paste-ready for
+the Firebase Console), `PLAN-v16.md` / `PLAN-v17-meldingen.md` (build logs — deep background),
+`CHANGELOG.md` (what changed per version).
 
 ## Workflow for every change (checklist)
 
@@ -353,6 +356,43 @@ comments). They are path-scoped and enforce the real access control:
   for a child) until the updated rules are pasted.
 - There are no `.validate` rules, so records are trusted by shape (a child could only fudge
   its own family's gamification).
+- The **notifications** feature adds one exception: a member may write its own
+  `members/{uid}/fcmTokens` (own push tokens), otherwise `members` stays parent-only. The
+  RTDB allow-cascade (a deeper `.write:true`) grants it without loosening the node.
+
+### Push notifications (daily evening reminder — v17)
+A kid with unfinished chores gets a push on their phone **even when the app is closed**. A
+push to a closed device can't be done client-side, so this splits into a device half and a
+server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
+- **Device half (in `index.html` + companion files):** `manifest.json` + `icon-192/512.png`
+  (installable PWA — iOS 16.4+ web push requires an installed PWA with a manifest);
+  `firebase-messaging-sw.js` (service worker, at repo root; uses the compat SDK via
+  `importScripts` and shows the notification in `onBackgroundMessage`; **data-only messages**
+  so we control title/body and avoid a double notification). In the app: a "🔔 Meldingen aan"
+  footer button (`enableNotifications()`) that requests permission (must be a user gesture —
+  iOS) and stores the FCM token under `members/{uid}/fcmTokens/{sanitizedKey}: token` (token as
+  **value** since a raw token isn't a valid RTDB key). `VAPID_PUBLIC_KEY` near the config is a
+  public Web-Push key the user pastes from the Console. All push code is soft/try-caught —
+  never blocks the app. `?test` note: GitHub Pages serves this app on a **subpath**, so all
+  SW/manifest/icon paths are **relative** (no leading `/`).
+- **Reminder time** is per family: `settings/notifyTime` (`"HH:MM"` or `"uit"`, default
+  `"19:00"`), set by a parent in Beheer → Instellingen (`editNotifyTime`), read via a
+  no-gate/non-fatal listener like `streakStart`. `settings/lastNotified` (`"yyyy-M-d"`) is a
+  server-written dedup flag.
+- **Server half (`scripts/notify.js` + `.github/workflows/klusjes-herinnering.yml`):** a
+  GitHub Action runs **every 30 min**; the script (Firebase Admin SDK) sends, for each family
+  where Brussels-now ≥ `notifyTime` and it hasn't sent today, an FCM push to every active kid
+  with ≥1 open chore. **No Blaze/credit card** — FCM + RTDB reads are free on Spark. The
+  service-account JSON is the GitHub secret `FIREBASE_SERVICE_ACCOUNT`.
+- **⚠️ Logic duplication — keep in sync.** The DB stores task *definitions* + rotation *state*
+  + `checks` (what's *done*), **not** a ready-made "today's chores" list — the app computes it
+  each render, so `notify.js` must recompute it too. The pure helpers there (`dayIndex`,
+  `taskRing`/`taskAssignee`/`tasksForKidDay` + `onDay`, `shiftPendingDay`/`shiftEffectiveNext`/
+  `shiftForDay`) are **verbatim copies** of the `index.html` versions, adapted to take a `ctx`
+  object. Change the chore/shift math in `index.html` → update `notify.js` too. A Node
+  cross-check test (fake data, no network) asserts `notify.js` and the app agree.
+- **Gotcha:** GitHub scheduled workflows (`on: schedule`) only fire from the **default branch
+  (`main`)**; on a feature branch only `workflow_dispatch` (manual run, pick the branch) works.
 
 ### Other conventions worth knowing
 - The schedule is **open-ended with a fixed lower bound**: `START` (26 juni 2026) anchors
