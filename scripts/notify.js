@@ -222,14 +222,18 @@ function timeToMinutes(hhmm) {
 // ---- per gezin: moet er nu gestuurd worden, en aan wie? (puur, testbaar) ----
 // Geeft { due, plan } terug. `due` = de tijd is bereikt en er is vandaag nog niet gestuurd
 // (→ de aanroeper zet lastNotified). `plan` = [{ uid, name, body, tokens:[{key,token}] }].
-function familySendPlan(familyData, now, todayKey) {
+function familySendPlan(familyData, now, todayKey, force) {
   const settings = familyData.settings || {};
   const notifyTime = settings.notifyTime || DEFAULT_NOTIFY_TIME;
   if (notifyTime === 'uit') return { due: false, plan: [] };
-  const target = timeToMinutes(notifyTime);
-  if (target == null) return { due: false, plan: [] };
-  if (now.minutes < target) return { due: false, plan: [] };
-  if (settings.lastNotified === todayKey) return { due: false, plan: [] };
+  // `force` (handmatige testrun): sla de tijd- en dedup-guards over — maar respecteer wél
+  // "uit", en stuur nog steeds enkel naar kinderen met openstaande klusjes + een token.
+  if (!force) {
+    const target = timeToMinutes(notifyTime);
+    if (target == null) return { due: false, plan: [] };
+    if (now.minutes < target) return { due: false, plan: [] };
+    if (settings.lastNotified === todayKey) return { due: false, plan: [] };
+  }
 
   const membersCache = familyData.members || {};
   const daysToday = (familyData.days && familyData.days[todayKey]) || {};
@@ -278,13 +282,14 @@ async function main() {
 
   const now = brusselsNow();
   const todayKey = dayKey(now.today);
-  console.log(`Brussel: ${todayKey} ${String(Math.floor(now.minutes / 60)).padStart(2, '0')}:${String(now.minutes % 60).padStart(2, '0')}`);
+  const force = process.env.FORCE === 'true' || process.env.FORCE === '1';
+  console.log(`Brussel: ${todayKey} ${String(Math.floor(now.minutes / 60)).padStart(2, '0')}:${String(now.minutes % 60).padStart(2, '0')}${force ? ' (FORCE)' : ''}`);
 
   const families = (await db.ref('families').get()).val() || {};
   let totalSent = 0;
 
   for (const fid of Object.keys(families)) {
-    const { due, plan } = familySendPlan(families[fid], now, todayKey);
+    const { due, plan } = familySendPlan(families[fid], now, todayKey, force);
     if (!due) continue;
 
     for (const item of plan) {
@@ -315,8 +320,9 @@ async function main() {
         }
       }
     }
-    // Eén keer per dag: markeer dat de avondrun voor dit gezin gebeurd is.
-    await db.ref(`families/${fid}/settings/lastNotified`).set(todayKey);
+    // Eén keer per dag: markeer dat de avondrun voor dit gezin gebeurd is. Bij een
+    // handmatige testrun (force) NIET zetten, zodat de echte avondmelding nog doorgaat.
+    if (!force) await db.ref(`families/${fid}/settings/lastNotified`).set(todayKey);
   }
 
   console.log(`Klaar. ${totalSent} melding(en) verstuurd.`);

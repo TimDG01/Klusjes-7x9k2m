@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Nu sturen, ongeacht het uur (test). Respecteert wel "uit" en stuurt enkel naar kinderen met openstaande klusjes + een token.'
+        type: boolean
+        default: false
 
 # Voorkom dat overlappende runs tegelijk sturen.
 concurrency:
@@ -35,4 +40,5 @@ jobs:
         working-directory: scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FORCE: ${{ inputs.force }}
         run: node notify.js
