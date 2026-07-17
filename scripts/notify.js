@@ -307,7 +307,7 @@ async function main() {
           });
           totalSent++;
         } catch (e) {
-          const code = e && e.errorInfo && e.errorInfo.code;
+          const code = (e && e.code) || (e && e.errorInfo && e.errorInfo.code);
           if (code === 'messaging/registration-token-not-registered' ||
               code === 'messaging/invalid-registration-token' ||
               code === 'messaging/invalid-argument') {
