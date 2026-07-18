@@ -14,6 +14,14 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.7 — juli 2026
+- **"📣 Stuur nu"-knop voor ouders** (Beheer → Instellingen): stuurt meteen een push-melding
+  naar elk kind dat nu nog klusjes open heeft, zonder op het ingestelde uur te wachten. De
+  knop zet een aanvraag klaar (`settings/pushRequest`); het server-script pikt ze bij zijn
+  volgende run op (meestal binnen een kwartier) en markeert ze afgehandeld — één aanvraag =
+  maximaal één melding. Respecteert "uit", telt niet als de avondmelding (die komt gewoon
+  nog), en werkt voor elk gezin zonder extra setup. Geen rules-wijziging nodig.
+
 ## v18.6 — juli 2026
 - **Nieuw app-icoon**: het witte vinkje op blauw is vervangen door een klembord met
   taakjes (twee afgevinkt, één te doen) op groen, in de kleurenstijl van de app

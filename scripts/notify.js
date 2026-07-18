@@ -289,7 +289,7 @@ function brusselsNow(dateArg) {
   }).formatToParts(d).reduce((o, p) => (o[p.type] = p.value, o), {});
   const y = +parts.year, m = +parts.month, day = +parts.day;
   const hh = +parts.hour % 24, mm = +parts.minute;
-  return { today: new Date(y, m - 1, day), minutes: hh * 60 + mm };
+  return { today: new Date(y, m - 1, day), minutes: hh * 60 + mm, ms: d.getTime() };
 }
 function timeToMinutes(hhmm) {
   const m = String(hhmm).match(/^(\d{1,2}):(\d{2})$/);
@@ -300,19 +300,36 @@ function timeToMinutes(hhmm) {
 }
 
 // ---- per gezin: moet er nu gestuurd worden, en aan wie? (puur, testbaar) ----
-// Geeft { due, plan } terug. `due` = de tijd is bereikt en er is vandaag nog niet gestuurd
-// (→ de aanroeper zet lastNotified). `plan` = [{ uid, name, body, tokens:[{key,token}] }].
+// Geeft { due, timeDue, requestHandled, plan } terug.
+//  - timeDue: de gewone avondmelding is aan de beurt (tijd bereikt, vandaag nog niet
+//    gestuurd) → de aanroeper zet lastNotified.
+//  - requestHandled: er lag een verse ouder-duw-aanvraag (settings/pushRequest, geschreven
+//    door de 📣-knop in Beheer) → de aanroeper zet pushHandled op deze waarde, zodat één
+//    aanvraag maar één keer vuurt. Een aanvraag ouder dan REQUEST_MAX_AGE_MS telt niet
+//    (mosterd na de maaltijd als de cron lang stillag).
+//  - due: er moet nu effectief gestuurd worden (force, aanvraag of avondmelding).
+const REQUEST_MAX_AGE_MS = 6 * 3600 * 1000;
 function familySendPlan(familyData, now, todayKey, force) {
   const settings = familyData.settings || {};
   const notifyTime = settings.notifyTime || DEFAULT_NOTIFY_TIME;
-  if (notifyTime === 'uit') return { due: false, plan: [] };
-  // `force` (handmatige testrun): sla de tijd- en dedup-guards over — maar respecteer wél
-  // "uit", en stuur nog steeds enkel naar kinderen met openstaande klusjes + een token.
-  if (!force) {
+  if (notifyTime === 'uit') return { due: false, timeDue: false, requestHandled: null, plan: [] };
+  // Ouder-duw: verse, nog niet afgehandelde aanvraag?
+  const pr = settings.pushRequest;
+  const requested = typeof pr === 'number' && settings.pushHandled !== pr &&
+    (now.ms == null || (now.ms - pr >= -15 * 60 * 1000 && now.ms - pr <= REQUEST_MAX_AGE_MS));
+  // Gewone avondmelding: tijd bereikt en vandaag nog niet gestuurd?
+  let timeDue = false;
+  if (!force && !requested) {
     const target = timeToMinutes(notifyTime);
-    if (target == null) return { due: false, plan: [] };
-    if (now.minutes < target) return { due: false, plan: [] };
-    if (settings.lastNotified === todayKey) return { due: false, plan: [] };
+    if (target == null) return { due: false, timeDue: false, requestHandled: null, plan: [] };
+    if (now.minutes < target) return { due: false, timeDue: false, requestHandled: null, plan: [] };
+    if (settings.lastNotified === todayKey) return { due: false, timeDue: false, requestHandled: null, plan: [] };
+    timeDue = true;
+  } else if (!force) {
+    // aanvraag: los van het uur sturen; als toevallig óók de avondmelding open staat,
+    // telt deze run voor beide (lastNotified wordt mee gezet — geen dubbele melding).
+    const target = timeToMinutes(notifyTime);
+    timeDue = target != null && now.minutes >= target && settings.lastNotified !== todayKey;
   }
 
   const membersCache = familyData.members || {};
@@ -335,7 +352,7 @@ function familySendPlan(familyData, now, todayKey, force) {
     const body = 'Nog te doen: ' + shown.join(', ') + (open.length > shown.length ? ' …' : '');
     plan.push({ uid, name: membersCache[uid].weergavenaam || '', body, tokens });
   }
-  return { due: true, plan };
+  return { due: true, timeDue, requestHandled: requested ? pr : null, plan };
 }
 
 module.exports = {
@@ -386,7 +403,13 @@ async function main() {
       console.error(`Beurt-onderhoud mislukt voor ${fid}:`, (e && e.message) || e);
     }
 
-    const { due, plan } = familySendPlan(families[fid], now, todayKey, force);
+    const { due, timeDue, requestHandled, plan } = familySendPlan(families[fid], now, todayKey, force);
+    // Een ouder-duw-aanvraag altijd als afgehandeld markeren (ook als er niets te sturen
+    // viel), zodat ze niet blijft hangen tot ze verloopt.
+    if (requestHandled != null) {
+      await db.ref(`families/${fid}/settings/pushHandled`).set(requestHandled).catch(() => {});
+      console.log(`Ouder-duw verwerkt voor gezin ${fid}.`);
+    }
     if (!due) continue;
 
     for (const item of plan) {
@@ -419,7 +442,9 @@ async function main() {
     }
     // Eén keer per dag: markeer dat de avondrun voor dit gezin gebeurd is. Bij een
     // handmatige testrun (force) NIET zetten, zodat de echte avondmelding nog doorgaat.
-    if (!force) await db.ref(`families/${fid}/settings/lastNotified`).set(todayKey);
+    // Een ouder-duw vóór het meld-uur zet dit ook niet (timeDue false) — de gewone
+    // avondmelding blijft dan gewoon komen.
+    if (timeDue) await db.ref(`families/${fid}/settings/lastNotified`).set(todayKey);
   }
 
   console.log(`Klaar. ${totalSent} melding(en) verstuurd, ${totalDetached} beurt(en) losgemaakt.`);
