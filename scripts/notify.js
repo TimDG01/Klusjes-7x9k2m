@@ -116,6 +116,7 @@ function shiftNextScheduledDayFrom(sh, d) {
 }
 function shiftPendingDay(sh, ctx) {
   let from = clampedToday(ctx);
+  const today = from;
   const ld = sh.lastDone ? parseDayKey(sh.lastDone) : null;
   if (ld && dayIndex(ld) >= dayIndex(from)) {
     from = new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1);
@@ -127,8 +128,11 @@ function shiftPendingDay(sh, ctx) {
       return dayIndex(od) >= dayIndex(from) ? dayKey(od) : dayKey(from);
     }
   }
-  const nd = shiftNextScheduledDayFrom(sh, from);
-  return nd ? dayKey(nd) : null;
+  // Gemiste (voorbije) geplande beurt blijft op vandaag staan i.p.v. door te schuiven.
+  const searchFrom = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : from;
+  const nd = shiftNextScheduledDayFrom(sh, searchFrom);
+  if (!nd) return null;
+  return dayIndex(nd) >= dayIndex(today) ? dayKey(nd) : dayKey(today);
 }
 function shiftEffectiveNext(sh, ctx) {
   const lines = shiftLines(sh);

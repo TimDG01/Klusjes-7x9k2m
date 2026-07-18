@@ -265,7 +265,7 @@ function streakStartIdx(){
 const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v17.2';
+const VERSION = 'klusjes-pwa v17.3';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -715,6 +715,7 @@ function shiftNextScheduledDayFrom(sh, d){
 // gemiste beurt schuift zo vanzelf door — zelfde kind, zelfde lijn.
 function shiftPendingDay(sh){
   let from = clampedToday();
+  const today = from;
   const ld = sh.lastDone ? parseDayKey(sh.lastDone) : null;
   if (ld && dayIndex(ld) >= dayIndex(from)){
     // de beurt van vandaag (of vooruitgewerkt: later) is al gedaan — de volgende
@@ -731,8 +732,14 @@ function shiftPendingDay(sh){
       return dayIndex(od) >= dayIndex(from) ? dayKey(od) : dayKey(from);
     }
   }
-  const nd = shiftNextScheduledDayFrom(sh, from);
-  return nd ? dayKey(nd) : null;
+  // Zoek de eerste geplande dag ná de laatst-gedane beurt (niet enkel vanaf vandaag).
+  const searchFrom = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : from;
+  const nd = shiftNextScheduledDayFrom(sh, searchFrom);
+  if (!nd) return null;
+  // Een geplande dag die al VOORBIJ is (een niet-afgevinkte beurt) niet stil door laten
+  // schuiven naar de volgende geplande dag, maar op VANDAAG laten staan: zo blijft de beurt
+  // zichtbaar én houdt ze de dag onaf (→ breekt de reeks, zoals een gewone gemiste taak).
+  return dayIndex(nd) >= dayIndex(today) ? dayKey(nd) : dayKey(today);
 }
 
 // De openstaande beurt-combo van een shift: de pointer uit de database (mits hij

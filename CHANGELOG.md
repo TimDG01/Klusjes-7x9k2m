@@ -14,6 +14,14 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v17.3 — juli 2026
+- **Gemiste beurt-taak (bv. stofzuigen) verdwijnt niet meer.** Een niet-afgevinkte beurt
+  bleef vroeger stil doorschuiven naar de volgende geplande dag (en telde zo niet mee); nu
+  blijft ze op **vandaag** staan als openstaande beurt tot ze gedaan is. Zo houdt ze de dag
+  onaf en telt een gemiste beurt mee voor de reeks (breekt ze, zoals een gewone gemiste taak,
+  op een dag met andere taken). Dezelfde logica in `scripts/notify.js` mee aangepast, zodat
+  de avondmelding een blijven-liggen beurt ook meldt.
+
 ## v17.2 — juli 2026
 - Herinneringstijd instellen via een **keuzelijst** (op de gsm een native rol-picker) i.p.v.
   een tekstprompt. De lijst bevat enkel hele/halve uren + "uit".

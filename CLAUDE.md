@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v17** (`VERSION` = `klusjes-pwa v17.2`): a Dutch-language family chores app —
+**Klusjes-PWA v17** (`VERSION` = `klusjes-pwa v17.3`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -230,7 +230,12 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
 - Exactly **one** interactive ("pending") turn exists across all days. `shiftPendingDay()`
   picks the day: an `override` date wins over the weekday schedule, but an override that
   has slipped into the *past* is **clamped forward to today** (read-path only, self-heals
-  each render, no write) so a lapsed turn stays visible and clickable today; a day matching
+  each render, no write) so a lapsed turn stays visible and clickable today. **A normally
+  scheduled turn that was missed is likewise clamped to today** (v17.3): it searches for the
+  first scheduled day after `lastDone` and, if that day is already past, keeps the turn on
+  today instead of silently rolling to the next scheduled weekday — so a missed vacuuming
+  turn stays visible and keeps the day incomplete (breaking the streak on any day that also
+  has other tasks, since the pending turn is in the day's completion id-set). A day matching
   `lastDone` is skipped. Future scheduled days show a dimmed **projection** (excluded from
   the progress bar) that **is** clickable — checking it completes that projected turn and
   jumps the pointer past it, letting an earlier open turn lapse silently (a parent covering
