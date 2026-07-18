@@ -265,8 +265,8 @@ function streakStartIdx(){
 const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const SHIFT_GRACE = 2; // genadevenster (dagen): een gemiste beurt blijft zoveel dagen op vandaag staan vóór ze automatisch een losse taak wordt (v18)
-const VERSION = 'klusjes-pwa v18';
+const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
+const VERSION = 'klusjes-pwa v18.1';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -740,6 +740,7 @@ function shiftPendingDay(sh){
   const ndIdx = dayIndex(nd), tIdx = dayIndex(today);
   if (ndIdx >= tIdx) return dayKey(nd);            // vandaag of in de toekomst
   // Voorbij, maar nog binnen het genadevenster → op VANDAAG laten staan (zichtbaar/afvinkbaar).
+  // Met SHIFT_GRACE=0 (v18.1) is dit venster leeg: een vergeten beurt valt meteen buiten.
   if (tIdx - ndIdx <= SHIFT_GRACE) return dayKey(today);
   // Voorbij het venster → op de eigenlijke (voorbije) dag laten; shiftAutoDetachIfLapsed maakt
   // ze dan los tot een gewone taak en schuift de rotatie door (v18).

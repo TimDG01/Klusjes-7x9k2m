@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18`): a Dutch-language family chores app —
+**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.1`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -231,14 +231,14 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   picks the day: an `override` date wins over the weekday schedule, but an override that
   has slipped into the *past* is **clamped forward to today** (read-path only, self-heals
   each render, no write) so a lapsed turn stays visible and clickable today. **A normally
-  scheduled turn that was missed is clamped to today, but only inside a `SHIFT_GRACE`-day
-  window** (v18, `SHIFT_GRACE = 2` → today + the 2 previous days): it searches for the first
-  scheduled day after `lastDone` and, if that day is past but ≤ `SHIFT_GRACE` days ago, keeps
-  the turn on today (visible, clickable, movable) — so a missed vacuuming turn stays and keeps
-  the day incomplete (breaking the streak on any day that also has other tasks, since the
-  pending turn is in the day's completion id-set). **Past the window it is auto-detached into
-  a movable one-off task and the rotation advances** (see below), so a missed turn can never
-  stall the ring. A day matching `lastDone` is skipped. Future scheduled days show a dimmed
+  scheduled turn that was missed is clamped to today only inside a `SHIFT_GRACE`-day window**;
+  as of **v18.1 `SHIFT_GRACE = 0`**, so that window is empty — a turn shows as a *pending shift*
+  only on its own scheduled day, and the moment that day passes unchecked it is **auto-detached
+  the next day into a movable one-off task while the rotation advances** (see below). (`SHIFT_GRACE`
+  is still a tunable constant: a value `n > 0` would instead keep a missed turn clamped to today
+  as a shift for `n` extra days before detaching — that was the v18 behavior.) The clamp branch
+  in `shiftPendingDay` (`tIdx - ndIdx <= SHIFT_GRACE → today`) is therefore inert at 0. A day
+  matching `lastDone` is skipped. Future scheduled days show a dimmed
   **projection** (excluded from
   the progress bar) that **is** clickable — checking it completes that projected turn and
   jumps the pointer past it, letting an earlier open turn lapse silently (a parent covering

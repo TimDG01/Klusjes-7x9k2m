@@ -20,7 +20,7 @@ const FLOORS = ['gelijkvloers', 'Verdiep ouders', 'Verdiep kinderen'];
 const DEFAULT_VACUUM_WEEKDAYS = [1, 5];
 const SEARCH_HORIZON = 370;
 const DEFAULT_NOTIFY_TIME = '19:00';
-const SHIFT_GRACE = 2; // genadevenster (dagen) vóór een gemiste beurt een losse taak wordt (v18)
+const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt een gewone taak wordt; 0 = de dag ná de geplande dag al (v18.1)
 
 // ---- dag-wiskunde ----
 function dayIndex(d) {

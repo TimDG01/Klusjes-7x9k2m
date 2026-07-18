@@ -14,6 +14,15 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.1 — juli 2026
+- **Vergeten beurt wordt meteen een gewone taak.** Het genadevenster van 2 dagen (waarin een
+  gemiste beurt nog als *beurt* op vandaag bleef staan) is teruggezet naar **0**: staat een
+  beurt op haar geplande dag en wordt ze die dag niet gedaan, dan wordt ze de dag erna
+  automatisch een gewone, **verschuifbare** taak bij dezelfde persoon (die het kind nadien zelf
+  kan verzetten met ⏮/⏭ als die optie aan staat). Duidelijker dan het meeschuiven als beurt.
+  De rotatie draait meteen door naar de volgende persoon (ongewijzigd). `SHIFT_GRACE = 0` in
+  `index.html` én `scripts/notify.js`.
+
 ## v18 — juli 2026
 
 **Beurt-rotatie loopt altijd door + genadevenster van 2 dagen.** De beurt-taak (bv.
