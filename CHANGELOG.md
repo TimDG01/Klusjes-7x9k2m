@@ -14,7 +14,12 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
-## v17 — juli 2026 (op branch, nog niet live)
+## v17.1 — juli 2026
+- Herinneringstijd: de instel-prompt aanvaardt nu enkel **hele of halve uren** (`:00`/`:30`),
+  bv. 19:00 of 19:30. Het server-script draait toch maar elk half uur, dus fijnere tijden
+  hadden geen effect — dit voorkomt verwarring over "tussenliggende" tijden.
+
+## v17 — juli 2026 (live)
 
 **Push-meldingen — dagelijkse avondherinnering.** Een kind met openstaande klusjes krijgt
 een melding op zijn toestel, ook als de app dicht is. (Volledig bouwplan: `PLAN-v17-meldingen.md`.)

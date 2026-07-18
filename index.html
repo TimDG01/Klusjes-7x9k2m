@@ -264,7 +264,7 @@ function streakStartIdx(){
 const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v17';
+const VERSION = 'klusjes-pwa v17.1';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -2624,18 +2624,19 @@ function toggleKidMayMove(uid){
 }
 
 // Herinneringstijd instellen (ouder-only; settings is al ouder-only in de rules). Een
-// leeg antwoord of "uit" zet de herinneringen af; anders een geldige "HH:MM" (halfuur
-// volstaat, maar elke tijd mag — het server-script stuurt "vanaf dit uur, één keer per dag").
+// leeg antwoord of "uit" zet de herinneringen af; anders een HELE of HALVE uur (:00 of :30).
+// De server draait elk half uur, dus fijner dan een half uur heeft geen zin — daarom laten
+// we enkel :00/:30 toe (voorkomt verwarring over "tussenliggende" tijden).
 function editNotifyTime(){
   if (!isParent()) return;
   const huidig = notifyTimeKey === 'uit' ? 'uit' : notifyTimeKey;
-  const inp = prompt('Om hoe laat de dagelijkse herinnering sturen? (bv. 19:00, of "uit")', huidig);
+  const inp = prompt('Om hoe laat de dagelijkse herinnering sturen?\nEnkel hele of halve uren, bv. 19:00 of 19:30 — of "uit".', huidig);
   if (inp === null) return;
   const v = inp.trim().toLowerCase();
   if (v === 'uit' || v === ''){ set(dbRef('settings/notifyTime'), 'uit'); return; }
   const m = v.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59){
-    alert('Ongeldige tijd. Gebruik uu:mm, bijvoorbeeld 19:00 — of "uit".');
+  if (!m || Number(m[1]) > 23 || (m[2] !== '00' && m[2] !== '30')){
+    alert('Kies een heel of half uur, bijvoorbeeld 19:00 of 19:30 — of "uit".');
     return;
   }
   const hh = String(Number(m[1])).padStart(2, '0');
