@@ -14,6 +14,13 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.6 — juli 2026
+- **Nieuw app-icoon**: het witte vinkje op blauw is vervangen door een klembord met
+  taakjes (twee afgevinkt, één te doen) op groen, in de kleurenstijl van de app
+  (`icon-192.png`/`icon-512.png`, gekozen uit vier voorstellen). Let op: op een toestel
+  waar de app al op het beginscherm staat verschijnt het nieuwe icoon pas na de
+  bladwijzer verwijderen en opnieuw toevoegen (iOS cachet het icoon bij toevoegen).
+
 ## v18.5 — juli 2026
 - **De oude 🔥 vlam- en 🏆 badge-emoji weer teruggezet** (op verzoek): de zelfgetekende
   SVG-varianten uit v18.4 (`FLAME_ICON`/`BADGE_ICON`) zijn vervangen door de vertrouwde emoji op
