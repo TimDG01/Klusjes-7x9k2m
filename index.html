@@ -146,6 +146,13 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .admin-title{font-size:18px;font-weight:700;flex:1;}
 .admin-section{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;}
 .admin-role-title{font-size:15px;font-weight:700;margin-bottom:10px;}
+/* Inklapbare kop van een taak/beurt-taak: hele regel klikbaar, caret + label +
+   samenvatting. De caret is een tekst-driehoek (▸/▾, geen emoji) zodat hij met
+   currentColor meekleurt. */
+.admin-collapse-head{display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0;}
+.admin-caret{flex:0 0 auto;font-size:12px;color:var(--text2);width:12px;}
+.admin-collapse-main{flex:1;min-width:0;}
+.admin-collapse-sub{font-size:12px;color:var(--text2);margin-top:2px;overflow-wrap:break-word;}
 .admin-task-row{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);}
 .admin-task-row:last-of-type{border-bottom:none;}
 /* flex-wrap + de knoppen gegroepeerd in .admin-task-actions: past de rij niet op
@@ -266,7 +273,7 @@ const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v18.1';
+const VERSION = 'klusjes-pwa v18.2';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -606,6 +613,12 @@ let current = new Date();
 if (current < START) current = new Date(START);
 
 let screen = 'auth'; // 'auth' | 'day' | 'admin' | 'badges' | 'members'
+
+// Welke Beheer-rijen open staan (accordion). Sleutels: 'task:'+id / 'shift:'+id.
+// Bewust module-level en persistent over renders: een admin-mutatie schrijft naar de
+// DB → listener → render(), en de opengeklapte rij moet dan open blijven. Start leeg
+// (alles ingeklapt). Stale sleutels na verwijderen zijn onschadelijk (nooit gerenderd).
+const adminOpen = new Set();
 
 let authUser = null;
 let authLoaded = false;
@@ -2628,6 +2641,12 @@ function backToDay(){
   render();
 }
 
+// Beheer-rij open/dicht klappen (accordion). key = 'task:'+id of 'shift:'+id.
+function toggleAdminRow(key){
+  if (adminOpen.has(key)) adminOpen.delete(key); else adminOpen.add(key);
+  render();
+}
+
 function renderAdmin(){
   const app = document.getElementById('app');
   app.innerHTML = `
@@ -2728,6 +2747,14 @@ function editStreakStart(){
   set(dbRef('settings/streakStart'), dayKey(d));
 }
 
+// Korte weekdag-samenvatting voor de ingeklapte Beheer-kop: "elke dag" / "nooit" /
+// "ma di wo". Zondag-eerst, net als de weekdagkiezer (WD-volgorde).
+function weekdaySummary(days){
+  if (!days.length) return 'nooit';
+  if (days.length === 7) return 'elke dag';
+  return days.slice().sort((a, b) => a - b).map(i => WD[i].slice(0, 2)).join(' ');
+}
+
 // handlerPrefix is de JS-aanroep tot en met de laatste komma; per dag wordt `${i})`
 // aangeplakt. Bv. "toggleWeekday('A','t1'," of "toggleShiftWeekday('vacuum',".
 function renderWeekdayPicker(activeDays, handlerPrefix){
@@ -2765,11 +2792,13 @@ function renderAdminTasks(){
         <button class="admin-icon-btn accent" onclick="rewindTaskPointer('${t.id}')" title="Startvolgorde terug">${SKIP_BACK_ICON}</button>
         <button class="admin-icon-btn accent" onclick="advanceTaskPointer('${t.id}')" title="Startvolgorde door">${SKIP_FWD_ICON}</button>
       </div>` : `<div class="admin-vacuum-note">Vaste taak van ${escapeHtml(memberName(ring[0]) || '—')}.</div>`;
-    return `
-    <div class="admin-task-row">
+    const open = adminOpen.has('task:' + t.id);
+    const who = rotates
+      ? `rotatie (${intervalLabel.toLowerCase()}) · vandaag ${escapeHtml(memberName(assignee) || '—')}`
+      : `vast · ${escapeHtml(memberName(ring[0]) || '—')}`;
+    const sub = `${t.recurring ? 'terugkerend' : 'eenmalig'} · ${who} · ${weekdaySummary(days)}`;
+    const body = open ? `
       <div class="admin-task-top">
-        <span class="admin-tag">${t.recurring ? 'Terugkerend' : 'Eenmalig'}</span>
-        <div class="admin-task-label">${escapeHtml(t.label)}</div>
         <span class="admin-task-actions">
           <button class="admin-icon-btn" onclick="toggleRecurring('${t.id}')" title="Terugkerend / eenmalig">🔁</button>
           <button class="admin-icon-btn" onclick="toggleTaskInterval('${t.id}')" title="Dagelijks / wekelijks wisselen">${t.interval === 'weekly' ? '📅' : '🗓️'}</button>
@@ -2780,7 +2809,17 @@ function renderAdminTasks(){
       ${renderWeekdayPicker(days, `toggleWeekday('${t.id}',`)}
       ${days.length === 0 ? '<div class="admin-never">Nooit actief</div>' : ''}
       <div class="admin-weekday-row" style="flex-wrap:wrap;margin-top:6px;">${memberChips || '<span class="admin-vacuum-note">Nog geen kinderen.</span>'}</div>
-      ${turnRow}
+      ${turnRow}` : '';
+    return `
+    <div class="admin-task-row">
+      <div class="admin-collapse-head" onclick="toggleAdminRow('task:${t.id}')">
+        <span class="admin-caret">${open ? '▾' : '▸'}</span>
+        <div class="admin-collapse-main">
+          <div class="admin-task-label">${escapeHtml(t.label)}</div>
+          <div class="admin-collapse-sub">${sub}</div>
+        </div>
+      </div>
+      ${body}
     </div>
   `;
   }).join('');
@@ -2832,10 +2871,12 @@ function renderAdminShifts(){
       const on = explicit ? sh.members.includes(k.uid) : true;
       return `<button class="admin-day-btn admin-kid-btn ${on ? 'active' : ''}" style="--kidkleur:${k.kleur}" onclick="toggleShiftMember('${sh.id}','${k.uid}')">${escapeHtml(k.name)}</button>`;
     }).join('');
-    return `
-      <div class="admin-section">
+    const open = adminOpen.has('shift:' + sh.id);
+    const sub = (n && pd)
+      ? `volgende: ${escapeHtml(memberName(n.uid) || '—')} — ${escapeHtml(lines[n.lineIdx] || '—')} · ${WD[pd.getDay()].slice(0, 2)} ${pd.getDate()} ${MN[pd.getMonth()].slice(0, 3)}`
+      : `geen open beurt · ${weekdaySummary(days)}`;
+    const body = open ? `
         <div class="admin-task-top" style="margin-bottom:10px;">
-          <div class="admin-role-title" style="margin:0;flex:1;">🔁 ${escapeHtml(sh.name || 'Beurt')}</div>
           <span class="admin-task-actions">
             <button class="admin-icon-btn" onclick="renameShift('${sh.id}')" title="Naam wijzigen">✏️</button>
             <button class="admin-icon-btn danger" onclick="deleteShift('${sh.id}')" title="Beurt-taak verwijderen">${TRASH_ICON}</button>
@@ -2849,7 +2890,17 @@ function renderAdminShifts(){
         <button class="admin-add-btn" onclick="addShiftLine('${sh.id}')">+ Lijn toevoegen</button>
         <div class="admin-role-title" style="font-size:13px;margin:12px 0 6px;">Wie draait mee?</div>
         <div class="admin-weekday-row" style="flex-wrap:wrap;">${memberChips || '<span class="admin-vacuum-note">Nog geen kinderen in het gezin.</span>'}</div>
-        <div class="admin-vacuum-note">Een niet-afgevinkte beurt schuift automatisch door naar de volgende dag, voor dezelfde persoon.</div>
+        <div class="admin-vacuum-note">Een niet-afgevinkte beurt schuift automatisch door naar de volgende dag, voor dezelfde persoon.</div>` : '';
+    return `
+      <div class="admin-section">
+        <div class="admin-collapse-head" onclick="toggleAdminRow('shift:${sh.id}')">
+          <span class="admin-caret">${open ? '▾' : '▸'}</span>
+          <div class="admin-collapse-main">
+            <div class="admin-role-title" style="margin:0;">🔁 ${escapeHtml(sh.name || 'Beurt')}</div>
+            <div class="admin-collapse-sub">${sub}</div>
+          </div>
+        </div>
+        ${body}
       </div>
     `;
   }).join('');
@@ -3018,7 +3069,7 @@ function toggleShiftWeekday(shiftId, dayNum){
 }
 
 Object.assign(window, {
-  toggleTask, toggleShift, changeDay, goToday, openAdmin, backToDay, openBadges,
+  toggleTask, toggleShift, changeDay, goToday, openAdmin, backToDay, toggleAdminRow, openBadges,
   editTaskLabel, toggleRecurring, toggleTaskInterval, deleteTaskAdmin, addTaskAdmin,
   toggleWeekday, toggleTaskMember, advanceTaskPointer, rewindTaskPointer, editStreakStart,
   shiftPrepone, shiftPostpone, moveOwedShift, toggleKidMayMove, advanceShiftTurn, rewindShiftTurn,

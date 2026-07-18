@@ -14,6 +14,11 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.2 — juli 2026
+- **Beheer-scherm rustiger.** Taken en beurt-taken staan nu standaard ingeklapt met een korte
+  samenvatting (wie/wanneer). Tik op een rij om ze open te klappen en te bewerken; een
+  opengeklapte rij blijft open terwijl je wijzigt.
+
 ## v18.1 — juli 2026
 - **Vergeten beurt wordt meteen een gewone taak.** Het genadevenster van 2 dagen (waarin een
   gemiste beurt nog als *beurt* op vandaag bleef staan) is teruggezet naar **0**: staat een
