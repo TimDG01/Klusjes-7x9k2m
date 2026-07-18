@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.1`): a Dutch-language family chores app —
+**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.2`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -351,6 +351,15 @@ exception is weekday selection, done via 7 individual toggle buttons
 (`renderWeekdayPicker`, click-to-flip-and-write) because a 7-way multi-select is where
 `prompt()` hits its limit. Admin handlers take `(taskId)` / `(shiftId)` — no per-bucket
 logic.
+- **Beheer rows are a collapsed accordion** (v18.2): each task and each shift renders as a
+  clickable `admin-collapse-head` showing only a one-line summary — `weekdaySummary(days)`
+  (`'elke dag'` / `'nooit'` / abbreviated weekday list) plus recurring/one-off + who's in the
+  ring for a task, or the open turn / weekdays for a shift — with the full edit controls hidden
+  until expanded. Open/closed state lives in the module-level `adminOpen` **Set** keyed by
+  `'task:'+id` / `'shift:'+id`, toggled by `toggleAdminRow(key)` (in the `window` export). It's
+  a `Set` (not a per-render flag) deliberately: an opened row **stays open across the re-render**
+  that every edit triggers, so you can keep tweaking. New collapsible admin rows should reuse
+  `adminOpen` + `toggleAdminRow` and add a `weekdaySummary`-style one-liner.
 
 ### Security rules — committed in this repo
 The rules live in `firebase-rules-v16.json` (paste-ready for the Console, with per-block NL
