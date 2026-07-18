@@ -92,10 +92,10 @@ rotatie kan nooit permanent vastlopen.
 - Reeks-nuance (beurt-only dag) blijft; expliciet met de gebruiker delen.
 
 ## Checklist
-- [ ] `shiftPendingDay` begrenzen tot het 2-dagen-venster (app + `notify.js`).
-- [ ] `shiftAutoDetachIfLapsed` + `fromShiftDay`-idempotentie (app render-pad).
-- [ ] Auto-detach-onderhoud in `notify.js` (elke run, admin).
-- [ ] `copyRotation` neemt `fromShiftDay` mee.
-- [ ] Verificatie-tests (1–6 hierboven).
-- [ ] `VERSION` v18 + `CHANGELOG` + `CLAUDE.md`.
-- [ ] Commit + push naar de branch (**niet** `main`); pas na test op toestel naar `main`.
+- [x] `shiftPendingDay` begrenzen tot het 2-dagen-venster (app + `notify.js`).
+- [x] `shiftAutoDetachIfLapsed` + `fromShiftDay`-idempotentie (app render-pad).
+- [x] Auto-detach-onderhoud in `notify.js` (elke run, admin — `runShiftMaintenance`).
+- [x] `copyRotation` neemt `fromShiftDay` mee.
+- [x] Verificatie-tests (1–6 hierboven) — 24/24 groen (`scratchpad/test-v18.js`), incl. app==notify.
+- [x] `VERSION` v18 + `CHANGELOG` + `CLAUDE.md`.
+- [x] Commit + push naar de branch (**niet** `main`); pas na test op toestel naar `main`.

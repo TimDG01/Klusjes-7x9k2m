@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v17** (`VERSION` = `klusjes-pwa v17.3`): a Dutch-language family chores app —
+**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -231,12 +231,15 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   picks the day: an `override` date wins over the weekday schedule, but an override that
   has slipped into the *past* is **clamped forward to today** (read-path only, self-heals
   each render, no write) so a lapsed turn stays visible and clickable today. **A normally
-  scheduled turn that was missed is likewise clamped to today** (v17.3): it searches for the
-  first scheduled day after `lastDone` and, if that day is already past, keeps the turn on
-  today instead of silently rolling to the next scheduled weekday — so a missed vacuuming
-  turn stays visible and keeps the day incomplete (breaking the streak on any day that also
-  has other tasks, since the pending turn is in the day's completion id-set). A day matching
-  `lastDone` is skipped. Future scheduled days show a dimmed **projection** (excluded from
+  scheduled turn that was missed is clamped to today, but only inside a `SHIFT_GRACE`-day
+  window** (v18, `SHIFT_GRACE = 2` → today + the 2 previous days): it searches for the first
+  scheduled day after `lastDone` and, if that day is past but ≤ `SHIFT_GRACE` days ago, keeps
+  the turn on today (visible, clickable, movable) — so a missed vacuuming turn stays and keeps
+  the day incomplete (breaking the streak on any day that also has other tasks, since the
+  pending turn is in the day's completion id-set). **Past the window it is auto-detached into
+  a movable one-off task and the rotation advances** (see below), so a missed turn can never
+  stall the ring. A day matching `lastDone` is skipped. Future scheduled days show a dimmed
+  **projection** (excluded from
   the progress bar) that **is** clickable — checking it completes that projected turn and
   jumps the pointer past it, letting an earlier open turn lapse silently (a parent covering
   a skipped turn must not block the rotation). Past days render from the frozen
@@ -253,17 +256,29 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   just-completed turn); older checked days toggle freely. That rewind also restores
   `override` to the day (check-off clears it), so a moved turn doesn't snap back to the
   next scheduled weekday and appear to vanish.
-- **⏭ postpone = detach + keep rotating (the fix for the "beurt draait niet meer door"
-  problem).** The old ⏭ merely moved the single turn's `override` one day later while
-  keeping the same person as "next" — so the rotation *stalled*. Now `shiftPostpone`
-  instead, in one atomic `rootUpdate`: (1) creates a **regular `recurring:false` one-off
-  task** for that person on the next day — `{ label:'🔁 {name}: {line}', recurring:false,
-  members:[uid], onDay:<nextday>, fromShift:<shiftId>, order }` — reusing the whole one-off
-  freeze/restore machinery (and the child-completable rules path); and (2) **advances the
-  shift pointer** (`next = shiftAdvance(...,1)`, `override:null`) so the next scheduled day
-  gives the turn to the next person. Net effect: the turn becomes a standalone owed chore
-  the original person still holds, and the rotation keeps running. ⏮ on the *pending* row
-  is unchanged (it pulls the turn one day earlier).
+- **Detach = keep rotating (the fix for the "beurt draait niet meer door" problem).** Both
+  the manual ⏭ and the automatic v18 lapse-detach funnel through one helper
+  `detachShiftTurn(sh, dueDayKey, uid, lineIdx, onDayKey)` — one atomic `rootUpdate` that:
+  (1) creates a **regular `recurring:false` one-off task** for that person under a
+  **deterministic key** `settings/tasks/shift-{shiftId}-{dueDayKey}` — `{ label:'🔁 {name}:
+  {line}', recurring:false, members:[uid], onDay:<onDayKey>, fromShift:<shiftId>,
+  fromShiftDay:<dueDayKey>, order }` — reusing the whole one-off freeze/restore machinery (and
+  the child-completable rules path); (2) **advances the shift pointer** (`next =
+  shiftAdvance(...,1)`, `override:null`) so the next scheduled day gives the turn to the next
+  person; and (3) sets `lastDone = dueDayKey` so `shiftPendingDay` moves past the resolved day
+  instead of falling back onto it. The deterministic key + `fromShiftDay` make it **idempotent**
+  — client render-path, a second render, and the server cron all write the same key, never a
+  duplicate. `shiftPostpone` (manual ⏭) calls it for the pending day → next day; ⏮ on the
+  *pending* row is unchanged (pulls the turn one day earlier).
+- **Auto-detach after the grace window (v18).** `shiftAutoDetachIfLapsed(sh)` skips a shift
+  with an active `override`; otherwise, if the first scheduled day after `lastDone` is
+  **> `SHIFT_GRACE` days** past, it calls `detachShiftTurn` for that day (onDay = the same
+  day, so `onDayEffIdx` self-heals it forward to today). It runs on **two** paths so the
+  rotation can never permanently stall: the client **render-path** (`render()` calls
+  `shiftsArray().forEach(shiftAutoDetachIfLapsed)` — **parent-only**, since it's a settings
+  write) *and* the **server cron** (`scripts/notify.js` → `runShiftMaintenance`, admin rights,
+  every run, so it advances even when nobody opens the app). Both are idempotent; the server
+  loops to converge multiple missed days in one run.
 - A detached turn is **not** a plain personal task — it stays **movable**. `owedShiftRow`
   draws it as a beurt row with ⏮/⏭ (gated by `mayMoveShiftOf`, like the pending row), and
   `moveOwedShift(taskId, ±1)` re-pins its `onDay` (never before today, computed from the
@@ -387,17 +402,21 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   no-gate/non-fatal listener like `streakStart`. `settings/lastNotified` (`"yyyy-M-d"`) is a
   server-written dedup flag.
 - **Server half (`scripts/notify.js` + `.github/workflows/klusjes-herinnering.yml`):** a
-  GitHub Action runs **every 30 min**; the script (Firebase Admin SDK) sends, for each family
-  where Brussels-now ≥ `notifyTime` and it hasn't sent today, an FCM push to every active kid
-  with ≥1 open chore. **No Blaze/credit card** — FCM + RTDB reads are free on Spark. The
+  GitHub Action runs **every 30 min**; the script (Firebase Admin SDK) first runs the v18
+  **shift maintenance** (`runShiftMaintenance` — auto-detaches lapsed turns with admin rights,
+  every run, so the rotation advances even when nobody opens the app), then sends, for each
+  family where Brussels-now ≥ `notifyTime` and it hasn't sent today, an FCM push to every active
+  kid with ≥1 open chore. **No Blaze/credit card** — FCM + RTDB reads are free on Spark. The
   service-account JSON is the GitHub secret `FIREBASE_SERVICE_ACCOUNT`.
 - **⚠️ Logic duplication — keep in sync.** The DB stores task *definitions* + rotation *state*
   + `checks` (what's *done*), **not** a ready-made "today's chores" list — the app computes it
   each render, so `notify.js` must recompute it too. The pure helpers there (`dayIndex`,
   `taskRing`/`taskAssignee`/`tasksForKidDay` + `onDay`, `shiftPendingDay`/`shiftEffectiveNext`/
-  `shiftForDay`) are **verbatim copies** of the `index.html` versions, adapted to take a `ctx`
-  object. Change the chore/shift math in `index.html` → update `notify.js` too. A Node
-  cross-check test (fake data, no network) asserts `notify.js` and the app agree.
+  `shiftForDay`, and the v18 `shiftDetachPlan`/`runShiftMaintenance` mirroring
+  `shiftAutoDetachIfLapsed`/`detachShiftTurn`) are **verbatim copies** of the `index.html`
+  versions, adapted to take a `ctx` object. Change the chore/shift math in `index.html` →
+  update `notify.js` too. A Node cross-check test (fake data, no network) asserts `notify.js`
+  and the app agree.
 - **Gotcha:** GitHub scheduled workflows (`on: schedule`) only fire from the **default branch
   (`main`)**; on a feature branch only `workflow_dispatch` (manual run, pick the branch) works.
 

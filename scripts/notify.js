@@ -20,6 +20,7 @@ const FLOORS = ['gelijkvloers', 'Verdiep ouders', 'Verdiep kinderen'];
 const DEFAULT_VACUUM_WEEKDAYS = [1, 5];
 const SEARCH_HORIZON = 370;
 const DEFAULT_NOTIFY_TIME = '19:00';
+const SHIFT_GRACE = 2; // genadevenster (dagen) vóór een gemiste beurt een losse taak wordt (v18)
 
 // ---- dag-wiskunde ----
 function dayIndex(d) {
@@ -128,11 +129,14 @@ function shiftPendingDay(sh, ctx) {
       return dayIndex(od) >= dayIndex(from) ? dayKey(od) : dayKey(from);
     }
   }
-  // Gemiste (voorbije) geplande beurt blijft op vandaag staan i.p.v. door te schuiven.
+  // Zoek de eerste geplande dag ná de laatst-gedane beurt (niet enkel vanaf vandaag).
   const searchFrom = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : from;
   const nd = shiftNextScheduledDayFrom(sh, searchFrom);
   if (!nd) return null;
-  return dayIndex(nd) >= dayIndex(today) ? dayKey(nd) : dayKey(today);
+  const ndIdx = dayIndex(nd), tIdx = dayIndex(today);
+  if (ndIdx >= tIdx) return dayKey(nd);              // vandaag of in de toekomst
+  if (tIdx - ndIdx <= SHIFT_GRACE) return dayKey(today); // binnen venster → klem naar vandaag
+  return dayKey(nd);                                 // voorbij venster → op de voorbije dag (detach volgt)
 }
 function shiftEffectiveNext(sh, ctx) {
   const lines = shiftLines(sh);
@@ -204,6 +208,78 @@ function openChoresFor(uid, ctx) {
   return out;
 }
 
+// ---- auto-losmaken van een verlopen beurt (v18) ----
+// Spiegelt shiftAutoDetachIfLapsed/detachShiftTurn uit index.html. Puur/testbaar: geeft de
+// detach-actie voor één verlopen beurt terug (of null), zonder te schrijven. Ligt de eerste
+// geplande dag ná lastDone méér dan SHIFT_GRACE dagen in het verleden en is er geen override,
+// dan wordt die beurt een verschuifbare eenmalige taak en schuift de rotatie één stap door.
+// Sleutel is DETERMINISTISCH (`shift-{id}-{dueDay}`) → client + server (en herhaalde runs)
+// overschrijven i.p.v. dubbel aan te maken (idempotent).
+function shiftDetachPlan(sh, ctx) {
+  if (sh.override) return null;
+  const today = clampedToday(ctx), tIdx = dayIndex(today);
+  const ld = sh.lastDone ? parseDayKey(sh.lastDone) : null;
+  const from = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : today;
+  const nd = shiftNextScheduledDayFrom(sh, from);
+  if (!nd) return null;
+  if (tIdx - dayIndex(nd) <= SHIFT_GRACE) return null; // nog binnen het venster (of toekomst)
+  const n = shiftEffectiveNext(sh, ctx);
+  if (!n) return null;
+  const lines = shiftLines(sh);
+  const li = ((n.lineIdx % lines.length) + lines.length) % lines.length;
+  const dueDayKey = dayKey(nd);
+  return {
+    dueDayKey,
+    taskId: 'shift-' + sh.id + '-' + dueDayKey,
+    task: {
+      label: `🔁 ${sh.name || 'Beurt'}: ${lines[li]}`,
+      recurring: false,
+      members: [n.uid],
+      onDay: dueDayKey,
+      fromShift: sh.id,
+      fromShiftDay: dueDayKey,
+      order: Date.now()
+    },
+    next: shiftAdvance(sh, { uid: n.uid, lineIdx: li }, 1, ctx),
+    lastDone: dueDayKey
+  };
+}
+
+// Onderhoud per gezin: maak alle verlopen beurten los (bounded loop tot convergentie, want
+// er kunnen meerdere gemiste dagen op de rij staan). Muteert familyData in-memory zodat de
+// meld-berekening hierna de losgemaakte taken al als gewone taken ziet, en geeft de platte
+// schrijf-paden (relatief t.o.v. families/{fid}) terug voor één admin-update.
+function runShiftMaintenance(familyData, now) {
+  const settings = familyData.settings || (familyData.settings = {});
+  if (!settings.tasks) settings.tasks = {};
+  if (!settings.shifts) settings.shifts = {};
+  const ctx = {
+    membersCache: familyData.members || {},
+    tasksCache: settings.tasks,
+    shiftsCache: settings.shifts,
+    today: now.today
+  };
+  const writes = {};
+  for (const id of Object.keys(ctx.shiftsCache)) {
+    let guard = 0;
+    while (guard++ < 400) {
+      const cur = { id, ...ctx.shiftsCache[id] };
+      const plan = shiftDetachPlan(cur, ctx);
+      if (!plan) break;
+      writes[`settings/tasks/${plan.taskId}`] = plan.task;
+      writes[`settings/shifts/${id}/next`] = plan.next;
+      writes[`settings/shifts/${id}/lastDone`] = plan.lastDone;
+      writes[`settings/shifts/${id}/override`] = null;
+      // in-memory bijwerken zodat de volgende iteratie/meld-berekening klopt
+      ctx.tasksCache[plan.taskId] = plan.task;
+      ctx.shiftsCache[id].next = plan.next;
+      ctx.shiftsCache[id].lastDone = plan.lastDone;
+      delete ctx.shiftsCache[id].override;
+    }
+  }
+  return writes;
+}
+
 // ---- Brussel-tijd (zomertijd/wintertijd automatisch via de tijdzone) ----
 function brusselsNow(dateArg) {
   const d = dateArg || new Date();
@@ -264,7 +340,8 @@ function familySendPlan(familyData, now, todayKey, force) {
 
 module.exports = {
   dayIndex, dayKey, parseDayKey, openChoresFor, familySendPlan,
-  brusselsNow, timeToMinutes, activeKidUids, tasksForKidDay, shiftForDay
+  brusselsNow, timeToMinutes, activeKidUids, tasksForKidDay, shiftForDay,
+  shiftPendingDay, shiftDetachPlan, runShiftMaintenance
 };
 
 // ---- live uitvoering (enkel wanneer direct gedraaid, niet bij require in tests) ----
@@ -291,8 +368,24 @@ async function main() {
 
   const families = (await db.ref('families').get()).val() || {};
   let totalSent = 0;
+  let totalDetached = 0;
 
   for (const fid of Object.keys(families)) {
+    // v18: beurt-onderhoud bij ELKE run (los van het meld-uur) — de garantie dat de rotatie
+    // doordraait ook als niemand met rechten de app opent. Muteert families[fid] in-memory,
+    // zodat de meld-berekening hierna de losgemaakte beurten al als gewone taken meeneemt.
+    try {
+      const writes = runShiftMaintenance(families[fid], now);
+      const paths = Object.keys(writes);
+      if (paths.length) {
+        await db.ref(`families/${fid}`).update(writes);
+        totalDetached += paths.filter(p => p.startsWith('settings/tasks/')).length;
+        console.log(`Beurt losgemaakt voor gezin ${fid}: ${paths.filter(p => p.startsWith('settings/tasks/')).length} taak/taken.`);
+      }
+    } catch (e) {
+      console.error(`Beurt-onderhoud mislukt voor ${fid}:`, (e && e.message) || e);
+    }
+
     const { due, plan } = familySendPlan(families[fid], now, todayKey, force);
     if (!due) continue;
 
@@ -329,6 +422,6 @@ async function main() {
     if (!force) await db.ref(`families/${fid}/settings/lastNotified`).set(todayKey);
   }
 
-  console.log(`Klaar. ${totalSent} melding(en) verstuurd.`);
+  console.log(`Klaar. ${totalSent} melding(en) verstuurd, ${totalDetached} beurt(en) losgemaakt.`);
   process.exit(0);
 }

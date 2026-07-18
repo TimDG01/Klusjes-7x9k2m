@@ -14,6 +14,29 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18 — juli 2026
+
+**Beurt-rotatie loopt altijd door + genadevenster van 2 dagen.** De beurt-taak (bv.
+stofzuigen) kan de rotatie niet meer blokkeren.
+- Mist iemand zijn beurt, dan blijft die nog **vandaag + 2 dagen** (gisteren + eergisteren)
+  als openstaande beurt op vandaag staan — zichtbaar, afvinkbaar en verschuifbaar (⏮/⏭).
+  Zo houdt een gemiste beurt de dag onaf en telt ze mee voor de reeks (op een dag met andere
+  taken).
+- **Na het venster wordt de beurt automatisch een losse, verschuifbare taak** (`owedShiftRow`,
+  ⏮/⏭) bij dezelfde persoon, en de rotatie schuift meteen door naar de volgende persoon op de
+  volgende geplande dag. Niets loopt dus nog vast: de rol draait altijd verder. Dit gebeurt
+  zowel in de app (bij een ouder die de app opent) als in het server-script (elke 30 min,
+  als garantie ook wanneer niemand de app opent). Idempotent via een vaste taak-sleutel
+  (`shift-{id}-{dag}`) + het nieuwe `fromShiftDay`-veld, zodat client en server elkaar nooit
+  dubbelen.
+- Vervangt het v17.3-gedrag (een gemiste beurt bleef onbeperkt op vandaag staan) door dit
+  begrensde venster + auto-losmaken.
+- **Nuance (bekend):** een dag met *enkel* een beurt en verder geen taken breekt de reeks niet
+  hard — het zelf-herstel naar vandaag verhindert een retroactieve breuk; op een dag met andere
+  taken breekt een niet-gedane (losse) beurt de reeks wél.
+- Geen rules-wijziging nodig (ouder- en server-schrijf, en de kind-zelf-verschuif via
+  `magVerschuiven` bestond al).
+
 ## v17.3 — juli 2026
 - **Gemiste beurt-taak (bv. stofzuigen) verdwijnt niet meer.** Een niet-afgevinkte beurt
   bleef vroeger stil doorschuiven naar de volgende geplande dag (en telde zo niet mee); nu

@@ -265,7 +265,8 @@ function streakStartIdx(){
 const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
-const VERSION = 'klusjes-pwa v17.3';
+const SHIFT_GRACE = 2; // genadevenster (dagen): een gemiste beurt blijft zoveel dagen op vandaag staan vóór ze automatisch een losse taak wordt (v18)
+const VERSION = 'klusjes-pwa v18';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -736,10 +737,13 @@ function shiftPendingDay(sh){
   const searchFrom = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : from;
   const nd = shiftNextScheduledDayFrom(sh, searchFrom);
   if (!nd) return null;
-  // Een geplande dag die al VOORBIJ is (een niet-afgevinkte beurt) niet stil door laten
-  // schuiven naar de volgende geplande dag, maar op VANDAAG laten staan: zo blijft de beurt
-  // zichtbaar én houdt ze de dag onaf (→ breekt de reeks, zoals een gewone gemiste taak).
-  return dayIndex(nd) >= dayIndex(today) ? dayKey(nd) : dayKey(today);
+  const ndIdx = dayIndex(nd), tIdx = dayIndex(today);
+  if (ndIdx >= tIdx) return dayKey(nd);            // vandaag of in de toekomst
+  // Voorbij, maar nog binnen het genadevenster → op VANDAAG laten staan (zichtbaar/afvinkbaar).
+  if (tIdx - ndIdx <= SHIFT_GRACE) return dayKey(today);
+  // Voorbij het venster → op de eigenlijke (voorbije) dag laten; shiftAutoDetachIfLapsed maakt
+  // ze dan los tot een gewone taak en schuift de rotatie door (v18).
+  return dayKey(nd);
 }
 
 // De openstaande beurt-combo van een shift: de pointer uit de database (mits hij
@@ -1356,6 +1360,11 @@ function render(){
   const dow = current.getDay();
   const state = dayState;
 
+  // v18: beurten die langer dan het genadevenster openstaan automatisch losmaken tot een
+  // gewone taak + de rotatie doorschuiven. Enkel een ouder schrijft dit op het render-pad
+  // (settings-schrijf); de server-cron dekt de rest. Idempotent (deterministische sleutel).
+  if (isParent()) shiftsArray().forEach(shiftAutoDetachIfLapsed);
+
   // Kaarten = actieve kind-leden (uid-gesleuteld). Een ingelogd kind ziet enkel
   // zijn eigen kaart; een ouder ziet iedereen.
   const kids = activeKids()
@@ -1620,27 +1629,60 @@ function shiftPrepone(shiftId){
 // zichtbaar op die exacte dag) en `fromShift` (zodat Beheer ze verbergt). Ouders altijd;
 // het kind zelf enkel met de magVerschuiven-vlag — de settings/tasks-schrijf van het kind
 // wordt dan toegestaan door de fromShift-uitzondering in firebase-rules-v16.json.
+// Gedeelde losmaak (v18): maakt van de beurt voor bron-dag `dueDayKey` een verschuifbare
+// eenmalige taak (getoond op `onDayKey`), schuift de rotatie één stap door en markeert de
+// bron-dag als afgehandeld via `lastDone` (zodat shiftPendingDay er niet op terugvalt). De
+// taak-sleutel is DETERMINISTISCH (`shift-{id}-{dueDay}`), zodat client én server (en twee
+// renders) nooit dubbel losmaken — dezelfde sleutel overschrijft gewoon. `fromShiftDay`
+// bewaart de bron-dag (voor de idempotentie-check en carry-through in copyRotation).
+function detachShiftTurn(sh, dueDayKey, uid, lineIdx, onDayKey){
+  const lines = shiftLines(sh);
+  const li = ((lineIdx % lines.length) + lines.length) % lines.length;
+  rootUpdate({
+    ['settings/tasks/shift-' + sh.id + '-' + dueDayKey]: {
+      label: `🔁 ${sh.name || 'Beurt'}: ${lines[li]}`,
+      recurring: false,
+      members: [uid],
+      onDay: onDayKey,
+      fromShift: sh.id,
+      fromShiftDay: dueDayKey,
+      order: Date.now()
+    },
+    ['settings/shifts/' + sh.id + '/next']: shiftAdvance(sh, { uid, lineIdx: li }, 1),
+    ['settings/shifts/' + sh.id + '/lastDone']: dueDayKey,
+    ['settings/shifts/' + sh.id + '/override']: null
+  });
+}
+
+// Doorschuiven (⏭): de openstaande beurt wordt losgemaakt tot een verschuifbare taak op de
+// VOLGENDE dag en de rotatie schuift door. Ouders altijd; het kind zelf enkel met de
+// magVerschuiven-vlag (de fromShift-uitzondering in de rules staat de kind-schrijf toe).
 function shiftPostpone(shiftId){
   const sh = shiftsArray().find(s => s.id === shiftId);
   const pKey = sh && shiftPendingDay(sh);
   const n = sh && shiftEffectiveNext(sh);
   if (!pKey || !n || !mayMoveShiftOf(n.uid)) return;
-  const nd = parseDayKey(pKey);
-  nd.setDate(nd.getDate() + 1);
-  const line = shiftLines(sh)[n.lineIdx];
-  const taskId = push(dbRef('settings/tasks')).key;
-  rootUpdate({
-    ['settings/tasks/' + taskId]: {
-      label: `🔁 ${sh.name || 'Beurt'}: ${line}`,
-      recurring: false,
-      members: [n.uid],
-      onDay: dayKey(nd),
-      fromShift: shiftId,
-      order: Date.now()
-    },
-    ['settings/shifts/' + shiftId + '/next']: shiftAdvance(sh, { uid: n.uid, lineIdx: n.lineIdx }, 1),
-    ['settings/shifts/' + shiftId + '/override']: null
-  });
+  const nd = parseDayKey(pKey); nd.setDate(nd.getDate() + 1);
+  detachShiftTurn(sh, pKey, n.uid, n.lineIdx, dayKey(nd));
+}
+
+// Auto-losmaken (v18): staat de openstaande beurt langer dan het genadevenster open, dan
+// maakt de app ze automatisch los tot een gewone taak (op de gemiste dag zelf; zelf-herstel
+// naar vandaag via onDayEffIdx) en schuift de rotatie door — zo blokkeert een gemiste beurt
+// de rotatie nooit. Draait op het render-pad (enkel ouders — settings-schrijf) én in de
+// server-cron (scripts/notify.js) als garantie. Idempotent dankzij de deterministische sleutel
+// en het doorschuiven van lastDone (één gemiste dag per aanroep; het convergeert vanzelf).
+function shiftAutoDetachIfLapsed(sh){
+  if (sh.override) return; // een expliciet verplaatste beurt niet auto-losmaken
+  const today = clampedToday(), tIdx = dayIndex(today);
+  const ld = sh.lastDone ? parseDayKey(sh.lastDone) : null;
+  const from = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : today;
+  const nd = shiftNextScheduledDayFrom(sh, from);
+  if (!nd) return;
+  if (tIdx - dayIndex(nd) <= SHIFT_GRACE) return; // nog binnen het venster (of toekomst)
+  const n = shiftEffectiveNext(sh);
+  if (!n) return;
+  detachShiftTurn(sh, dayKey(nd), n.uid, n.lineIdx, dayKey(nd));
 }
 
 // Een al doorgeschoven beurt (onDay-taak) nóg verder verschuiven: één dag terug (⏮) of
@@ -1719,6 +1761,7 @@ function toggleTask(uid, taskId){
     if (Number.isInteger(from.pointer)) to.pointer = from.pointer;
     if (from.onDay) to.onDay = from.onDay;         // exacte-dag-pinning (doorgeschoven beurt)
     if (from.fromShift) to.fromShift = from.fromShift; // herkomst-vlag (verborgen in Beheer)
+    if (from.fromShiftDay) to.fromShiftDay = from.fromShiftDay; // bron-dag (v18-idempotentie)
     return to;
   };
 
