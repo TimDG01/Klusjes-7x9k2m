@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v17** (`VERSION` = `klusjes-pwa v17`): a Dutch-language family chores app —
+**Klusjes-PWA v17** (`VERSION` = `klusjes-pwa v17.1`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -375,8 +375,9 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   public Web-Push key the user pastes from the Console. All push code is soft/try-caught —
   never blocks the app. `?test` note: GitHub Pages serves this app on a **subpath**, so all
   SW/manifest/icon paths are **relative** (no leading `/`).
-- **Reminder time** is per family: `settings/notifyTime` (`"HH:MM"` or `"uit"`, default
-  `"19:00"`), set by a parent in Beheer → Instellingen (`editNotifyTime`), read via a
+- **Reminder time** is per family: `settings/notifyTime` (`"HH:MM"` on the whole/half hour —
+  `editNotifyTime` only accepts `:00`/`:30` since the server polls every 30 min — or `"uit"`,
+  default `"19:00"`), set by a parent in Beheer → Instellingen (`editNotifyTime`), read via a
   no-gate/non-fatal listener like `streakStart`. `settings/lastNotified` (`"yyyy-M-d"`) is a
   server-written dedup flag.
 - **Server half (`scripts/notify.js` + `.github/workflows/klusjes-herinnering.yml`):** a
