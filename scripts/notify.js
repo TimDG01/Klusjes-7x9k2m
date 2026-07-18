@@ -1,7 +1,7 @@
 'use strict';
 /*
  * Dagelijkse push-herinnering voor openstaande klusjes.
- * Draait als GitHub Action (elk half uur) met de Firebase Admin SDK; stuurt via FCM.
+ * Draait als GitHub Action (~elke 15 min, off-hour) met de Firebase Admin SDK; stuurt via FCM.
  *
  * !! LOGICA-DUPLICATIE — HOU IN SYNC MET index.html !!
  * De DB bewaart taak-DEFINITIES + rotatie-STAND + wat AFGEVINKT is (checks), niet een

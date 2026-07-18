@@ -407,11 +407,12 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
 - **Reminder time** is per family: `settings/notifyTime` (`"HH:MM"` on the whole/half hour, or
   `"uit"`, default `"19:00"`), set by a parent in Beheer → Instellingen via a `<select>`
   dropdown (`notifyTimeOptions`/`setNotifyTime` — native wheel picker on mobile; only `:00`/`:30`
-  since the server polls every 30 min), read via a
+  offered for simplicity), read via a
   no-gate/non-fatal listener like `streakStart`. `settings/lastNotified` (`"yyyy-M-d"`) is a
   server-written dedup flag.
 - **Server half (`scripts/notify.js` + `.github/workflows/klusjes-herinnering.yml`):** a
-  GitHub Action runs **every 30 min**; the script (Firebase Admin SDK) first runs the v18
+  GitHub Action runs **~every 15 min on off-hour minutes** (`8,23,38,53` — deliberately away
+  from `:00`, where GitHub's best-effort scheduler delays/drops the most); the script (Firebase Admin SDK) first runs the v18
   **shift maintenance** (`runShiftMaintenance` — auto-detaches lapsed turns with admin rights,
   every run, so the rotation advances even when nobody opens the app), then sends, for each
   family where Brussels-now ≥ `notifyTime` and it hasn't sent today, an FCM push to every active

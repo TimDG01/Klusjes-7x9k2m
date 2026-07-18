@@ -1,13 +1,15 @@
 name: Klusjes-herinnering
 
-# Draait elk half uur (UTC). Het script (scripts/notify.js) bepaalt per gezin of het NU
-# moet sturen: enkel wanneer de Brusselse tijd het ingestelde uur (settings/notifyTime,
-# default 19:00) heeft bereikt én er die dag nog niet gestuurd is. Zo hoeft de vaste cron
-# de per-gezin-tijd niet te kennen, en vangt "vanaf-tijd, één keer per dag" late/gemiste
-# runs vanzelf op. workflow_dispatch laat je hem handmatig testen.
+# Draait ~elke 15 min (UTC), bewust op ONEVEN minuten (:08 :23 :38 :53) i.p.v. op :00/:30.
+# GitHub's schedule is best-effort en vertraagt/dropt runs het meest rond het begin van het
+# uur (:00); off-hour + vaker vergroot de kans dat er 's avonds toch een run valt. Het script
+# (scripts/notify.js) bepaalt per gezin of het NU moet sturen: enkel wanneer de Brusselse tijd
+# het ingestelde uur (settings/notifyTime, default 19:00) heeft bereikt én er die dag nog niet
+# gestuurd is. Zo hoeft de vaste cron de per-gezin-tijd niet te kennen, en vangt "vanaf-tijd,
+# één keer per dag" late/gemiste runs vanzelf op. workflow_dispatch laat je hem handmatig testen.
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '8,23,38,53 * * * *'
   workflow_dispatch:
     inputs:
       force:
