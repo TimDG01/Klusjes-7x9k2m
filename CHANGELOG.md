@@ -14,6 +14,15 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.4 — juli 2026
+- **De rest van de UI-emoji vervangen door gekleurde eigen iconen** (voorstel-set): medaille
+  (🏆 Badges — knop, reeks-strook én galerij-titel), tandwiel (⚙️ Beheer), bel met stip
+  (🔔 Meldingen aan), potlood (✏️ alle bewerk-knoppen), kalender (📅 dag/week-toggle: rode
+  kalender = wekelijks, blauwe met raster = dagelijks), vlam (🔥 reeks-teller) en hart (❤️
+  joker beschikbaar, past nu bij het 💔 gebroken hart). Alleen ✓ (afvinken, al een wit haakje
+  in het groene rondje) en enkele emoji in gewone tekst/alerts blijven. Hiermee is de hele
+  zichtbare UI over op de samenhangende gekleurde icoon-set.
+
 ## v18.3 — juli 2026
 - **Eerste gekleurde eigen iconen** i.p.v. emoji, op de plekken die gekozen zijn: de kleurschijf
   (kleur wisselen), het schild met stippen (pincode), het kopieer-icoon (gezinscode), het

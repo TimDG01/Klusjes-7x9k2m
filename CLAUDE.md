@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.3`): a Dutch-language family chores app —
+**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.4`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -446,7 +446,14 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   so they stay legible on both the light and dark card — `COLORWHEEL_ICON` (🎨 kleur),
   `SHIELD_PIN_ICON` (🔑 pin), `COPY_ICON` (📋 code), `FAMILY_ICON` (👨‍👩‍👧 Gezin-knop),
   `ROTATE_ICON` (🔁 beurt, used in `shiftRow`/`owedShiftRow`/`renderAdminShifts`), `PERSON_ICON`
-  (👤 vaste-taak-marker), `HEARTBREAK_ICON` (💔 joker used). Chosen from an icon picker artifact.
+  (👤 vaste-taak-marker), `HEARTBREAK_ICON` (💔 joker used). v18.4 added the rest:
+  `BADGE_ICON` (🏆 Badges — footer button, streak chip, gallery title), `GEAR_ICON` (⚙️ Beheer),
+  `BELL_ICON` (🔔 Meldingen aan), `PENCIL_ICON` (✏️ every edit button — one `replace_all`),
+  `CALENDAR_ICON`/`CALENDAR_DAYS_ICON` (📅 the `toggleTaskInterval` toggle keeps **two** icons
+  so weekly vs daily stays visible: red single-day = weekly, blue grid = daily), `FLAME_ICON`
+  (🔥 streak counter), `HEART_ICON` (❤️ joker available). Only ✓ (afvinken, already a white tick
+  in the green `.check` circle) and emoji inside plain-text `alert()`s / prose stay emoji.
+  Chosen from an icon picker artifact.
   **`ROTATE_ICON` is display-only**: the `🔁` in *stored* shift labels (`detachShiftTurn`, and
   `notify.js`'s copy) and the "terugkerend/eenmalig" toggle stay emoji — `owedShiftRow` strips a
   leading `🔁 ` from `t.label` at render before prefixing the icon. The rest of the app's emoji
