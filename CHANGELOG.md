@@ -14,6 +14,12 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.5 — juli 2026
+- **De oude 🔥 vlam- en 🏆 badge-emoji weer teruggezet** (op verzoek): de zelfgetekende
+  SVG-varianten uit v18.4 (`FLAME_ICON`/`BADGE_ICON`) zijn vervangen door de vertrouwde emoji op
+  de reeks-strook, de badge-chip, de Badges-knop en de galerij-titel. De rest van de gekleurde
+  icoon-set blijft ongewijzigd.
+
 ## v18.4 — juli 2026
 - **De rest van de UI-emoji vervangen door gekleurde eigen iconen** (voorstel-set): medaille
   (🏆 Badges — knop, reeks-strook én galerij-titel), tandwiel (⚙️ Beheer), bel met stip

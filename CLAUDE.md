@@ -448,11 +448,14 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   `SHIELD_PIN_ICON` (🔑 pin), `COPY_ICON` (📋 code), `FAMILY_ICON` (👨‍👩‍👧 Gezin-knop),
   `ROTATE_ICON` (🔁 beurt, used in `shiftRow`/`owedShiftRow`/`renderAdminShifts`), `PERSON_ICON`
   (👤 vaste-taak-marker), `HEARTBREAK_ICON` (💔 joker used). v18.4 added the rest:
-  `BADGE_ICON` (🏆 Badges — footer button, streak chip, gallery title), `GEAR_ICON` (⚙️ Beheer),
+  `GEAR_ICON` (⚙️ Beheer),
   `BELL_ICON` (🔔 Meldingen aan), `PENCIL_ICON` (✏️ every edit button — one `replace_all`),
   `CALENDAR_ICON`/`CALENDAR_DAYS_ICON` (📅 the `toggleTaskInterval` toggle keeps **two** icons
-  so weekly vs daily stays visible: red single-day = weekly, blue grid = daily), `FLAME_ICON`
-  (🔥 streak counter), `HEART_ICON` (❤️ joker available). Only ✓ (afvinken, already a white tick
+  so weekly vs daily stays visible: red single-day = weekly, blue grid = daily), and
+  `HEART_ICON` (❤️ joker available). (v18.4 also added `BADGE_ICON`/`FLAME_ICON`, but **v18.5
+  reverted 🏆 Badges and 🔥 streak back to plain emoji** at the user's request — those two
+  constants are gone; the footer button, streak chip/counter and gallery title use 🏆/🔥 emoji.)
+  Only ✓ (afvinken, already a white tick
   in the green `.check` circle) and emoji inside plain-text `alert()`s / prose stay emoji.
   Chosen from an icon picker artifact.
   **`ROTATE_ICON` is display-only**: the `🔁` in *stored* shift labels (`detachShiftTurn`, and
