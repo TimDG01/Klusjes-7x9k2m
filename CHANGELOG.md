@@ -14,10 +14,15 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v17.2 — juli 2026
+- Herinneringstijd instellen via een **keuzelijst** (op de gsm een native rol-picker) i.p.v.
+  een tekstprompt. De lijst bevat enkel hele/halve uren + "uit".
+
 ## v17.1 — juli 2026
 - Herinneringstijd: de instel-prompt aanvaardt nu enkel **hele of halve uren** (`:00`/`:30`),
   bv. 19:00 of 19:30. Het server-script draait toch maar elk half uur, dus fijnere tijden
-  hadden geen effect — dit voorkomt verwarring over "tussenliggende" tijden.
+  hadden geen effect — dit voorkomt verwarring over "tussenliggende" tijden. (Vervangen door
+  de keuzelijst in v17.2.)
 
 ## v17 — juli 2026 (live)
 
