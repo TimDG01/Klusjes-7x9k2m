@@ -64,7 +64,7 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .check.done{background:var(--green);border-color:var(--green);}
 .task-label{font-size:15px;flex:1;}
 .task-label.done{color:var(--text3);text-decoration:line-through;}
-.fixed-mark{font-size:12px;opacity:.55;flex-shrink:0;margin-left:2px;}
+.fixed-mark{font-size:12px;opacity:.9;flex-shrink:0;margin-left:4px;display:inline-flex;align-items:center;}
 .vac-tag{font-size:11px;font-weight:600;color:var(--vac);background:var(--vac-bg);padding:2px 7px;border-radius:6px;margin-left:6px;}
 .postpone-btn{font-size:15px;padding:2px 4px;flex-shrink:0;color:var(--blue);}
 .postpone-btn svg{display:block;}
@@ -273,7 +273,7 @@ const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v18.2';
+const VERSION = 'klusjes-pwa v18.3';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -338,6 +338,16 @@ function isParent(){
 const TRASH_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M18 7l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
 const SKIP_FWD_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>';
 const SKIP_BACK_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 4 9 12 19 20 19 4"/><line x1="5" y1="5" x2="5" y2="19"/></svg>';
+// Gekleurde iconen (v18.3) — vervangen de bijhorende emoji in de UI. Anders dan de lijniconen
+// hierboven dragen deze hun EIGEN kleuren (geen currentColor), zodat ze op de lichte én de
+// donkere kaart even helder blijven. Gekozen varianten uit het keuzeblad.
+const COLORWHEEL_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 0 1 9 9h-9z" fill="#FF5B6B"/><path d="M21 12a9 9 0 0 1-9 9v-9z" fill="#FFC64D"/><path d="M12 21a9 9 0 0 1-9-9h9z" fill="#46CB6E"/><path d="M3 12a9 9 0 0 1 9-9v9z" fill="#5C93FF"/><circle cx="12" cy="12" r="2.4" fill="#fff"/></svg>';
+const SHIELD_PIN_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2.8l7.2 3v5.2c0 5.1-3.6 8.2-7.2 10.2-3.6-2-7.2-5.1-7.2-10.2V5.8z" fill="#22BFA1"/><g fill="#fff"><circle cx="9.4" cy="11" r="1.1"/><circle cx="12" cy="11" r="1.1"/><circle cx="14.6" cy="11" r="1.1"/></g></svg>';
+const COPY_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="2.5" width="12" height="15" rx="2.4" fill="#B7C4D8"/><rect x="8.5" y="6.5" width="12" height="15" rx="2.4" fill="#5C93FF"/></svg>';
+const FAMILY_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px"><circle cx="12" cy="7" r="3.1" fill="#FFC64D"/><path d="M6.4 20a5.6 5.6 0 0 1 11.2 0z" fill="#FFC64D"/><circle cx="5.4" cy="10.5" r="2.4" fill="#5C93FF"/><path d="M1.5 19.5a3.9 3.9 0 0 1 6-3.1" fill="#5C93FF"/><circle cx="18.6" cy="10.5" r="2.4" fill="#FF5B6B"/><path d="M22.5 19.5a3.9 3.9 0 0 0-6-3.1" fill="#FF5B6B"/></svg>';
+const ROTATE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px"><path d="M16.8 3.4l3.4 3.4-3.4 3.4" stroke="#5C93FF" stroke-width="2.2"/><path d="M20.2 6.8H9a4.4 4.4 0 0 0-4.4 4.4" stroke="#5C93FF" stroke-width="2.2"/><path d="M7.2 20.6l-3.4-3.4 3.4-3.4" stroke="#356FE0" stroke-width="2.2"/><path d="M3.8 17.2H15a4.4 4.4 0 0 0 4.4-4.4" stroke="#356FE0" stroke-width="2.2"/></svg>';
+const PERSON_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.8" fill="#22BFA1"/><path d="M5.2 20a6.8 6.8 0 0 1 13.6 0z" fill="#22BFA1"/></svg>';
+const HEARTBREAK_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px"><path d="M11.1 20.7C6.4 16.8 4 14 4 10.6A3.5 3.5 0 0 1 10.4 8.4l.7 1.1" fill="#FF5B6B"/><path d="M12.9 20.7c4.7-3.9 7.1-6.7 7.1-10.1a3.5 3.5 0 0 0-6.4-2.2l-.7 1.1" fill="#E23650"/><path d="M11.4 8.7l-1.1 2.6 2.1 1.4-1.1 2.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // De badge-ladder: het n-de verdiende badge (chronologisch) krijgt ontwerp n.
 // Na de laatste (13 ontwerpen) begint de ladder opnieuw op een hoger niveau
@@ -1484,7 +1494,7 @@ function render(){
       <div class="footer-btns">
         <button class="admin-link" onclick="openBadges()">🏆 Badges</button>
         ${(pushSupported && isChild() && Notification.permission !== 'granted') ? '<button class="admin-link" onclick="enableNotifications()">🔔 Meldingen aan</button>' : ''}
-        ${isChild() ? '' : `<button class="admin-link" onclick="openMembers()">👨‍👩‍👧 Gezin</button>
+        ${isChild() ? '' : `<button class="admin-link" onclick="openMembers()">${FAMILY_ICON} Gezin</button>
         <button class="admin-link" onclick="openAdmin()">⚙️ Beheer</button>`}
       </div>
       ${versionLine()}
@@ -1538,7 +1548,7 @@ function streakStrip(k){
     <button class="streak-strip" onclick="openBadges('${k.key}')" title="Bekijk de badges van ${escapeHtml(k.name)}">
       <span class="streak-flame${st.count ? '' : ' off'}">🔥 ${st.count}</span>
       <span class="streak-dots">${dots}</span>
-      <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? '💔' : '❤️'}</span>
+      <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? HEARTBREAK_ICON : '❤️'}</span>
       <span class="streak-chip">🏆 ${nBadges}</span>
     </button>
   `;
@@ -1549,7 +1559,7 @@ function taskRow(uid, taskId, label, done, fixed){
     <div class="task" onclick="toggleTask('${uid}','${taskId}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}</div>
-      ${fixed ? '<span class="fixed-mark" title="Vaste taak">👤</span>' : ''}
+      ${fixed ? `<span class="fixed-mark" title="Vaste taak">${PERSON_ICON}</span>` : ''}
     </div>
   `;
 }
@@ -1575,7 +1585,7 @@ function owedShiftRow(uid, t){
   return `
     <div class="task" onclick="toggleTask('${uid}','${t.id}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
-      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(t.label)}<span class="vac-tag">beurt</span></div>
+      <div class="task-label ${done ? 'done' : ''}">${ROTATE_ICON}${escapeHtml(t.label.replace(/^🔁\s*/, ''))}<span class="vac-tag">beurt</span></div>
       ${buttons}
     </div>
   `;
@@ -1587,7 +1597,7 @@ function owedShiftRow(uid, t){
 // magVerschuiven-vlag aanstaat (Beheer → Instellingen), zie mayMoveShiftOf.
 function shiftRow(kidKey, sh, info){
   const done = isChecked(kidKey, 'shift-' + sh.id);
-  const label = `🔁 ${escapeHtml(sh.name || 'Beurt')}: ${escapeHtml(info.line)}`;
+  const label = `${ROTATE_ICON}${escapeHtml(sh.name || 'Beurt')}: ${escapeHtml(info.line)}`;
   if (info.mode === 'projected'){
     // wél aanklikbaar: vooruitwerken (of een blijven-liggen-beurt door een ouder
     // laten vervallen) moet kunnen — zie de projected-tak in toggleShift
@@ -2559,9 +2569,9 @@ function renderMembers(){
         <div class="admin-task-label">${escapeHtml(m.weergavenaam)}${m.actief === false ? ' <span class="admin-tag">gepauzeerd</span>' : ''}<br>
           <span class="member-sub">inlognaam: ${escapeHtml(m.gebruikersnaam || '?')}</span></div>
         <span class="admin-task-actions">
-          <button class="admin-icon-btn" onclick="cycleMemberColor('${m.uid}')" title="Kleur wisselen">🎨</button>
+          <button class="admin-icon-btn" onclick="cycleMemberColor('${m.uid}')" title="Kleur wisselen">${COLORWHEEL_ICON}</button>
           <button class="admin-icon-btn" onclick="renameMember('${m.uid}')" title="Weergavenaam wijzigen">✏️</button>
-          <button class="admin-icon-btn" onclick="changeChildPin('${m.uid}')" title="Pincode wijzigen">🔑</button>
+          <button class="admin-icon-btn" onclick="changeChildPin('${m.uid}')" title="Pincode wijzigen">${SHIELD_PIN_ICON}</button>
           <button class="admin-icon-btn" onclick="toggleMemberActive('${m.uid}')" title="${m.actief === false ? 'Weer activeren' : 'Pauzeren'}">${m.actief === false ? '▶️' : '⏸️'}</button>
           <button class="admin-icon-btn danger" onclick="deleteMember('${m.uid}')" title="Uit het gezin verwijderen">${TRASH_ICON}</button>
         </span>
@@ -2591,7 +2601,7 @@ function renderMembers(){
       <div class="admin-next-row" style="border-bottom:none;padding-bottom:0;">
         <span><b class="family-code">${escapeHtml(code || '—')}</b><br>
         <small>deel deze code met een mede-ouder om aan te sluiten</small></span>
-        ${code ? `<button id="copyCodeBtn" class="admin-icon-btn accent" onclick="copyFamilyCode()" title="Kopieer de gezinscode">📋</button>` : ''}
+        ${code ? `<button id="copyCodeBtn" class="admin-icon-btn accent" onclick="copyFamilyCode()" title="Kopieer de gezinscode">${COPY_ICON}</button>` : ''}
       </div>
     </div>
 
@@ -2896,7 +2906,7 @@ function renderAdminShifts(){
         <div class="admin-collapse-head" onclick="toggleAdminRow('shift:${sh.id}')">
           <span class="admin-caret">${open ? '▾' : '▸'}</span>
           <div class="admin-collapse-main">
-            <div class="admin-role-title" style="margin:0;">🔁 ${escapeHtml(sh.name || 'Beurt')}</div>
+            <div class="admin-role-title" style="margin:0;">${ROTATE_ICON}${escapeHtml(sh.name || 'Beurt')}</div>
             <div class="admin-collapse-sub">${sub}</div>
           </div>
         </div>

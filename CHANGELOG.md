@@ -14,6 +14,15 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.3 — juli 2026
+- **Eerste gekleurde eigen iconen** i.p.v. emoji, op de plekken die gekozen zijn: de kleurschijf
+  (kleur wisselen), het schild met stippen (pincode), het kopieer-icoon (gezinscode), het
+  gezins-icoon (Gezin-knop), de blauwe herhaal-pijlen (beurt-taak, op de kaart én in Beheer),
+  de teal persoon (vaste-taak-marker) en het gebroken hart (joker gebruikt). Nieuwe SVG-constanten
+  in `index.html` met hun eigen kleuren (blijven helder op licht én donker). De overige emoji
+  (🏆 🔔 ⚙️ ✏️ 📅 ✓ 🔥 ❤️) blijven voorlopig; de 🔁 in opgeslagen beurt-labels + de meldingstekst
+  en de "terugkerend/eenmalig"-toggle blijven bewust emoji (data / andere betekenis).
+
 ## v18.2 — juli 2026
 - **Beheer-scherm rustiger.** Taken en beurt-taken staan nu standaard ingeklapt met een korte
   samenvatting (wie/wanneer). Tik op een rij om ze open te klappen en te bewerken; een

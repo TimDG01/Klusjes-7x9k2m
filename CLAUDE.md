@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.2`): a Dutch-language family chores app —
+**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.3`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -441,6 +441,16 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   `SKIP_FWD_ICON`, `SKIP_BACK_ICON`, colored via `.danger`/`.accent`/`.postpone-btn`.
   Reach for these, not an emoji, when a glyph needs a specific color. Emoji are fine where
   color is irrelevant (🧹/🔁/✏️ labels).
+- **Colored icon constants (v18.3)**: a second family of inline-SVG constants replaces specific
+  emoji with hand-drawn *multi-color* icons that carry their **own fills** (not `currentColor`),
+  so they stay legible on both the light and dark card — `COLORWHEEL_ICON` (🎨 kleur),
+  `SHIELD_PIN_ICON` (🔑 pin), `COPY_ICON` (📋 code), `FAMILY_ICON` (👨‍👩‍👧 Gezin-knop),
+  `ROTATE_ICON` (🔁 beurt, used in `shiftRow`/`owedShiftRow`/`renderAdminShifts`), `PERSON_ICON`
+  (👤 vaste-taak-marker), `HEARTBREAK_ICON` (💔 joker used). Chosen from an icon picker artifact.
+  **`ROTATE_ICON` is display-only**: the `🔁` in *stored* shift labels (`detachShiftTurn`, and
+  `notify.js`'s copy) and the "terugkerend/eenmalig" toggle stay emoji — `owedShiftRow` strips a
+  leading `🔁 ` from `t.label` at render before prefixing the icon. The rest of the app's emoji
+  (🏆 🔔 ⚙️ ✏️ 📅 ✓ 🔥 ❤️) are still emoji, pending a picker choice.
 - The celebration popup (`showCelebration`) fires **per kid**, the moment that kid's tasks
   are all done — and only while viewing **today** (`isToday` gate). Its anti-repeat guard
   (`celebratedDays`, a `Set` of `dayKey:uid` strings) exists because `render()` can be
