@@ -438,6 +438,9 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
     Firebase-sleutel.
   - Geen van beide staat in de repo — dit is pure account-/toestel-configuratie bij de
     gebruiker; deze paragraaf is de enige plek waar de setup is vastgelegd.
+  - **Bus-factor:** het Google Apps Script draait op Tim's persoonlijke Google-account —
+    hetzelfde account waaronder ook het Firebase-project (`klusjesv2`) beheerd wordt. Verlies
+    van toegang tot dat ene account raakt dus zowel de Firebase-admintoegang als deze trigger.
   - GitHub's eigen `on: schedule` **blijft gewoon staan** als derde, gratis (publieke repo =
     onbeperkte Actions-minuten) extra vangnet — idempotent via `lastNotified`, dus geen risico
     op een dubbele melding als er toevallig meerdere triggers rond hetzelfde moment vuren.
