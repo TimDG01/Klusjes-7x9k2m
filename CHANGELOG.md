@@ -14,6 +14,12 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.8 — juli 2026
+- **"📣 Stuur nu"-knop verwijderd** (Beheer → Instellingen): overbodig geworden nu een
+  gsm-automatisering de herinnering betrouwbaar op het juiste moment kan triggeren. De
+  server-logica (`settings/pushRequest`/`pushHandled`) is mee verwijderd uit
+  `scripts/notify.js`; de gewone avondmelding (`settings/notifyTime`) werkt ongewijzigd.
+
 ## v18.7 — juli 2026
 - **"📣 Stuur nu"-knop voor ouders** (Beheer → Instellingen): stuurt meteen een push-melding
   naar elk kind dat nu nog klusjes open heeft, zonder op het ingestelde uur te wachten. De

@@ -273,7 +273,7 @@ const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v18.7';
+const VERSION = 'klusjes-pwa v18.8';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -2702,33 +2702,8 @@ function renderAdminSettings(){
         <select class="admin-select" onchange="setNotifyTime(this.value)">${notifyTimeOptions()}</select>
       </div>
       <div class="admin-vacuum-note">Werkt alleen op toestellen waar het kind zelf "🔔 Meldingen aan" heeft getikt. Kies "uit" om geen herinneringen te sturen.</div>
-
-      <div class="admin-role-title" style="font-size:13px;margin:16px 0 6px;">Herinnering nu sturen</div>
-      <div class="admin-next-row">
-        <span>Stuur meteen een melding<br>
-        <small>naar elk kind dat nu nog klusjes open heeft (meestal binnen een kwartier)</small></span>
-        <button class="admin-day-btn active" onclick="sendReminderNow()">📣 Stuur nu</button>
-      </div>
-      <div class="admin-vacuum-note">De aanvraag gaat via de server, respecteert "uit" en stuurt enkel naar kinderen die "🔔 Meldingen aan" hebben getikt.</div>
     </div>
   `;
-}
-
-// —— Ouder-duw (v18.7): "stuur de herinnering NU" ——
-// De knop schrijft settings/pushRequest (ouder-only via de bestaande settings-rule; geen
-// rules-wijziging nodig). De server-cron ziet de verse aanvraag bij zijn volgende run en
-// stuurt meteen — los van het ingestelde uur — naar elk kind met openstaande klusjes
-// (respecteert "uit"), en zet settings/pushHandled zodat één aanvraag maar één keer vuurt.
-// Werkt zo voor élk gezin zonder setup.
-async function sendReminderNow(){
-  if (!isParent()) return;
-  if (!confirm('Nu een melding sturen naar elk kind dat nog klusjes open heeft?')) return;
-  try {
-    await set(dbRef('settings/pushRequest'), Date.now());
-    alert('Aanvraag verstuurd — de server pikt ze op bij de volgende run (meestal binnen een kwartier).');
-  } catch(e){
-    alert('Aanvraag versturen mislukt: ' + ((e && e.message) || 'onbekende fout'));
-  }
 }
 
 // Vlag omzetten op het ledenrecord (ouder-only via de members-rule).
@@ -3121,7 +3096,7 @@ Object.assign(window, {
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
   openMembers, addChildMember, changeChildPin, renameMember, renameFamily, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
-  enableNotifications, setNotifyTime, sendReminderNow
+  enableNotifications, setNotifyTime
 });
 
 render();

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.7`): a Dutch-language family chores app —
+**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.8`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -410,15 +410,6 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   offered for simplicity), read via a
   no-gate/non-fatal listener like `streakStart`. `settings/lastNotified` (`"yyyy-M-d"`) is a
   server-written dedup flag.
-- **Ouder-duw (v18.7)** — "📣 Stuur nu" in Beheer → Instellingen: `sendReminderNow()` writes
-  `settings/pushRequest = Date.now()` (parent-only via the existing settings rule — no rules
-  change). The server, on its next run, sends immediately for that family regardless of
-  `notifyTime` (still respects `"uit"`, still only kids with open chores + tokens) and marks
-  the request done via `settings/pushHandled = <same timestamp>` — one request fires at most
-  once; requests older than `REQUEST_MAX_AGE_MS` (6h) are ignored (stale intent). A push
-  before the reminder hour does **not** set `lastNotified` (the evening reminder still
-  comes); one run after the hour covers both. Zero setup for other families. Latency = until
-  the next cron run.
 - **Server half (`scripts/notify.js` + `.github/workflows/klusjes-herinnering.yml`):** a
   GitHub Action runs **~every 15 min on off-hour minutes** (`8,23,38,53` — deliberately away
   from `:00`, where GitHub's best-effort scheduler delays/drops the most); the script (Firebase Admin SDK) first runs the v18
