@@ -418,6 +418,29 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   family where Brussels-now ≥ `notifyTime` and it hasn't sent today, an FCM push to every active
   kid with ≥1 open chore. **No Blaze/credit card** — FCM + RTDB reads are free on Spark. The
   service-account JSON is the GitHub secret `FIREBASE_SERVICE_ACCOUNT`.
+- **Externe triggers (juli 2026) — GitHub's eigen schedule bleek onvoldoende.** In de praktijk
+  draait `on: schedule` op deze publieke repo veel trager dan de ingestelde ~15 min (soms maar
+  om de paar uur — GitHub's schedule is best-effort en mag runs droppen/vertragen). Er zijn
+  daarom twee externe, betrouwbaardere triggers bijgekomen die gewoon de bestaande
+  `workflow_dispatch` van `klusjes-herinnering.yml` aanroepen (`POST
+  .../actions/workflows/klusjes-herinnering.yml/dispatches`, body `{"ref":"main"}` — bewust
+  **geen** `force`, zodat de normale per-gezin/per-kind check in `notify.js` gewoon blijft
+  gelden, er wordt dus nooit blindelings gestuurd):
+  - **iOS Shortcuts** (Persoonlijke automatisering) op de ouder-telefoon: draait dagelijks rond
+    het ingestelde `notifyTime`, en kan ook handmatig getikt worden voor een instant-test/duw.
+  - **Google Apps Script** (script.google.com): tijdgestuurde trigger "Minuuttimer → om de 30
+    minuten" — 30 min volstaat, want `notifyTime` zelf kan toch al enkel op het hele/halve uur
+    staan (fijner pollen wint niets). Het GitHub-token staat daar als Script Property
+    (`GITHUB_TOKEN`), niet hardcoded in de scriptcode zelf.
+  - Beide gebruiken een **fine-grained GitHub Personal Access Token**, scope beperkt tot alleen
+    deze repo + **Actions: Read and write** (verder niets) — bij lekken kan hooguit een
+    onschadelijke, dubbel-gecheckte run gestart worden, geen toegang tot code/DB/de
+    Firebase-sleutel.
+  - Geen van beide staat in de repo — dit is pure account-/toestel-configuratie bij de
+    gebruiker; deze paragraaf is de enige plek waar de setup is vastgelegd.
+  - GitHub's eigen `on: schedule` **blijft gewoon staan** als derde, gratis (publieke repo =
+    onbeperkte Actions-minuten) extra vangnet — idempotent via `lastNotified`, dus geen risico
+    op een dubbele melding als er toevallig meerdere triggers rond hetzelfde moment vuren.
 - **⚠️ Logic duplication — keep in sync.** The DB stores task *definitions* + rotation *state*
   + `checks` (what's *done*), **not** a ready-made "today's chores" list — the app computes it
   each render, so `notify.js` must recompute it too. The pure helpers there (`dayIndex`,
