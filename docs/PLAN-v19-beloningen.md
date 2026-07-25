@@ -162,10 +162,15 @@ Zonder één dependency:
 
 ## Fases (elke fase = groene tests + push; veilig stoppunt)
 - [x] **Fase 0 — Bouwlog vastleggen.** Dit bestand aanmaken, committen, pushen. Geen code.
-- [ ] **Fase 1 — Datalaag.** Constanten, caches, de twee nieuwe listeners, `/streaks`
+- [x] **Fase 1 — Datalaag.** Constanten, caches, de twee nieuwe listeners, `/streaks`
       uitbreiden met `diamonds` + `rewardRequests`, `streaksOf`-default,
       `teardownFamily`-reset, en de optelfuncties. **Nog geen UI** — de app ziet er identiek
       uit; de bestaande 40 tests blijven groen.
+      *(Gedaan: `DIAMANTEN_PER_DAG/_BADGE`, `rewardsCache`/`rewardClaimsCache`/
+      `rewardImagesCache`, listeners op `settings/rewards` + `settings/rewardClaims`,
+      `kidDiamondsEarned/Spent`, `kidDiamonds` (klemt op 0), `openRequestOf`. 40/40 groen +
+      een aparte controle dat de app schoon opstart met data op alle nieuwe paden.
+      `VERSION` blijft bewust `v18.9`: er is nog geen enkele gedragswijziging.)*
 - [ ] **Fase 2 — Verdienen.** Extra sleutel in `writeCompletionFlag` (`earnDays`-formule) +
       de wis-tak in `render()` (diamant mee weg op vandaag, saldo ≥ 0).
       `test/rewards.test.js` met verificatie 1–4. Diamanten lopen op, nog zonder scherm.

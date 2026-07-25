@@ -275,6 +275,14 @@ let notifyTimeKey = DEFAULT_NOTIFY_TIME;
 // in /settings/kidCheckScope. Schema-additief: afwezig = 'alles' = het gedrag van vóór
 // v18.9 (een kind kon elke dag aanpassen), zodat bestaande gezinnen niets merken.
 // Een ouder mag altijd alles — dit beperkt enkel kinderen.
+// 💎 Diamanten (v19): de munt waarmee kinderen beloningen kopen. Bewust WEGGESCHREVEN
+// per dag (streaks/{uid}/diamonds/{dayKey}) i.p.v. berekend uit de voltooiingsvlaggen:
+// zo start iedereen op 0 (oude afgewerkte dagen tellen niet mee), verspringt het saldo
+// niet mee wanneer een ouder settings/streakStart verzet, en kan een dag-gesleutelde
+// regel nooit dubbel tellen (twee keer dezelfde sleutel schrijven = geen verschil).
+// Zie docs/PLAN-v19-beloningen.md.
+const DIAMANTEN_PER_DAG = 1;
+const DIAMANTEN_PER_BADGE = 3;
 const KID_CHECK_SCOPES = ['alles', 'geen-verleden', 'enkel-vandaag', 'nooit'];
 const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
@@ -695,11 +703,22 @@ let membersLoaded = false;
 let shiftsCache = {}; // { shiftId: { name, order?, weekdays, lines, members?, next?, override?, lastDone? } }
 let vacuumLoaded = false; // (gate-naam behouden; dekt nu de shifts-listener)
 
-let streaksCache = {}; // { uid: { days, badges } }
+// diamonds/rewardRequests horen bij het kind en leven daarom onder streaks/{uid} — ze
+// komen mee met deze ene listener (geen extra leesverkeer) én vallen onder dezelfde
+// rules-regel, die een kind zijn eigen tak laat schrijven.
+let streaksCache = {}; // { uid: { days, badges, diamonds, rewardRequests } }
 let streaksLoaded = false;
 function streaksOf(uid){
-  return streaksCache[uid] || { days: {}, badges: {} };
+  return streaksCache[uid] || { days: {}, badges: {}, diamonds: {}, rewardRequests: {} };
 }
+
+// Beloningen (v19). Eigen listeners, allemaal zonder laad-gate en niet-fataal: dit is een
+// laag bovenop de klusjes en mag de kernapp nooit laten hangen. rewardImagesCache wordt
+// pas in fase 5 gevuld (luie listener) — tot dan blijft hij leeg en valt alles terug op
+// het 🎁-icoon.
+let rewardsCache = {};      // { rewardId: { naam, omschrijving, diamanten, order } }
+let rewardClaimsCache = {}; // { claimId: { uid, rewardId, naam, diamanten, dag } }
+let rewardImagesCache = {}; // { rewardId: 'data:image/…' }
 
 let dayState = {};
 let dayLoaded = false;
@@ -1070,6 +1089,43 @@ function badgeCountOf(kidKey){
   return Object.keys(streaksOf(kidKey).badges).filter(k => /^b\d+$/.test(k)).length;
 }
 
+// —— 💎 Diamanten (v19) ——
+// Verdiend = de som van het grootboek streaks/{uid}/diamonds. Dat zijn dag-sleutels
+// (1 of 4) plus eventuele bonus-…-regels van een ouder. Puur optellen: er wordt hier
+// niets afgeleid uit de voltooiingsvlaggen (zie docs/PLAN-v19-beloningen.md).
+function kidDiamondsEarned(uid){
+  const led = streaksOf(uid).diamonds || {};
+  return Object.keys(led).reduce((sum, k) => {
+    const n = Number(led[k]);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
+
+// Uitgegeven = de goedgekeurde inwisselingen van dit kind. De claim bewaart zijn eigen
+// prijs, dus een latere prijswijziging of een verwijderde beloning verandert dit niet.
+function kidDiamondsSpent(uid){
+  return Object.keys(rewardClaimsCache).reduce((sum, id) => {
+    const c = rewardClaimsCache[id];
+    if (!c || c.uid !== uid) return sum;
+    const n = Number(c.diamanten);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
+
+// Saldo. Nooit negatief tonen: een grootboek dat door een handmatige correctie onder nul
+// zou duiken hoort in de UI gewoon 0 te zijn.
+function kidDiamonds(uid){
+  return Math.max(0, kidDiamondsEarned(uid) - kidDiamondsSpent(uid));
+}
+
+// De ene openstaande aanvraag van dit kind, of null. Er kan er bewust maar één tegelijk
+// zijn (zie het plan): dat scheelt reserveringswiskunde en is voor een kind duidelijker.
+function openRequestOf(uid){
+  const reqs = streaksOf(uid).rewardRequests || {};
+  const id = Object.keys(reqs)[0];
+  return id ? { id, ...reqs[id] } : null;
+}
+
 // Rang (= ontwerp-index) van de badge die op deze dag verdiend werd, of null.
 // Nodig zodat een tweede toestel — dat de voltooiing via de listener ziet i.p.v.
 // zelf te schrijven — toch de juiste medaille in de viering kan tonen.
@@ -1159,7 +1215,12 @@ function initFamily(){
     const v = snap.val() || {};
     streaksCache = {};
     Object.keys(v).forEach(uid => {
-      streaksCache[uid] = { days: v[uid].days || {}, badges: v[uid].badges || {} };
+      streaksCache[uid] = {
+        days: v[uid].days || {},
+        badges: v[uid].badges || {},
+        diamonds: v[uid].diamonds || {},              // v19: verdiengrootboek per dag
+        rewardRequests: v[uid].rewardRequests || {}   // v19: openstaande aanvraag
+      };
     });
     streaksLoaded = true;
     render();
@@ -1198,6 +1259,21 @@ function initFamily(){
     kidCheckScopeKey = KID_CHECK_SCOPES.includes(v) ? v : DEFAULT_KID_CHECK_SCOPE;
     render();
   }, () => {}));
+
+  // --- beloningen: catalogus + het grootboek van goedgekeurde inwisselingen (v19) ---
+  // Zelfde patroon: geen laad-gate, niet-fataal. Ontbreekt de tak of faalt het lezen, dan
+  // is er gewoon geen winkel — de klusjes, reeksen en badges blijven onaangeroerd werken.
+  // De afbeeldingen (settings/rewardImages) krijgen een aparte, LUIE listener in fase 5:
+  // dat is veruit de zwaarste node en het dagscherm heeft er niets aan.
+  familyUnsubs.push(onValue(dbRef('settings/rewards'), snap => {
+    rewardsCache = snap.val() || {};
+    render();
+  }, () => { rewardsCache = {}; render(); }));
+
+  familyUnsubs.push(onValue(dbRef('settings/rewardClaims'), snap => {
+    rewardClaimsCache = snap.val() || {};
+    render();
+  }, () => { rewardClaimsCache = {}; render(); }));
 
   // --- gezinsgegevens: meta (naam + gezinscode) ---
   // Geen seeding: de bootstrap bij het aanmaken schreef meta al; absent kan
@@ -1262,6 +1338,9 @@ function teardownFamily(){
   dayState = {};
   streakStartKey = DEFAULT_STREAK_START;
   kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
+  rewardsCache = {};
+  rewardClaimsCache = {};
+  rewardImagesCache = {};
   celebratedDays = new Set();
   loadError = null;
 }
