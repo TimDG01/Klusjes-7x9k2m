@@ -26,8 +26,10 @@ location).
 2. Make the change in `index.html` (the only app file).
 3. New inline `onclick` handler? → add it to the **`Object.assign(window, {...})`** export
    at the bottom of the script, or it silently does nothing.
-4. **Verify against the fake Firebase backend** (see Commands) — never against production
-   data, never via the real ⚙️ Beheer / 👨‍👩‍👧 Gezin flows.
+4. **Verify with the committed suite**: `cd test && npm install && npm test`. New behaviour
+   gets a case in an existing `test/*.test.js` or a new one — **reuse `test/fake-firebase.js`
+   as-is; never hand-roll another fake SDK** (that is exactly what this folder ends). Never
+   verify against production data, never via the real ⚙️ Beheer / 👨‍👩‍👧 Gezin flows.
 5. **Bump `VERSION`** in the same commit, following the version policy below.
 6. **Add a `docs/CHANGELOG.md` entry** (Dutch, one short bullet list per version).
 7. Commit (clear NL message) + push to the feature branch.
