@@ -119,6 +119,7 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .streak-row .streak-strip{margin:0;}
 .diamond-chip{flex:0 0 auto;padding:7px 10px;border-radius:10px;background:var(--track);color:var(--text);font-size:13px;font-weight:600;white-space:nowrap;}
 .reward-art{font-size:40px;line-height:1;}
+.reward-ask{margin-top:8px;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.24);color:#fff;font-size:12px;font-weight:700;}
 .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
 .badge-card{position:relative;overflow:hidden;border-radius:14px;padding:14px 10px 12px;text-align:center;background:linear-gradient(150deg,var(--bc1),var(--bc2));color:#fff;}
 .badge-card svg{display:block;margin:0 auto;}
@@ -2166,6 +2167,25 @@ function renderRewards(){
 
 function renderRewardSection(kidKey, name){
   const saldo = kidDiamonds(kidKey);
+  const req = openRequestOf(kidKey);
+  // wie mag hier aanvragen: een ouder altijd, een kind enkel voor zichzelf
+  const magVragen = isParent() || (isChild() && authUser && authUser.uid === kidKey);
+
+  const aanvraag = req ? (() => {
+    const r = rewardsCache[req.rewardId];
+    const naam = (r && r.naam) || 'Beloning';   // de beloning kan intussen verwijderd zijn
+    return `
+      <div class="admin-next-row">
+        <span>Aangevraagd: <b>${escapeHtml(naam)}</b> · ${Number(req.diamanten) || 0} 💎<br>
+        <small>${isParent() ? 'Keur goed of weiger.' : 'Wacht op goedkeuring van een ouder.'}</small></span>
+        ${isParent() ? `<span class="admin-task-actions">
+          <button class="admin-icon-btn accent" onclick="approveRequest('${kidKey}')" title="Goedkeuren">✓</button>
+          <button class="admin-icon-btn danger" onclick="refuseRequest('${kidKey}')" title="Weigeren">${TRASH_ICON}</button>
+        </span>` : ''}
+      </div>
+    `;
+  })() : '';
+
   const cards = rewardsArray().map(r => {
     const prijs = Number(r.diamanten) || 0;
     const betaalbaar = saldo >= prijs;
@@ -2176,17 +2196,84 @@ function renderRewardSection(kidKey, name){
         <div class="badge-name">${escapeHtml(r.naam || 'Beloning')}</div>
         ${r.omschrijving ? `<div class="badge-date">${escapeHtml(r.omschrijving)}</div>` : ''}
         <div class="badge-date"><b>${prijs} 💎</b>${betaalbaar ? '' : ` · nog ${tekort}`}</div>
+        ${(betaalbaar && !req && magVragen)
+          ? `<button class="reward-ask" onclick="requestReward('${r.id}','${kidKey}')">Vraag dit</button>` : ''}
       </div>
     `;
   }).join('');
+
+  // korte historiek: push-sleutels lopen chronologisch, dus omgekeerd sorteren = nieuwste eerst
+  const hist = Object.keys(rewardClaimsCache)
+    .filter(id => rewardClaimsCache[id] && rewardClaimsCache[id].uid === kidKey)
+    .sort().reverse().slice(0, 5)
+    .map(id => {
+      const c = rewardClaimsCache[id];
+      return `<div class="admin-vacuum-note">${escapeHtml(c.naam || 'Beloning')} · ${Number(c.diamanten) || 0} 💎 · ${escapeHtml(c.dag || '')}</div>`;
+    }).join('');
+
   return `
     <div class="admin-section">
       <div class="admin-role-title">${escapeHtml(name)} — ${saldo} 💎</div>
+      ${aanvraag}
       ${cards
         ? `<div class="badge-grid">${cards}</div>`
         : '<div class="admin-vacuum-note">Nog geen beloningen. Een ouder maakt ze aan via Beheer.</div>'}
+      ${hist ? `<div class="admin-role-title" style="font-size:13px;margin:14px 0 4px;">Al ingewisseld</div>${hist}` : ''}
     </div>
   `;
+}
+
+// Een kind vraagt een beloning aan (ouder mag het ook namens een kind). Bewust maar
+// ÉÉN openstaande aanvraag per kind: dat scheelt reserveringswiskunde bij meerdere
+// aanvragen die samen niet betaalbaar zijn, en is voor een kind veel duidelijker.
+function requestReward(rewardId, kidKey){
+  const r = rewardsCache[rewardId];
+  if (!r) return;
+  const uid = isChild() ? (authUser && authUser.uid) : kidKey;
+  if (!uid || !membersCache[uid]) return;
+  if (openRequestOf(uid)){
+    alert('Er staat al een aanvraag open. Wacht tot een ouder ze bekijkt.');
+    return;
+  }
+  const prijs = Number(r.diamanten) || 0;
+  if (kidDiamonds(uid) < prijs){
+    alert('Nog niet genoeg diamanten voor deze beloning.');
+    return;
+  }
+  push(dbRef(`streaks/${uid}/rewardRequests`), { rewardId, diamanten: prijs, dag: dayKey(clampedToday()) });
+}
+
+// Goedkeuren (ouder): betaalbaarheid OPNIEUW controleren — het saldo kan intussen gedaald
+// zijn — en dan aanvraag wissen + claim schrijven in één atomische update. De claim
+// bevriest naam en prijs, zodat een latere prijswijziging of verwijdering de historiek
+// niet herschrijft.
+function approveRequest(kidKey){
+  if (!isParent()) return;
+  const req = openRequestOf(kidKey);
+  if (!req) return;
+  const prijs = Number(req.diamanten) || 0;
+  if (kidDiamonds(kidKey) < prijs){
+    alert('Er zijn intussen niet genoeg diamanten. De aanvraag blijft staan.');
+    return;
+  }
+  const r = rewardsCache[req.rewardId];
+  const naam = (r && r.naam) || 'Beloning';
+  if (!confirm(`"${naam}" goedkeuren? Dat kost ${prijs} 💎.`)) return;
+  const claimKey = push(dbRef('settings/rewardClaims')).key;
+  rootUpdate({
+    [`streaks/${kidKey}/rewardRequests/${req.id}`]: null,
+    [`settings/rewardClaims/${claimKey}`]: {
+      uid: kidKey, rewardId: req.rewardId, naam, diamanten: prijs, dag: dayKey(clampedToday())
+    }
+  });
+}
+
+function refuseRequest(kidKey){
+  if (!isParent()) return;
+  const req = openRequestOf(kidKey);
+  if (!req) return;
+  if (!confirm('Deze aanvraag weigeren? Er gaan geen diamanten af.')) return;
+  remove(dbRef(`streaks/${kidKey}/rewardRequests/${req.id}`));
 }
 
 function renderBadges(){
@@ -3472,7 +3559,7 @@ Object.assign(window, {
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
   enableNotifications, setNotifyTime, setKidCheckScope,
   addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
-  openRewards
+  openRewards, requestReward, approveRequest, refuseRequest
 });
 
 render();

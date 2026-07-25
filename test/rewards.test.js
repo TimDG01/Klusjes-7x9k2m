@@ -309,6 +309,142 @@ async function tap(page, label){
     await page.close();
   }
 
+  // gezin met een catalogus en een saldo, klaar om aan te vragen
+  function winkel({ saldo = 5, claims = {}, requests = null } = {}){
+    const s = seed({ diamonds: saldo ? { [dk(-1)]: saldo } : {}, claims });
+    s.families[FID].settings.rewards = {
+      r1: { naam: 'Filmavond', omschrijving: 'Jij kiest', diamanten: 5, order: 1 },
+      r2: { naam: 'Pretpark', omschrijving: '', diamanten: 40, order: 2 }
+    };
+    if (requests) s.families[FID].streaks[KID].rewardRequests = requests;
+    return s;
+  }
+  const reqsOf = page => page.evaluate(([f, k]) => {
+    const s = window.__store.root.families[f].streaks[k] || {};
+    return s.rewardRequests || {};
+  }, [FID, KID]);
+  const claimsOf = page => page.evaluate(f =>
+    window.__store.root.families[f].settings.rewardClaims || {}, FID);
+
+  section('17. Een kind vraagt een beloning aan');
+  {
+    const { page, dialogs } = await openApp(browser, { seed: winkel(), user: KID });
+    await page.evaluate(() => window.openRewards());
+    await page.waitForTimeout(200);
+    check('knop enkel bij wat betaalbaar is', await page.locator('.reward-ask').count(), 1);
+    await page.locator('.reward-ask').first().click();
+    await page.waitForTimeout(200);
+    const reqs = Object.values(await reqsOf(page));
+    check('aanvraag weggeschreven', reqs.length, 1);
+    check('met de juiste prijs', reqs[0] && reqs[0].diamanten, 5);
+    check('saldo nog niet afgetrokken', await page.locator('.admin-role-title', { hasText: '5 💎' }).count(), 1);
+    check('kind ziet dat het wacht', (await page.locator('#app').textContent()).includes('Wacht op goedkeuring'), true);
+    check('geen tweede aanvraag mogelijk', await page.locator('.reward-ask').count(), 0);
+    // rechtstreeks een tweede proberen wordt geweigerd
+    dialogs.length = 0;
+    await page.evaluate(() => window.requestReward('r1', 'k1'));
+    await page.waitForTimeout(150);
+    check('en de poging wordt uitgelegd', /al een aanvraag open/.test(dialogs[0] || ''), true);
+    check('nog steeds één aanvraag', Object.keys(await reqsOf(page)).length, 1);
+    await page.close();
+  }
+
+  section('18. Te dure beloning kan niet aangevraagd worden');
+  {
+    const { page, dialogs } = await openApp(browser, { seed: winkel({ saldo: 5 }), user: KID });
+    await page.evaluate(() => window.requestReward('r2', 'k1'));   // kost 40
+    await page.waitForTimeout(150);
+    check('geen aanvraag', Object.keys(await reqsOf(page)).length, 0);
+    check('met uitleg', /niet genoeg diamanten/.test(dialogs[0] || ''), true);
+    await page.close();
+  }
+
+  section('19. Ouder keurt goed: claim erbij, aanvraag weg, saldo daalt');
+  {
+    const s = winkel({ saldo: 5, requests: { q1: { rewardId: 'r1', diamanten: 5, dag: dk(0) } } });
+    const { page } = await openApp(browser, { seed: s, user: PARENT });
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(([k]) => window.approveRequest(k), [KID]);
+    await page.waitForTimeout(250);
+    const claims = Object.values(await claimsOf(page));
+    check('claim aangemaakt', claims.length, 1);
+    check('met bevroren naam', claims[0].naam, 'Filmavond');
+    check('en bevroren prijs', claims[0].diamanten, 5);
+    check('aanvraag opgeruimd', Object.keys(await reqsOf(page)).length, 0);
+    check('grootboek onaangeroerd', (await ledger(page))[dk(-1)], 5);
+
+    // prijs achteraf wijzigen mag de historiek niet herschrijven
+    await page.evaluate(() => { window.prompt = () => '99'; });
+    await page.evaluate(() => window.editRewardCost('r1'));
+    await page.waitForTimeout(150);
+    check('claim blijft op 5', Object.values(await claimsOf(page))[0].diamanten, 5);
+    await page.close();
+  }
+
+  section('20. Ouder weigert: aanvraag weg, geen claim, saldo gelijk');
+  {
+    const s = winkel({ saldo: 5, requests: { q1: { rewardId: 'r1', diamanten: 5, dag: dk(0) } } });
+    const { page } = await openApp(browser, { seed: s, user: PARENT });
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(([k]) => window.refuseRequest(k), [KID]);
+    await page.waitForTimeout(250);
+    check('aanvraag weg', Object.keys(await reqsOf(page)).length, 0);
+    check('geen claim', Object.keys(await claimsOf(page)).length, 0);
+    check('saldo ongewijzigd', (await ledger(page))[dk(-1)], 5);
+    await page.close();
+  }
+
+  section('21. Saldo intussen gedaald: goedkeuren weigert netjes');
+  {
+    // aanvraag van 5, maar er staat nog maar 4 in het grootboek
+    const s = winkel({ saldo: 4, requests: { q1: { rewardId: 'r1', diamanten: 5, dag: dk(0) } } });
+    const { page, dialogs } = await openApp(browser, { seed: s, user: PARENT });
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(([k]) => window.approveRequest(k), [KID]);
+    await page.waitForTimeout(200);
+    check('geen claim', Object.keys(await claimsOf(page)).length, 0);
+    check('aanvraag blijft staan', Object.keys(await reqsOf(page)).length, 1);
+    check('met uitleg', /niet genoeg diamanten/.test(dialogs.join(' ')), true);
+    await page.close();
+  }
+
+  section('22. Herhaalbaar: dezelfde beloning kan opnieuw');
+  {
+    const s = winkel({ saldo: 12, requests: { q1: { rewardId: 'r1', diamanten: 5, dag: dk(0) } } });
+    const { page } = await openApp(browser, { seed: s, user: PARENT });
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(([k]) => window.approveRequest(k), [KID]);
+    await page.waitForTimeout(250);
+    await page.evaluate(() => window.requestReward('r1', 'k1'));
+    await page.waitForTimeout(200);
+    await page.evaluate(([k]) => window.approveRequest(k), [KID]);
+    await page.waitForTimeout(250);
+    check('twee claims', Object.keys(await claimsOf(page)).length, 2);
+    await page.evaluate(([k]) => window.openRewards(k), [KID]);
+    await page.waitForTimeout(200);
+    check('saldo 12 - 10 = 2', await page.locator('.admin-role-title', { hasText: '2 💎' }).count(), 1);
+    check('historiek toont beide', await page.locator('.admin-vacuum-note', { hasText: 'Filmavond' }).count(), 2);
+    await page.close();
+  }
+
+  section('23. Een kind kan niet zelf goedkeuren of voor een ander aanvragen');
+  {
+    const s = winkel({ saldo: 5, requests: { q1: { rewardId: 'r1', diamanten: 5, dag: dk(0) } } });
+    s.families[FID].members.k2 = { rol: 'kind', weergavenaam: 'Zus', kleur: '#1D9E75', actief: true };
+    const { page } = await openApp(browser, { seed: s, user: KID });
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(([k]) => { window.approveRequest(k); window.refuseRequest(k); }, [KID]);
+    await page.waitForTimeout(200);
+    check('geen claim door een kind', Object.keys(await claimsOf(page)).length, 0);
+    check('aanvraag ongemoeid', Object.keys(await reqsOf(page)).length, 1);
+    // een aanvraag voor de zus belandt bij het kind zelf, niet bij haar
+    await page.evaluate(() => window.requestReward('r1', 'k2'));
+    await page.waitForTimeout(200);
+    const zus = await page.evaluate(f => (window.__store.root.families[f].streaks.k2 || {}).rewardRequests || {}, FID);
+    check('niets weggeschreven bij de zus', Object.keys(zus).length, 0);
+    await page.close();
+  }
+
   await browser.close();
   done();
 })();

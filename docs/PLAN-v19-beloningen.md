@@ -196,10 +196,15 @@ Zonder één dependency:
       hergebruiken `.badge-card`, met `.locked` + "nog N" voor wat nog niet betaalbaar is.
       Een kind ziet altijd alleen zichzelf, ook als `openRewards()` zonder filter wordt
       aangeroepen. 47 gevallen in `rewards.test.js`, suite 87 groen.)*
-- [ ] **Fase 4b — Aanvragen en goedkeuren.** `requestReward` (kind, één openstaande
+- [x] **Fase 4b — Aanvragen en goedkeuren.** `requestReward` (kind, één openstaande
       aanvraag), `approveRequest` (ouder: betaalbaarheid herchecken, aanvraag wissen +
       claim schrijven in één `rootUpdate`), `refuseRequest`, de aanvraagbalk bovenaan het
       scherm en een korte historiek. Tests: verificatie 5–8.
+      *(Gedaan: "Vraag dit" verschijnt enkel op betaalbare kaarten en enkel als er geen
+      aanvraag openstaat; goedkeuren bevriest naam + prijs in de claim, dus een latere
+      prijswijziging herschrijft de historiek niet. Een kind kan niet goedkeuren, niet
+      weigeren en niet voor een broer of zus aanvragen. 75 gevallen in `rewards.test.js`,
+      suite 115 groen.)*
 - [ ] **Fase 5 — Afbeeldingen.** Luie `settings/rewardImages`-listener, `pickRewardImage` +
       canvas-verkleining + groottegrens, `safeImageSrc`. Tests: verificatie 10.
 - [ ] **Fase 6 — Afwerken.** `VERSION` → `v19`, `docs/CHANGELOG.md`, `CLAUDE.md`, alle vakjes
