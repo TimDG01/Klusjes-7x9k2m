@@ -247,6 +247,68 @@ async function tap(page, label){
     await page.close();
   }
 
+  section('13. Beloningsscherm: saldo, betaalbaar vs nog te sparen');
+  {
+    const s = seed({ diamonds: { [dk(-1)]: 4, [dk(-2)]: 1 } });   // saldo 5
+    s.families[FID].settings.rewards = {
+      r1: { naam: 'Filmavond', omschrijving: 'Jij kiest', diamanten: 5, order: 1 },
+      r2: { naam: 'Pretpark', omschrijving: '', diamanten: 40, order: 2 }
+    };
+    const { page } = await openApp(browser, { seed: s, user: KID });
+    await page.locator('.diamond-chip').first().click();
+    await page.waitForTimeout(200);
+    check('chip opent de winkel', await page.locator('.admin-title', { hasText: 'Beloningen' }).count(), 1);
+    check('saldo in de kop', await page.locator('.admin-role-title', { hasText: '5 💎' }).count(), 1);
+    check('twee kaarten', await page.locator('.badge-card').count(), 2);
+    const film = page.locator('.badge-card', { hasText: 'Filmavond' }).first();
+    const park = page.locator('.badge-card', { hasText: 'Pretpark' }).first();
+    check('betaalbare beloning niet vergrendeld', (await film.getAttribute('class')).includes('locked'), false);
+    check('te dure beloning vergrendeld', (await park.getAttribute('class')).includes('locked'), true);
+    check('toont hoeveel er nog nodig is', (await park.textContent()).includes('nog 35'), true);
+    await page.close();
+  }
+
+  section('14. Het kind ziet enkel zichzelf; de ouder ziet iedereen');
+  {
+    const s = seed({ diamonds: { [dk(-1)]: 2 } });
+    s.families[FID].members.k2 = { rol: 'kind', weergavenaam: 'Zus', kleur: '#1D9E75', actief: true };
+    s.families[FID].settings.rewards = { r1: { naam: 'Filmavond', omschrijving: '', diamanten: 1, order: 1 } };
+
+    const kid = await openApp(browser, { seed: s, user: KID });
+    await kid.page.evaluate(() => window.openRewards());   // zonder filter aanroepen
+    await kid.page.waitForTimeout(200);
+    check('kind ziet één sectie (zichzelf)', await kid.page.locator('.admin-role-title').count(), 1);
+    check('en niet die van de zus', (await kid.page.locator('#app').textContent()).includes('Zus'), false);
+    await kid.page.close();
+
+    const ouder = await openApp(browser, { seed: s, user: PARENT });
+    await ouder.page.evaluate(() => window.openRewards());
+    await ouder.page.waitForTimeout(200);
+    check('ouder ziet beide kinderen', await ouder.page.locator('.admin-role-title').count(), 2);
+    await ouder.page.close();
+  }
+
+  section('15. Lege catalogus en terugkeren');
+  {
+    const { page } = await openApp(browser, { seed: seed(), user: KID });
+    await page.evaluate(() => window.openRewards());
+    await page.waitForTimeout(200);
+    check('nette uitleg zonder beloningen', (await page.locator('#app').textContent()).includes('Nog geen beloningen'), true);
+    await page.locator('.admin-back').click();
+    await page.waitForTimeout(200);
+    check('terug op het dagscherm', await page.locator('.task', { hasText: 'Afwas' }).count(), 1);
+    await page.close();
+  }
+
+  section('16. Verdiende diamant is meteen zichtbaar op de chip');
+  {
+    const { page } = await openApp(browser, { seed: seed(), user: KID });
+    check('start op 0', (await page.locator('.diamond-chip').first().textContent()).trim(), '💎 0');
+    await tap(page, 'Afwas');
+    check('na voltooien 1', (await page.locator('.diamond-chip').first().textContent()).trim(), '💎 1');
+    await page.close();
+  }
+
   await browser.close();
   done();
 })();

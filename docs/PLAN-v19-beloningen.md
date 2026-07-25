@@ -189,9 +189,17 @@ Zonder één dependency:
       **Nevenvondst:** de nep-SDK's `push()` negeerde de meegegeven waarde, waardoor élke
       "voeg toe"-knop in een test stilzwijgend niets deed — gerepareerd in
       `test/fake-firebase.js`; dat maakt ook `addShift`/`addTaskAdmin` testbaar.)*
-- [ ] **Fase 4 — Beloningsscherm.** `screen === 'rewards'`, `openRewards`, footer-knop 🎁,
-      kaartenraster, `requestReward`/`approveRequest`/`refuseRequest`, 💎-chip op het
-      dagscherm. Tests: verificatie 5–8.
+- [x] **Fase 4a — Beloningsscherm tonen.** `screen === 'rewards'`, `openRewards`,
+      footer-knop 🎁, kaartenraster, 💎-chip op het dagscherm.
+      *(Gedaan: de chip staat náást de streak-strip — een knop in een knop is ongeldige
+      HTML — en opent de winkel van dat kind; de strip blijft naar de badges gaan. Kaarten
+      hergebruiken `.badge-card`, met `.locked` + "nog N" voor wat nog niet betaalbaar is.
+      Een kind ziet altijd alleen zichzelf, ook als `openRewards()` zonder filter wordt
+      aangeroepen. 47 gevallen in `rewards.test.js`, suite 87 groen.)*
+- [ ] **Fase 4b — Aanvragen en goedkeuren.** `requestReward` (kind, één openstaande
+      aanvraag), `approveRequest` (ouder: betaalbaarheid herchecken, aanvraag wissen +
+      claim schrijven in één `rootUpdate`), `refuseRequest`, de aanvraagbalk bovenaan het
+      scherm en een korte historiek. Tests: verificatie 5–8.
 - [ ] **Fase 5 — Afbeeldingen.** Luie `settings/rewardImages`-listener, `pickRewardImage` +
       canvas-verkleining + groottegrens, `safeImageSrc`. Tests: verificatie 10.
 - [ ] **Fase 6 — Afwerken.** `VERSION` → `v19`, `docs/CHANGELOG.md`, `CLAUDE.md`, alle vakjes

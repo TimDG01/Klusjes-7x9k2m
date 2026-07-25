@@ -115,6 +115,10 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .streak-joker{font-size:12px;}
 .streak-chip{font-weight:600;white-space:nowrap;}
 
+.streak-row{display:flex;align-items:center;gap:6px;margin:2px 0 8px;}
+.streak-row .streak-strip{margin:0;}
+.diamond-chip{flex:0 0 auto;padding:7px 10px;border-radius:10px;background:var(--track);color:var(--text);font-size:13px;font-weight:600;white-space:nowrap;}
+.reward-art{font-size:40px;line-height:1;}
 .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
 .badge-card{position:relative;overflow:hidden;border-radius:14px;padding:14px 10px 12px;text-align:center;background:linear-gradient(150deg,var(--bc1),var(--bc2));color:#fff;}
 .badge-card svg{display:block;margin:0 auto;}
@@ -1482,6 +1486,17 @@ function render(){
     return;
   }
 
+  if (screen === 'rewards'){
+    // leden voor de namen, streaks voor het saldo; de catalogus zelf heeft bewust geen
+    // laad-gate (niet-fataal), dus die kan even leeg zijn en vult zich bij de volgende render
+    if (!streaksLoaded || !membersLoaded){
+      document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
+      return;
+    }
+    renderRewards();
+    return;
+  }
+
   if (screen === 'members'){
     if (!metaLoaded || !membersLoaded){
       document.getElementById('app').innerHTML = '<div class="loading">Laden…</div>';
@@ -1632,6 +1647,7 @@ function render(){
     <div class="footer-row">
       <div class="footer-btns">
         <button class="admin-link" onclick="openBadges()">🏆 Badges</button>
+        <button class="admin-link" onclick="openRewards()">🎁 Beloningen</button>
         ${(pushSupported && isChild() && Notification.permission !== 'granted') ? `<button class="admin-link" onclick="enableNotifications()">${BELL_ICON} Meldingen aan</button>` : ''}
         ${isChild() ? '' : `<button class="admin-link" onclick="openMembers()">${FAMILY_ICON} Gezin</button>
         <button class="admin-link" onclick="openAdmin()">${GEAR_ICON} Beheer</button>`}
@@ -1683,13 +1699,18 @@ function streakStrip(k){
   const filled = st.count === 0 ? 0 : ((st.count - 1) % 7) + 1; // op badge-dag: 7/7 vol
   const nBadges = badgeCountOf(k.key);
   const dots = [0,1,2,3,4,5,6].map(i => `<span class="sdot${i < filled ? ' on' : ''}"></span>`).join('');
+  // De 💎-chip staat bewust náást de strip (een knop in een knop is ongeldige HTML):
+  // de strip opent de badges, de chip de beloningswinkel van dit kind.
   return `
-    <button class="streak-strip" onclick="openBadges('${k.key}')" title="Bekijk de badges van ${escapeHtml(k.name)}">
-      <span class="streak-flame${st.count ? '' : ' off'}">🔥 ${st.count}</span>
-      <span class="streak-dots">${dots}</span>
-      <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? HEARTBREAK_ICON : HEART_ICON}</span>
-      <span class="streak-chip">🏆 ${nBadges}</span>
-    </button>
+    <div class="streak-row">
+      <button class="streak-strip" onclick="openBadges('${k.key}')" title="Bekijk de badges van ${escapeHtml(k.name)}">
+        <span class="streak-flame${st.count ? '' : ' off'}">🔥 ${st.count}</span>
+        <span class="streak-dots">${dots}</span>
+        <span class="streak-joker" title="Joker: één gemiste dag per badge wordt vergeven">${st.jokerUsed ? HEARTBREAK_ICON : HEART_ICON}</span>
+        <span class="streak-chip">🏆 ${nBadges}</span>
+      </button>
+      <button class="diamond-chip" onclick="openRewards('${k.key}')" title="Beloningen van ${escapeHtml(k.name)}">💎 ${kidDiamonds(k.key)}</button>
+    </div>
   `;
 }
 
@@ -2112,6 +2133,60 @@ function openBadges(kidKey){
   }
   screen = 'badges';
   render();
+}
+
+// --- Beloningswinkel (v19) ---
+// rewardsFilter werkt als badgesFilter: een kind ziet altijd enkel zichzelf, een ouder
+// één kind (via de 💎-chip) of iedereen (via de footerknop).
+let rewardsFilter = null;
+
+function openRewards(kidKey){
+  if (isChild()){
+    rewardsFilter = authUser.uid;
+  } else {
+    rewardsFilter = (membersCache[kidKey] && membersCache[kidKey].rol === 'kind') ? kidKey : null;
+  }
+  screen = 'rewards';
+  render();
+}
+
+function renderRewards(){
+  const kids = activeKids().filter(k => !rewardsFilter || k.uid === rewardsFilter);
+  const title = rewardsFilter ? `🎁 Beloningen van ${escapeHtml(memberName(rewardsFilter))}` : '🎁 Beloningen';
+  document.getElementById('app').innerHTML = `
+    <div class="admin-header">
+      <button class="admin-back" onclick="backToDay()">‹ Terug</button>
+      <div class="admin-title">${title}</div>
+    </div>
+    ${kids.map(k => renderRewardSection(k.uid, k.name)).join('')
+      || '<div class="admin-section"><div class="admin-vacuum-note">Nog geen kinderen in het gezin.</div></div>'}
+    ${versionLine()}
+  `;
+}
+
+function renderRewardSection(kidKey, name){
+  const saldo = kidDiamonds(kidKey);
+  const cards = rewardsArray().map(r => {
+    const prijs = Number(r.diamanten) || 0;
+    const betaalbaar = saldo >= prijs;
+    const tekort = prijs - saldo;
+    return `
+      <div class="badge-card${betaalbaar ? '' : ' locked'}" style="--bc1:#7048E8;--bc2:#0FA3A3;">
+        <div class="reward-art">🎁</div>
+        <div class="badge-name">${escapeHtml(r.naam || 'Beloning')}</div>
+        ${r.omschrijving ? `<div class="badge-date">${escapeHtml(r.omschrijving)}</div>` : ''}
+        <div class="badge-date"><b>${prijs} 💎</b>${betaalbaar ? '' : ` · nog ${tekort}`}</div>
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="admin-section">
+      <div class="admin-role-title">${escapeHtml(name)} — ${saldo} 💎</div>
+      ${cards
+        ? `<div class="badge-grid">${cards}</div>`
+        : '<div class="admin-vacuum-note">Nog geen beloningen. Een ouder maakt ze aan via Beheer.</div>'}
+    </div>
+  `;
 }
 
 function renderBadges(){
@@ -3396,7 +3471,8 @@ Object.assign(window, {
   openMembers, addChildMember, changeChildPin, renameMember, renameFamily, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
   enableNotifications, setNotifyTime, setKidCheckScope,
-  addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds
+  addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
+  openRewards
 });
 
 render();
