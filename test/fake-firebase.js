@@ -116,7 +116,16 @@ export function update(r, obj){
 }
 export function remove(r){ setAt(parts(r.path), null); scheduleFlush(); return Promise.resolve(); }
 let pushN = 0;
-export function push(r){ const key = '-gen' + (pushN++); return { path: r.path + '/' + key, key }; }
+// De echte push(ref, value) maakt een sleutel én SCHRIJFT de waarde weg (en geeft een
+// thenable ref terug). Een variant die de waarde negeert laat elke "voeg toe"-knop in de
+// app stilzwijgend niets doen — zo ontdekt bij addReward, en het raakt evengoed
+// addShift/addTaskAdmin.
+export function push(r, value){
+  const key = '-gen' + (pushN++);
+  const child = { path: r.path + '/' + key, key };
+  if (value !== undefined){ setAt(parts(child.path), value); scheduleFlush(); }
+  return child;
+}
 `;
 
 const AUTH_JS = `

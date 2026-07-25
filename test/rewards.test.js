@@ -159,6 +159,94 @@ async function tap(page, label){
     await page.close();
   }
 
+  section('9. Beheer: beloningen aanmaken en bewerken (ouder-only)');
+  {
+    const rewards = { r1: { naam: 'Filmavond', omschrijving: 'Jij kiest', diamanten: 5, order: 1 } };
+    const s = seed(); s.families[FID].settings.rewards = rewards;
+    const { page } = await openApp(browser, { seed: s, user: PARENT });
+    await page.evaluate(() => window.openAdmin());
+    await page.waitForTimeout(150);
+    check('beloning staat in Beheer', await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).count(), 1);
+    check('samenvatting toont de prijs', await page.locator('.admin-collapse-sub', { hasText: '5 💎' }).count(), 1);
+
+    // toevoegen via de prompt-reeks: naam, omschrijving, prijs
+    const antwoorden = ['Pretpark', 'Een dagje uit', '40'];
+    await page.evaluate(a => { let i = 0; window.prompt = () => a[i++]; }, antwoorden);
+    await page.evaluate(() => window.addReward());
+    await page.waitForTimeout(150);
+    const na = await page.evaluate(f => window.__store.root.families[f].settings.rewards, FID);
+    const nieuw = Object.values(na).find(r => r.naam === 'Pretpark');
+    check('beloning toegevoegd', !!nieuw, true);
+    check('met de juiste prijs', nieuw && nieuw.diamanten, 40);
+
+    // prijs wijzigen
+    await page.evaluate(() => { window.prompt = () => '7'; });
+    await page.evaluate(() => window.editRewardCost('r1'));
+    await page.waitForTimeout(150);
+    check('prijs gewijzigd', (await page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).diamanten, 7);
+
+    // een ongeldige prijs wordt geweigerd
+    await page.evaluate(() => { window.prompt = () => '0'; });
+    await page.evaluate(() => window.editRewardCost('r1'));
+    await page.waitForTimeout(150);
+    check('ongeldige prijs geweigerd', (await page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).diamanten, 7);
+    await page.close();
+  }
+
+  section('10. Verwijderen: geschiedenis en saldo blijven kloppen, afbeelding gaat mee');
+  {
+    const s = seed({ claims: { c1: { uid: KID, rewardId: 'r1', naam: 'Filmavond', diamanten: 5, dag: dk(-1) } },
+                     diamonds: { [dk(-1)]: 4, [dk(-2)]: 4 } });
+    s.families[FID].settings.rewards = { r1: { naam: 'Filmavond', omschrijving: '', diamanten: 5, order: 1 } };
+    s.families[FID].settings.rewardImages = { r1: 'data:image/jpeg;base64,AAAA' };
+    const { page } = await openApp(browser, { seed: s, user: PARENT });
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(() => window.deleteReward('r1'));
+    await page.waitForTimeout(200);
+    const st = await page.evaluate(f => window.__store.root.families[f].settings, FID);
+    check('beloning weg', !!(st.rewards && st.rewards.r1), false);
+    check('afbeelding mee weg', !!(st.rewardImages && st.rewardImages.r1), false);
+    check('claim blijft in de geschiedenis', st.rewardClaims.c1.naam, 'Filmavond');
+    check('met zijn bevroren prijs', st.rewardClaims.c1.diamanten, 5);
+    await page.close();
+  }
+
+  section('11. Diamanten bijsturen (verificatie 4, verschoven van fase 2)');
+  {
+    const { page } = await openApp(browser, { seed: seed({ diamonds: { [dk(-1)]: 4 } }), user: PARENT });
+    await page.evaluate(() => { window.prompt = () => '3'; });
+    await page.evaluate(([k]) => window.adjustDiamonds(k), [KID]);
+    await page.waitForTimeout(150);
+    let led = await ledger(page);
+    check('bonusregel toegevoegd', Object.keys(led).filter(k => k.startsWith('bonus-')).length, 1);
+    check('dagregel onaangeroerd', led[dk(-1)], 4);
+
+    await page.evaluate(() => { window.prompt = () => '-2'; });
+    await page.evaluate(([k]) => window.adjustDiamonds(k), [KID]);
+    await page.waitForTimeout(150);
+    led = await ledger(page);
+    const som = Object.values(led).reduce((a, b) => a + Number(b), 0);
+    check('aftrekken kan ook (4 + 3 - 2)', som, 5);
+    check('en blijft als aparte regel zichtbaar', Object.keys(led).length, 3);
+    await page.close();
+  }
+
+  section('12. Een kind kan de catalogus niet wijzigen');
+  {
+    const s = seed(); s.families[FID].settings.rewards = { r1: { naam: 'Filmavond', omschrijving: '', diamanten: 5, order: 1 } };
+    const { page } = await openApp(browser, { seed: s, user: KID });
+    await page.evaluate(() => { window.prompt = () => 'Gehackt'; window.confirm = () => true; });
+    await page.evaluate(() => { window.addReward(); window.renameReward('r1'); window.deleteReward('r1'); });
+    await page.waitForTimeout(200);
+    const rw = await page.evaluate(f => window.__store.root.families[f].settings.rewards, FID);
+    check('niets toegevoegd', Object.keys(rw).length, 1);
+    check('niets hernoemd of verwijderd', rw.r1.naam, 'Filmavond');
+    await page.evaluate(([k]) => window.adjustDiamonds(k), [KID]);
+    await page.waitForTimeout(150);
+    check('en geen diamanten bijgeboekt', JSON.stringify(await ledger(page)), '{}');
+    await page.close();
+  }
+
   await browser.close();
   done();
 })();

@@ -180,8 +180,15 @@ Zonder één dependency:
       teruggenomen worden, en `streakStart` verzetten verandert het grootboek niet.
       **Verificatie 4 (`adjustDiamonds`) schuift naar fase 3** — die knop wordt daar pas
       gebouwd. `VERSION` blijft `v18.9` tot fase 6: er is nog geen zichtbare wijziging.)*
-- [ ] **Fase 3 — Beheer.** `renderAdminRewards()` + CRUD (incl. afbeelding mee wissen) +
+- [x] **Fase 3 — Beheer.** `renderAdminRewards()` + CRUD (incl. afbeelding mee wissen) +
       `adjustDiamonds` + `window`-export. Tests: verificatie 9.
+      *(Gedaan: accordion-sectie met naam/omschrijving/prijs bewerken en verwijderen,
+      `+ Beloning toevoegen`, en in **Instellingen** een regel per kind om diamanten bij te
+      sturen via een `bonus-…`-regel. 34 gevallen in `rewards.test.js`, suite 74 groen.
+      Ook verificatie 4 (bijsturen) zit hier, verschoven uit fase 2.
+      **Nevenvondst:** de nep-SDK's `push()` negeerde de meegegeven waarde, waardoor élke
+      "voeg toe"-knop in een test stilzwijgend niets deed — gerepareerd in
+      `test/fake-firebase.js`; dat maakt ook `addShift`/`addTaskAdmin` testbaar.)*
 - [ ] **Fase 4 — Beloningsscherm.** `screen === 'rewards'`, `openRewards`, footer-knop 🎁,
       kaartenraster, `requestReward`/`approveRequest`/`refuseRequest`, 💎-chip op het
       dagscherm. Tests: verificatie 5–8.

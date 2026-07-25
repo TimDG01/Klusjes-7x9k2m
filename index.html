@@ -2811,6 +2811,7 @@ function renderAdmin(){
     </div>
     ${renderAdminTasks()}
     ${renderAdminShifts()}
+    ${renderAdminRewards()}
     ${renderAdminSettings()}
     ${renderAdminStreak()}
     ${versionLine()}
@@ -2847,6 +2848,15 @@ function renderAdminSettings(){
         <select class="admin-select" onchange="setKidCheckScope(this.value)">${kidCheckScopeOptions()}</select>
       </div>
       <div class="admin-vacuum-note">"elke dag" = zoals voorheen. Kies "niet in het verleden" zodat een kind een vergeten klusje van gisteren niet alsnog kan afvinken, "enkel vandaag" om ook vooruit afvinken te blokkeren, of "nooit" als enkel een ouder mag afvinken.</div>
+
+      <div class="admin-role-title" style="font-size:13px;margin:16px 0 6px;">Diamanten bijsturen</div>
+      ${activeKids().map(k => `
+        <div class="admin-next-row">
+          <span>${escapeHtml(k.name)}: <b>${kidDiamonds(k.uid)} 💎</b></span>
+          <button class="admin-icon-btn" onclick="adjustDiamonds('${k.uid}')" title="Diamanten bijsturen">${PENCIL_ICON}</button>
+        </div>
+      `).join('') || '<div class="admin-vacuum-note">Nog geen kinderen in het gezin.</div>'}
+      <div class="admin-vacuum-note">Handmatig diamanten toekennen of aftrekken. Dit komt als extra regel in de geschiedenis, het verdiende blijft dus altijd terug te vinden.</div>
     </div>
   `;
 }
@@ -3096,6 +3106,129 @@ function renderAdminShifts(){
   `;
 }
 
+// --- Beloningen (v19) ---
+// Catalogus die de ouder zelf samenstelt: naam, omschrijving en een prijs in diamanten.
+// Zelfde inklapbare accordion als taken/beurten (adminOpen + toggleAdminRow), zodat een
+// geopende rij open blijft over de her-render die elke bewerking uitlokt.
+function rewardsArray(){
+  return Object.keys(rewardsCache)
+    .map(id => ({ id, ...rewardsCache[id] }))
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
+function renderAdminRewards(){
+  const sections = rewardsArray().map(r => {
+    const open = adminOpen.has('reward:' + r.id);
+    const prijs = Number(r.diamanten) || 0;
+    const sub = `${prijs} 💎${r.omschrijving ? ' · ' + escapeHtml(r.omschrijving) : ''}`;
+    const body = open ? `
+      <div class="admin-task-row">
+        <div class="admin-task-top">
+          <span class="admin-task-label">${escapeHtml(r.naam || 'Beloning')}</span>
+          <span class="admin-task-actions">
+            <button class="admin-icon-btn" onclick="renameReward('${r.id}')" title="Naam wijzigen">${PENCIL_ICON}</button>
+            <button class="admin-icon-btn danger" onclick="deleteReward('${r.id}')" title="Beloning verwijderen">${TRASH_ICON}</button>
+          </span>
+        </div>
+        <div class="admin-next-row">
+          <span>Omschrijving:<br><small>${r.omschrijving ? escapeHtml(r.omschrijving) : 'nog geen'}</small></span>
+          <button class="admin-icon-btn" onclick="editRewardText('${r.id}')" title="Omschrijving wijzigen">${PENCIL_ICON}</button>
+        </div>
+        <div class="admin-next-row">
+          <span>Prijs: <b>${prijs} 💎</b></span>
+          <button class="admin-icon-btn" onclick="editRewardCost('${r.id}')" title="Prijs wijzigen">${PENCIL_ICON}</button>
+        </div>
+      </div>
+    ` : '';
+    return `
+      <div class="admin-section">
+        <div class="admin-collapse-head" onclick="toggleAdminRow('reward:${r.id}')">
+          <span class="admin-caret">${open ? '▾' : '▸'}</span>
+          <div class="admin-collapse-main">
+            <div class="admin-role-title" style="margin:0;">🎁 ${escapeHtml(r.naam || 'Beloning')}</div>
+            <div class="admin-collapse-sub">${sub}</div>
+          </div>
+        </div>
+        ${body}
+      </div>
+    `;
+  }).join('');
+  return `
+    ${sections}
+    <div class="admin-section">
+      <button class="admin-add-btn" onclick="addReward()">+ Beloning toevoegen</button>
+      <div class="admin-vacuum-note">Kinderen sparen 💎 diamanten: ${DIAMANTEN_PER_DAG} per volledig afgewerkte dag en ${DIAMANTEN_PER_BADGE} extra bij elke badge. Ze vragen een beloning aan, jij keurt goed.</div>
+    </div>
+  `;
+}
+
+// Aanmaken/bewerken/verwijderen — prompt()/confirm(), zoals de rest van Beheer.
+function addReward(){
+  if (!isParent()) return;
+  const naam = (prompt('Naam van de beloning (bv. Filmavond):') || '').trim();
+  if (!naam) return;
+  const oms = (prompt('Korte omschrijving (mag leeg):') || '').trim();
+  const prijs = parseInt(prompt('Hoeveel diamanten kost ze?', '10'), 10);
+  if (!Number.isFinite(prijs) || prijs < 1){ alert('Geef een geldig aantal diamanten (minstens 1).'); return; }
+  push(dbRef('settings/rewards'), { naam, omschrijving: oms, diamanten: prijs, order: Date.now() });
+}
+
+function renameReward(rewardId){
+  if (!isParent()) return;
+  const r = rewardsCache[rewardId];
+  if (!r) return;
+  const naam = (prompt('Naam van de beloning:', r.naam || '') || '').trim();
+  if (!naam) return;
+  update(dbRef('settings/rewards/' + rewardId), { naam });
+}
+
+function editRewardText(rewardId){
+  if (!isParent()) return;
+  const r = rewardsCache[rewardId];
+  if (!r) return;
+  const oms = prompt('Korte omschrijving (mag leeg):', r.omschrijving || '');
+  if (oms === null) return;
+  update(dbRef('settings/rewards/' + rewardId), { omschrijving: oms.trim() });
+}
+
+function editRewardCost(rewardId){
+  if (!isParent()) return;
+  const r = rewardsCache[rewardId];
+  if (!r) return;
+  const prijs = parseInt(prompt('Hoeveel diamanten kost ze?', String(r.diamanten || 1)), 10);
+  if (!Number.isFinite(prijs) || prijs < 1){ alert('Geef een geldig aantal diamanten (minstens 1).'); return; }
+  update(dbRef('settings/rewards/' + rewardId), { diamanten: prijs });
+}
+
+// Verwijderen wist de beloning én haar afbeelding in één update, zodat er geen
+// weesafbeelding van tientallen kB in de database achterblijft. De geschiedenis blijft
+// leesbaar: een claim bewaart zijn eigen naam en prijs en verwijst niet terug hierheen.
+function deleteReward(rewardId){
+  if (!isParent()) return;
+  const r = rewardsCache[rewardId];
+  if (!r) return;
+  if (!confirm(`Beloning "${r.naam || ''}" verwijderen?\nAl ingewisselde beloningen blijven in de geschiedenis staan.`)) return;
+  rootUpdate({
+    [`settings/rewards/${rewardId}`]: null,
+    [`settings/rewardImages/${rewardId}`]: null
+  });
+}
+
+// Handmatig bijsturen door een ouder: schrijft een extra regel in hetzelfde
+// verdiengrootboek (bonus-{tijdstempel}), zodat de historiek blijft kloppen en er
+// nooit een teller overschreven wordt. Mag negatief zijn om te corrigeren.
+function adjustDiamonds(uid){
+  if (!isParent()) return;
+  const m = membersCache[uid];
+  if (!m) return;
+  const saldo = kidDiamonds(uid);
+  const txt = prompt(`Diamanten bijsturen voor ${m.weergavenaam || ''} (saldo: ${saldo} 💎).\nGeef een aantal, negatief om af te trekken:`, '1');
+  if (txt === null) return;
+  const n = parseInt(txt, 10);
+  if (!Number.isFinite(n) || n === 0){ alert('Geef een geheel getal dat niet 0 is.'); return; }
+  set(dbRef(`streaks/${uid}/diamonds/bonus-${Date.now()}`), n);
+}
+
 function advanceShiftTurn(shiftId){
   const sh = shiftsArray().find(s => s.id === shiftId);
   const n = sh && shiftEffectiveNext(sh);
@@ -3262,7 +3395,8 @@ Object.assign(window, {
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
   openMembers, addChildMember, changeChildPin, renameMember, renameFamily, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
-  enableNotifications, setNotifyTime, setKidCheckScope
+  enableNotifications, setNotifyTime, setKidCheckScope,
+  addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds
 });
 
 render();
