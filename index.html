@@ -1152,6 +1152,13 @@ function writeCompletionFlag(kidKey, key){
     upd[`streaks/${kidKey}/badges/b${n}`] = sim.earnDays[n - 1]; // waarde = verdiendag
     newRanks.push(n - 1);
   }
+  // 💎 v19: het verdiengrootboek, in dezelfde atomische update. Dag-gesleuteld, dus twee
+  // keer schrijven verandert niets — "maximaal 1 per dag" volgt uit de vorm.
+  // Bewust sim.earnDays (en NIET newRanks): newRanks is leeg zodra de badge al bestaat,
+  // dus na uitvinken-en-hervinken zou de dag zijn 3 badgediamanten kwijtraken terwijl het
+  // kind de badge — die permanent is — gewoon houdt.
+  const badgeDag = sim.earnDays.includes(key) ? 1 : 0;
+  upd[`streaks/${kidKey}/diamonds/${key}`] = DIAMANTEN_PER_DAG + badgeDag * DIAMANTEN_PER_BADGE;
   rootUpdate(upd);
   return newRanks;
 }
@@ -1558,7 +1565,18 @@ function render(){
       if (complete && !flagged){
         k.newBadges = writeCompletionFlag(k.key, cDay);
       } else if (!complete && flagged && isToday && ids.length > 0){
-        remove(dbRef(`streaks/${k.key}/days/${cDay}`));
+        // 💎 v19: de diamant van vandaag gaat mee weg, zodat aanvinken-en-weer-uitvinken
+        // netto niets oplevert. Enkel op VANDAAG (deze tak draait nooit op een voorbije
+        // dag), en nooit als het saldo daardoor negatief zou worden: een al uitgegeven
+        // diamant kan niet meer teruggenomen worden.
+        const perDay = streaksOf(k.key).diamonds || {};
+        const vandaagVerdiend = Number(perDay[cDay]) || 0;
+        const upd = { [`streaks/${k.key}/days/${cDay}`]: null };
+        if (vandaagVerdiend > 0 &&
+            kidDiamondsEarned(k.key) - vandaagVerdiend >= kidDiamondsSpent(k.key)){
+          upd[`streaks/${k.key}/diamonds/${cDay}`] = null;
+        }
+        rootUpdate(upd);
       }
     }
 

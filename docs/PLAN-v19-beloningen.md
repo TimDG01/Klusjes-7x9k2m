@@ -171,9 +171,15 @@ Zonder één dependency:
       `kidDiamondsEarned/Spent`, `kidDiamonds` (klemt op 0), `openRequestOf`. 40/40 groen +
       een aparte controle dat de app schoon opstart met data op alle nieuwe paden.
       `VERSION` blijft bewust `v18.9`: er is nog geen enkele gedragswijziging.)*
-- [ ] **Fase 2 — Verdienen.** Extra sleutel in `writeCompletionFlag` (`earnDays`-formule) +
+- [x] **Fase 2 — Verdienen.** Extra sleutel in `writeCompletionFlag` (`earnDays`-formule) +
       de wis-tak in `render()` (diamant mee weg op vandaag, saldo ≥ 0).
-      `test/rewards.test.js` met verificatie 1–4. Diamanten lopen op, nog zonder scherm.
+      `test/rewards.test.js` met verificatie 1–3. Diamanten lopen op, nog zonder scherm.
+      *(Gedaan: 17 nieuwe testgevallen, alles groen — verdienen + idempotentie, start op 0,
+      badgedag = 4, aan-/uitvinken levert netto niets op, badgedag houdt zijn 4 na
+      hervinken, voorbije dagen blijven onaangeroerd, een uitgegeven diamant kan niet
+      teruggenomen worden, en `streakStart` verzetten verandert het grootboek niet.
+      **Verificatie 4 (`adjustDiamonds`) schuift naar fase 3** — die knop wordt daar pas
+      gebouwd. `VERSION` blijft `v18.9` tot fase 6: er is nog geen zichtbare wijziging.)*
 - [ ] **Fase 3 — Beheer.** `renderAdminRewards()` + CRUD (incl. afbeelding mee wissen) +
       `adjustDiamonds` + `window`-export. Tests: verificatie 9.
 - [ ] **Fase 4 — Beloningsscherm.** `screen === 'rewards'`, `openRewards`, footer-knop 🎁,
