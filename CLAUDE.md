@@ -77,6 +77,14 @@ still has no dependencies and no build.
   a fully closed-and-reopened app picks up a deploy automatically; the footer `VERSION`
   verifies the build. Pages on the free plan requires a public repo, so **making this repo
   private would take the app offline**.
+- **Branch preview — the user's standing preference.** Pages only serves `main`, so when the
+  user asks for a link to try a feature branch on their phone, always give a **githack** URL
+  (confirmed working, juli 2026):
+  `https://raw.githack.com/TimDG01/Klusjes-7x9k2m/<branch>/index.html` — append `?test` for
+  the sandboxed variant. Don't propose alternatives unless githack fails. Two limits worth
+  repeating to the user: push notifications and the home-screen icon **don't** work there
+  (they need the Pages origin + an installed PWA), and without `?test` they are logged into
+  the **real** family data.
 - **Firebase project**: `klusjesv2` (config inline in `index.html`; the visible apiKey is a
   public identifier, not a secret — access control lives in Auth + the rules), with Auth
   (email/password) enabled and the rules from `firebase-rules-v16.json` applied.
