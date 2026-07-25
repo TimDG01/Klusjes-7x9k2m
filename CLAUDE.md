@@ -12,8 +12,13 @@ zero dependencies, no build step, hosted on GitHub Pages from `main`. Push notif
 few companion files (see **Push notifications**): `manifest.json` + `icon-*.png`,
 `firebase-messaging-sw.js` (service worker), and a `scripts/` + `.github/workflows/` server
 side. Other companion files: `firebase-rules-v16.json` (RTDB security rules, paste-ready for
-the Firebase Console), `PLAN-v16.md` / `PLAN-v17-meldingen.md` (build logs — deep background),
-`CHANGELOG.md` (what changed per version).
+the Firebase Console), and a **`test/`** folder (headless suite + fake Firebase SDK).
+Documentation lives in **`docs/`**: `docs/PLAN-v16.md` / `docs/PLAN-v17-meldingen.md` /
+`docs/PLAN-v18-beurten.md` (build logs — deep background) and `docs/CHANGELOG.md` (what
+changed per version). Only `CLAUDE.md` and the app/deploy files stay at the repo root —
+`index.html`, `manifest.json`, `firebase-messaging-sw.js` and `icon-*.png` **must** stay
+there (GitHub Pages serves the root, and the service worker's scope depends on its
+location).
 
 ## Workflow for every change (checklist)
 
@@ -24,7 +29,7 @@ the Firebase Console), `PLAN-v16.md` / `PLAN-v17-meldingen.md` (build logs — d
 4. **Verify against the fake Firebase backend** (see Commands) — never against production
    data, never via the real ⚙️ Beheer / 👨‍👩‍👧 Gezin flows.
 5. **Bump `VERSION`** in the same commit, following the version policy below.
-6. **Add a `CHANGELOG.md` entry** (Dutch, one short bullet list per version).
+6. **Add a `docs/CHANGELOG.md` entry** (Dutch, one short bullet list per version).
 7. Commit (clear NL message) + push to the feature branch.
 8. **Pushing/merging to `main` deploys to every device — only do this when the user
    explicitly asks.**
@@ -60,8 +65,9 @@ verifies which build it runs.
 
 ## Commands
 
-There is no build, lint, or test tooling — the app is a single static file. `.gitignore` is
-unused boilerplate (no `package.json`, no `node_modules`).
+There is no build or lint step — the app is a single static file. There **is** a committed
+test suite in **`test/`** (Node + Playwright; `node_modules` is gitignored). The app itself
+still has no dependencies and no build.
 
 - **Production / deploy**: **GitHub Pages serves the `main` branch** — every push to `main`
   auto-deploys via the built-in "pages build and deployment" workflow (live within a couple
@@ -74,23 +80,24 @@ unused boilerplate (no `package.json`, no `node_modules`).
   (email/password) enabled and the rules from `firebase-rules-v16.json` applied.
 - **Run locally**: open `index.html` directly (`file://`). No server. The app shows an
   **auth screen first** — there's no data until you log in (or use the fake backend below).
-- **Manual verification (the standard way)**: headless Playwright against a hand-rolled
-  **in-memory fake Firebase SDK**: intercept the three
-  `https://www.gstatic.com/firebasejs/.../firebase-{app,database,auth}.js` CDN imports via
-  `page.route().fulfill()` and load the real file via `file://`. The **database** fake
-  exposes `initializeApp, getDatabase, ref, onValue, get, set, update, remove, push` backed
-  by a plain JS object + pub/sub; the **auth** fake exposes `getAuth, setPersistence,
-  browserLocalPersistence, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut, updatePassword, deleteApp`. Fake-SDK gotchas
-  learned the hard way: (1) `val()` must return dense integer-keyed nodes as **arrays**
-  (like real RTDB), or every `Array.isArray(weekdays)` check silently falls back to "every
-  day"; (2) the fake must notify listeners **asynchronously and coalesced** — a synchronous
+- **Verification (the standard way)** — `cd test && npm install && npm test`. Headless
+  Playwright loads the real `index.html` via `file://` and intercepts the Firebase CDN
+  imports with `page.route().fulfill()`, serving an **in-memory fake SDK** instead: no
+  network, no real family data. **Reuse `test/fake-firebase.js` — do not rewrite it.**
+  `openApp(browser, { seed, user })` opens a page with the fake in place, where `seed` is
+  the whole database tree and `user` the already-logged-in uid; it returns `{ page, dialogs }`
+  (`dialogs` collects every `alert()`/`confirm()` text). Inside the page,
+  `window.__store.root` is the database and `window.__flushDb()` fires listeners after a
+  direct poke. Add a test as `test/*.test.js` using `test/assert.js`; `test/README.md` has
+  the details. Three fake-SDK properties were learned the hard way and must not be
+  "simplified" away: (1) `val()` returns dense integer-keyed nodes as **arrays** (like real
+  RTDB), or every `Array.isArray(weekdays)` check silently falls back to "every day"; (2)
+  listeners notify **asynchronously, coalesced, and only on real change** — a synchronous
   notify inside a write causes re-entrant renders with stale caches that the real
   (always-async) SDK can't produce (this once caused an infinite completion-flag loop);
-  (3) child-account creation uses a **second app instance**, so fake auth must keep
-  per-instance state. There is no committed test suite; scratchpad `test-*.js` harnesses
-  are regenerated per session. A quick logic-only smoke test also works in Node: extract
-  the `<script type="module">`, stub the imports/DOM as globals, and call the pure helpers.
+  (3) child-account creation uses a **second app instance**, so fake auth keeps
+  per-instance state. A quick logic-only smoke test also works in plain Node: extract the
+  `<script type="module">`, stub the imports/DOM as globals, and call the pure helpers.
 - **Manual acceptance on a real device**: append `?test` to the URL. `BASE_ROOT` becomes
   `'test/'` and **every** database path — the family subtree, the two top-level pointers,
   and the keys of root-level multi-path updates — lives under `/test/...`, self-seeded by
@@ -306,7 +313,7 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   (CRUD) / members (per-kid on-off) / next turn with ⏮/⏭
   (`rewindShiftTurn`/`advanceShiftTurn`), plus create/delete a shift task. There is no live
   legacy calendar fallback in the render path — every shift on `klusjesv2` starts fresh
-  with a valid pointer (a one-time historical migration set it; see `PLAN-v16.md` fase 8).
+  with a valid pointer (a one-time historical migration set it; see `docs/PLAN-v16.md` fase 8).
 
 ### Streaks & badges
 - **Day complete** for a kid = the exact id-set `render()` uses for the celebration
@@ -408,7 +415,7 @@ comments). They are path-scoped and enforce the real access control:
 ### Push notifications (daily evening reminder — v17)
 A kid with unfinished chores gets a push on their phone **even when the app is closed**. A
 push to a closed device can't be done client-side, so this splits into a device half and a
-server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
+server half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
 - **Device half (in `index.html` + companion files):** `manifest.json` + `icon-192/512.png`
   (installable PWA — iOS 16.4+ web push requires an installed PWA with a manifest);
   `firebase-messaging-sw.js` (service worker, at repo root; uses the compat SDK via
@@ -522,6 +529,6 @@ server half. Full build log + manual-setup steps: **`PLAN-v17-meldingen.md`**.
   is try/catch-wrapped so it can never block a state write or popup.
 
 ## Deep background
-`PLAN-v16.md` is the frozen, phase-by-phase build log of v16 (design decisions, rules
+`docs/PLAN-v16.md` is the frozen, phase-by-phase build log of v16 (design decisions, rules
 review, migration details). Consult it for *why* something is the way it is; this file is
-the working summary. `CHANGELOG.md` lists what shipped per version.
+the working summary. `docs/CHANGELOG.md` lists what shipped per version.
