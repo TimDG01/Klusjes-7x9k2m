@@ -1159,11 +1159,17 @@ function writeCompletionFlag(kidKey, key){
   }
   // 💎 v19: het verdiengrootboek, in dezelfde atomische update. Dag-gesleuteld, dus twee
   // keer schrijven verandert niets — "maximaal 1 per dag" volgt uit de vorm.
+  // ENKEL VOOR VANDAAG. Deze functie draait ook voor een voorbije dag die alsnog compleet
+  // raakt — dat is de bewuste "kind vergat te tikken"-reparatie voor de reeksen, en die
+  // blijft. Maar diamanten mogen daar niet aan meeliften: anders levert terugbladeren en
+  // een oude dag aanvinken gratis diamanten op.
   // Bewust sim.earnDays (en NIET newRanks): newRanks is leeg zodra de badge al bestaat,
   // dus na uitvinken-en-hervinken zou de dag zijn 3 badgediamanten kwijtraken terwijl het
   // kind de badge — die permanent is — gewoon houdt.
-  const badgeDag = sim.earnDays.includes(key) ? 1 : 0;
-  upd[`streaks/${kidKey}/diamonds/${key}`] = DIAMANTEN_PER_DAG + badgeDag * DIAMANTEN_PER_BADGE;
+  if (key === dayKey(new Date())){
+    const badgeDag = sim.earnDays.includes(key) ? 1 : 0;
+    upd[`streaks/${kidKey}/diamonds/${key}`] = DIAMANTEN_PER_DAG + badgeDag * DIAMANTEN_PER_BADGE;
+  }
   rootUpdate(upd);
   return newRanks;
 }

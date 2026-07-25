@@ -77,6 +77,29 @@ async function tap(page, label){
     await page.close();
   }
 
+  section('2b. Een VOORBIJE dag alsnog aanvinken levert géén diamant op');
+  {
+    // terugbladeren en een oude dag afvinken mag niets opleveren; de reeks-reparatie
+    // (de voltooiingsvlag) moet wél gewoon blijven werken
+    const { page } = await openApp(browser, { seed: seed({ streakStart: dk(-5) }), user: PARENT });
+    await page.evaluate(() => window.changeDay(-3));
+    await page.waitForTimeout(200);
+    await tap(page, 'Afwas');
+    check('geen diamant voor een oude dag', (await ledger(page))[dk(-3)], undefined);
+    check('grootboek volledig leeg', JSON.stringify(await ledger(page)), '{}');
+    const vlag = await page.evaluate(([f, k, d]) => {
+      const s = window.__store.root.families[f].streaks[k] || {};
+      return !!(s.days && s.days[d]);
+    }, [FID, KID, dk(-3)]);
+    check('maar de reeks-vlag wordt wél gezet', vlag, true);
+    // en vandaag levert nog steeds gewoon een diamant op
+    await page.evaluate(() => window.goToday());
+    await page.waitForTimeout(200);
+    await tap(page, 'Afwas');
+    check('vandaag nog steeds 1 diamant', (await ledger(page))[dk(0)], 1);
+    await page.close();
+  }
+
   section('3. Een badgedag levert 1 + 3 = 4 diamanten op');
   {
     // 6 voorgaande dagen al voltooid → het afvinken van vandaag is dag 7 → badge

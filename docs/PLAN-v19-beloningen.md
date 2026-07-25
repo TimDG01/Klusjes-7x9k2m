@@ -65,6 +65,13 @@ wordt uitgebreid tot één `rootUpdate` die **ook** `diamonds/{dag}` wist:
 | daarna iets uitvinken (vandaag) | diamant verdwijnt weer |
 | opnieuw voltooien | dezelfde dagsleutel → weer 1, nooit 2 |
 | de dag is voorbij | vlag én diamant staan vast (de wis-tak draait alleen op vandaag) |
+| terugbladeren en een **oude** dag alsnog aanvinken | **géén** diamant (wel gewoon de reeks-vlag) |
+
+**Diamanten worden alleen voor vandaag geschreven.** `writeCompletionFlag` draait ook voor
+een voorbije dag die alsnog compleet raakt — dat is de bewuste "kind vergat te tikken"-
+reparatie voor de reeksen, en die blijft. De diamant hangt daar bewust *niet* aan: anders
+levert terugbladeren naar een oude dag gratis diamanten op (gemeld tijdens het testen van
+fase 4b).
 
 Onmiddellijke feedback én aan-/uitvinken levert netto niets op. Randgeval: wissen gebeurt
 **alleen als het saldo daardoor niet negatief wordt** (een net uitgegeven diamant kan niet
