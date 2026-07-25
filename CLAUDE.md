@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.8`): a Dutch-language family chores app —
+**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.9`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -143,6 +143,20 @@ block summarizes the account/data model.
   the same flag server-side, so toggling it off is actually enforced, not just hidden UI.
   Read via `kidMayMove(uid)`; the combined "may the *logged-in* user move kid X's turn"
   check is `mayMoveShiftOf(uid)` (parent: always; child: own turn + flag).
+- **Which days a child may (un)check — `settings/kidCheckScope` (v18.9).** Family-wide, set by
+  a parent in Beheer → Instellingen via a `<select>` (`kidCheckScopeOptions`/`setKidCheckScope`,
+  same pattern as `notifyTime`); read by a **no-gate/non-fatal** listener into `kidCheckScopeKey`,
+  reset in `teardownFamily`. Values: `'alles'` (every day), `'geen-verleden'` (today + future),
+  `'enkel-vandaag'` (today only), `'nooit'` (parent only). **Absent = `'alles'` = pre-v18.9
+  behaviour**, so existing families are untouched (schema-additive, like `weekdays` absent).
+  One helper carries the whole rule *and* the wording: `checkBlockReason()` returns `null` when
+  allowed, else the message to `alert()`. It's called at the top of **`toggleTask`** and
+  **`toggleShift`** — the only two check-write paths, so `taskRow`, `shiftRow` **and**
+  `owedShiftRow` (which routes through `toggleTask`) are all covered without touching render.
+  A parent always passes. ⚠️ This is **client-side only**: `days/$dayKey` is an opaque wildcard
+  in the rules and RTDB can't compute "today", so it can't be enforced server-side — same
+  category as the pre-existing parent-only un-freeze of a one-off. Deliberately *not* extended
+  to the shift move buttons (⏮/⏭), which already only ever act on today or later.
 - Bootstrap ordering matters: creating a family writes
   `meta`+`members`+`familyCodes`+`userIndex` first, and `settings/*` in a **second**
   update — the settings rule is parent-only based on the *pre-write* `root`, so the creator
@@ -156,6 +170,7 @@ settings/tasks/{taskId}: { label, recurring, order, weekdays?, members?, interva
 settings/shifts/{shiftId}: { name, weekdays[], lines[], members?[], next?:{uid,lineIdx},
                              override?:'yyyy-M-d', lastDone?:'yyyy-M-d', order? }   // completion-driven turn task
 settings/streakStart: 'yyyy-M-d'                       // streak/badge launch floor; DEFAULT_STREAK_START (9 jul 2026) fallback
+settings/kidCheckScope: 'alles'|'geen-verleden'|'enkel-vandaag'|'nooit'   // which days a CHILD may (un)check; absent = 'alles' = pre-v18.9
 days/{yyyy-M-d}/checks/{uid}/{taskId}: boolean         // per-day checked state, incl. 'shift-{shiftId}' for turn tasks
 days/{yyyy-M-d}/snap/{uid}/{taskId}: { label, order, weekdays?, members?, … }   // frozen one-off, written at check-off
 days/{yyyy-M-d}/shift/{shiftId}: { uid, line }         // frozen turn-task history
@@ -342,9 +357,10 @@ the buttons and the `openAdmin`/`openMembers` routes are guarded). **Beheer**
 (`renderAdmin`) has one **Taken** section (`renderAdminTasks` — per task: participant chips
 `toggleTaskMember`, interval toggle `toggleTaskInterval`, pointer ⏮/⏭, label edit,
 recurring/one-off, delete; `fromShift` tasks are filtered out), one section per shift
-(`renderAdminShifts`), an **Instellingen** section (`renderAdminSettings` — currently one
-row of per-kid chips toggling `magVerschuiven` via `toggleKidMayMove`; new per-kid flags
-belong here), and **Reeksen & badges** (`renderAdminStreak`). The separate **Gezin** screen
+(`renderAdminShifts`), an **Instellingen** section (`renderAdminSettings` — a row of per-kid
+chips toggling `magVerschuiven` via `toggleKidMayMove` (new per-kid flags belong here), the
+`notifyTime` dropdown, and the `kidCheckScope` dropdown below), and **Reeksen & badges**
+(`renderAdminStreak`). The separate **Gezin** screen
 (`renderMembers`) manages children (add/rename/color/PIN/pause/delete) and shows the family
 code. All mutations are `prompt()`/`confirm()`-based to match the no-forms style; the
 exception is weekday selection, done via 7 individual toggle buttons

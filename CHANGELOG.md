@@ -14,6 +14,19 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v18.9 — juli 2026
+- **Nieuw: "Kinderen mogen afvinken op"** (Beheer → Instellingen, ouder-only). Regelt of een
+  kind ook op een àndere dag dan vandaag mag af- of uitvinken — zo kan een vergeten klusje van
+  gisteren niet meer achteraf "goedgekeurd" worden. Vier standen:
+  - **elke dag** — zoals voorheen (de **standaard**: gezinnen die niets instellen merken
+    geen enkel verschil);
+  - **niet in het verleden** — enkel vandaag en later;
+  - **enkel vandaag** — ook vooruit afvinken geblokkeerd;
+  - **nooit (enkel ouder)** — een kind vinkt helemaal niets meer af.
+  Een ouder kan altijd elke dag aanpassen. Geldt voor gewone taken én beurten; een kind dat het
+  toch probeert, krijgt een korte uitleg te zien.
+- Geen rules-wijziging nodig.
+
 ## v18.8 — juli 2026
 - **"📣 Stuur nu"-knop verwijderd** (Beheer → Instellingen): overbodig geworden nu een
   gsm-automatisering de herinnering betrouwbaar op het juiste moment kan triggeren. De

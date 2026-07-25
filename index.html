@@ -271,9 +271,16 @@ function streakStartIdx(){
 // er echt naar; de app toont/wijzigt het alleen in Beheer. Default 19:00.
 const DEFAULT_NOTIFY_TIME = '19:00';
 let notifyTimeKey = DEFAULT_NOTIFY_TIME;
+// Welke dagen mag een KIND zelf af-/uitvinken? Per gezin instelbaar via Beheer, bewaard
+// in /settings/kidCheckScope. Schema-additief: afwezig = 'alles' = het gedrag van vóór
+// v18.9 (een kind kon elke dag aanpassen), zodat bestaande gezinnen niets merken.
+// Een ouder mag altijd alles — dit beperkt enkel kinderen.
+const KID_CHECK_SCOPES = ['alles', 'geen-verleden', 'enkel-vandaag', 'nooit'];
+const DEFAULT_KID_CHECK_SCOPE = 'alles';
+let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v18.8';
+const VERSION = 'klusjes-pwa v18.9';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -332,6 +339,23 @@ function mayMoveShiftOf(uid){
 // Positieve rolcheck: alleen een ingelogd lid met rol 'ouder' mag beheren.
 function isParent(){
   return !!(authUser && membersCache[authUser.uid] && membersCache[authUser.uid].rol === 'ouder');
+}
+// Mag de INGELOGDE gebruiker op de BEKEKEN dag af-/uitvinken? null = ja; anders de uitleg
+// die het kind te zien krijgt. Een ouder krijgt altijd null. Voor een kind beslist
+// settings/kidCheckScope (zie KID_CHECK_SCOPES): 'alles' = elke dag (de default, en het
+// gedrag van vóór v18.9), 'geen-verleden' = niet terug in de tijd, 'enkel-vandaag' = ook
+// niet vooruit, 'nooit' = enkel een ouder vinkt af. Eén plek voor de regel én de tekst;
+// toggleTask en toggleShift (de enige twee schrijfpaden) roepen dit aan.
+function checkBlockReason(){
+  if (!isChild()) return null;
+  if (kidCheckScopeKey === 'nooit')
+    return 'Oeps — alleen een ouder kan klusjes afvinken. Vraag het even.';
+  const diff = dayIndex(current) - dayIndex(clampedToday());
+  const blocked = (kidCheckScopeKey === 'geen-verleden' && diff < 0) ||
+                  (kidCheckScopeKey === 'enkel-vandaag' && diff !== 0);
+  return blocked
+    ? 'Oeps — een andere dag dan vandaag aanpassen kan alleen een ouder. Vraag het even.'
+    : null;
 }
 // lijntekeningen i.p.v. emoji's (🗑 ⏭ ⏮): kleur-emoji's negeren CSS `color` en de
 // zwarte ⏭/⏮-glyfen verdwijnen op een donkere achtergrond — deze SVG's volgen currentColor
@@ -1166,6 +1190,15 @@ function initFamily(){
     render();
   }, () => {}));
 
+  // --- welke dagen een kind zelf mag afvinken (instelbaar via Beheer) ---
+  // Zelfde patroon: geen laad-gate, niet-fataal. Een onbekende/afwezige waarde valt terug
+  // op 'alles' — de app blijft dan zich gedragen zoals vóór v18.9.
+  familyUnsubs.push(onValue(dbRef('settings/kidCheckScope'), snap => {
+    const v = snap.val();
+    kidCheckScopeKey = KID_CHECK_SCOPES.includes(v) ? v : DEFAULT_KID_CHECK_SCOPE;
+    render();
+  }, () => {}));
+
   // --- gezinsgegevens: meta (naam + gezinscode) ---
   // Geen seeding: de bootstrap bij het aanmaken schreef meta al; absent kan
   // praktisch niet, maar wordt als leeg behandeld i.p.v. te blijven hangen.
@@ -1228,6 +1261,7 @@ function teardownFamily(){
   streaksCache = {};
   dayState = {};
   streakStartKey = DEFAULT_STREAK_START;
+  kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
   celebratedDays = new Set();
   loadError = null;
 }
@@ -1746,6 +1780,9 @@ function toggleShift(shiftId, kidKey){
   if (!info || info.uid !== kidKey) return;
   // een kind mag enkel zijn eigen beurt afvinken
   if (isChild() && kidKey !== authUser.uid) return;
+  // en enkel op een dag die de gezinsinstelling toelaat (v18.9)
+  const blocked = checkBlockReason();
+  if (blocked){ alert(blocked); return; }
   const key = dayKey(current);
   const checkId = 'shift-' + shiftId;
   const newVal = !isChecked(kidKey, checkId);
@@ -1779,6 +1816,9 @@ function toggleShift(shiftId, kidKey){
 }
 
 function toggleTask(uid, taskId){
+  // mag dit kind op déze dag nog aanpassen? (v18.9, gezinsinstelling; ouder: altijd)
+  const blocked = checkBlockReason();
+  if (blocked){ alert(blocked); return; }
   const newVal = !isChecked(uid, taskId);
   const key = dayKey(current);
   const frozenSnap = dayState.snap && dayState.snap[uid] && dayState.snap[uid][taskId];
@@ -2702,6 +2742,14 @@ function renderAdminSettings(){
         <select class="admin-select" onchange="setNotifyTime(this.value)">${notifyTimeOptions()}</select>
       </div>
       <div class="admin-vacuum-note">Werkt alleen op toestellen waar het kind zelf "🔔 Meldingen aan" heeft getikt. Kies "uit" om geen herinneringen te sturen.</div>
+
+      <div class="admin-role-title" style="font-size:13px;margin:16px 0 6px;">Kinderen mogen afvinken op</div>
+      <div class="admin-next-row">
+        <span>Welke dagen:<br>
+        <small>een ouder kan altijd elke dag aanpassen</small></span>
+        <select class="admin-select" onchange="setKidCheckScope(this.value)">${kidCheckScopeOptions()}</select>
+      </div>
+      <div class="admin-vacuum-note">"elke dag" = zoals voorheen. Kies "niet in het verleden" zodat een kind een vergeten klusje van gisteren niet alsnog kan afvinken, "enkel vandaag" om ook vooruit afvinken te blokkeren, of "nooit" als enkel een ouder mag afvinken.</div>
     </div>
   `;
 }
@@ -2733,6 +2781,27 @@ function notifyTimeOptions(){
 function setNotifyTime(value){
   if (!isParent()) return;
   if (value === 'uit' || /^\d{2}:(00|30)$/.test(value)) set(dbRef('settings/notifyTime'), value);
+}
+
+// Opties voor "kinderen mogen afvinken op": zelfde <select>-aanpak als de herinneringstijd.
+// De labels staan hier, de waarden zijn die van KID_CHECK_SCOPES.
+const KID_CHECK_SCOPE_LABELS = {
+  'alles': 'elke dag',
+  'geen-verleden': 'niet in het verleden',
+  'enkel-vandaag': 'enkel vandaag',
+  'nooit': 'nooit (enkel ouder)'
+};
+function kidCheckScopeOptions(){
+  return KID_CHECK_SCOPES.map(v =>
+    `<option value="${v}"${kidCheckScopeKey === v ? ' selected' : ''}>${KID_CHECK_SCOPE_LABELS[v]}</option>`
+  ).join('');
+}
+
+// Bewaren (ouder-only; settings is al ouder-only in de rules). De waarde komt uit de
+// keuzelijst, maar wordt toch tegen KID_CHECK_SCOPES gecheckt.
+function setKidCheckScope(value){
+  if (!isParent()) return;
+  if (KID_CHECK_SCOPES.includes(value)) set(dbRef('settings/kidCheckScope'), value);
 }
 
 // Reeks-startdatum: dagen vóór deze datum tellen niet mee voor reeksen & badges.
@@ -3096,7 +3165,7 @@ Object.assign(window, {
   submitLogin, submitKidLogin, logout, switchAuthMode, submitCreateFamily, submitJoinFamily,
   openMembers, addChildMember, changeChildPin, renameMember, renameFamily, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
-  enableNotifications, setNotifyTime
+  enableNotifications, setNotifyTime, setKidCheckScope
 });
 
 render();
