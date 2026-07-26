@@ -14,6 +14,12 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.8 — juli 2026
+- **Shop overzichtelijker**: "Al gekregen" staat nu standaard **dichtgeklapt** (met het aantal
+  ertussen haakjes, zoals de Beheer-secties); "Gekocht — nog te krijgen" blijft open staan.
+  Zo zie je meteen wat er nog moet komen, en verdwijnt de oude historiek niet in de weg. Voor
+  ouder én kind.
+
 ## v19.7 — juli 2026
 - **Kinderen kopen nu zelf, zonder eerst te vragen.** Wie genoeg diamanten heeft tikt "Koop"
   (met een bevestiging) en de beloning staat meteen op zijn naam; de diamanten gaan er direct af.

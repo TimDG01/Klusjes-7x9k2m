@@ -312,7 +312,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.7';
+const VERSION = 'klusjes-pwa v19.8';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -2381,11 +2381,13 @@ function renderRewardSection(kidKey, name){
     `;
   }).join('');
 
-  // Aankopen, nieuwste eerst. Nog niet geleverd staat bovenaan zodat een ouder meteen
-  // ziet wat er nog moet gebeuren.
+  // Aankopen, nieuwste eerst. Nog niet geleverd staat bovenaan en altijd open — dat is wat
+  // een ouder nog moet doen en een kind nog verwacht. "Al gekregen" is standaard dichtgeklapt
+  // (zoals de Beheer-secties), zodat de lijst overzichtelijk blijft; hergebruikt adminOpen.
   const aankopen = purchasesOf(kidKey);
   const open = aankopen.filter(p => !p.gegeven);
   const klaar = aankopen.filter(p => p.gegeven);
+  const gekregenOpen = adminOpen.has('gekregen:' + kidKey);
   const rij = p => `
     <div class="admin-next-row">
       <span>${rewardIcon(p.icoon) || '🎁'} <b>${escapeHtml(p.naam || 'Beloning')}</b> · ${Number(p.diamanten) || 0} 💎<br>
@@ -2406,7 +2408,13 @@ function renderRewardSection(kidKey, name){
         ? `<div class="badge-grid">${cards}</div>`
         : '<div class="admin-vacuum-note">Nog geen beloningen. Een ouder maakt ze aan via Beheer.</div>'}
       ${open.length ? `<div class="admin-role-title" style="font-size:13px;margin:14px 0 4px;">Gekocht — nog te krijgen</div>${open.map(rij).join('')}` : ''}
-      ${klaar.length ? `<div class="admin-role-title" style="font-size:13px;margin:14px 0 4px;">Al gekregen</div>${klaar.slice(0, 5).map(rij).join('')}` : ''}
+      ${klaar.length ? `
+        <div class="admin-collapse-head" style="margin-top:10px;" onclick="toggleAdminRow('gekregen:${kidKey}')">
+          <span class="admin-caret">${gekregenOpen ? '▾' : '▸'}</span>
+          <div class="admin-collapse-main"><div class="admin-role-title" style="margin:0;font-size:13px;">Al gekregen (${klaar.length})</div></div>
+        </div>
+        ${gekregenOpen ? klaar.slice(0, 10).map(rij).join('') : ''}
+      ` : ''}
       ${(!open.length && !klaar.length) ? '<div class="admin-vacuum-note">Nog niets gekocht.</div>' : ''}
     </div>
   `;

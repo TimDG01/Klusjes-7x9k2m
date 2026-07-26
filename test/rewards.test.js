@@ -416,9 +416,15 @@ async function tap(page, label){
     const { page } = await openApp(browser, { seed: s, user: KID });
     await page.evaluate(() => window.openRewards());
     await page.waitForTimeout(250);
-    const tekst = await page.locator('#app').textContent();
-    check('ziet "nog niet gekregen"', tekst.includes('nog niet gekregen'), true);
-    check('en "gekregen op"', tekst.includes('gekregen op'), true);
+    let tekst = await page.locator('#app').textContent();
+    check('nog-te-krijgen staat open', tekst.includes('nog niet gekregen'), true);
+    check('"al gekregen" is standaard dichtgeklapt', tekst.includes('gekregen op'), false);
+    check('met een kop die het aantal toont', tekst.includes('Al gekregen (1)'), true);
+    // openklappen toont de gekregen beloningen
+    await page.locator('.admin-collapse-head', { hasText: 'Al gekregen' }).first().click();
+    await page.waitForTimeout(200);
+    tekst = await page.locator('#app').textContent();
+    check('na openklappen zie je "gekregen op"', tekst.includes('gekregen op'), true);
     check('geen ouderknoppen voor een kind', await page.locator('button[title*="gegeven"]').count(), 0);
     await page.close();
   }
