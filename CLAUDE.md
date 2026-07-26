@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.8`): a Dutch-language family chores app —
+**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.9`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -194,7 +194,7 @@ days/{yyyy-M-d}/shift/{shiftId}: { uid, line }         // frozen turn-task histo
 streaks/{uid}/days/{yyyy-M-d}: true                    // completion flag: that kid finished everything that day
 streaks/{uid}/badges/b{n}: 'yyyy-M-d'                  // n-th badge (ordinal key), value = earn-day; permanent
 streaks/{uid}/diamonds/{yyyy-M-d}: 1|4                 // v19 earning ledger; 'bonus-{ts}': ±n for a manual parent adjustment
-streaks/{uid}/purchases/{id}: { rewardId, naam, diamanten, dag, icoon?, gegeven? }  // v19.7: child buys directly; `gegeven` = day the parent handed it over
+streaks/{uid}/purchases/{id}: { rewardId, naam, diamanten, dag, icoon?, gegeven?, gemeld? }  // v19.7: child buys directly; `gegeven` = day the parent handed it over; `gemeld` (v19.9) = server-written, purchase-alert sent
 settings/rewards/{id}: { naam, omschrijving, diamanten, order, icoon? }  // v19 reward catalogue (parent-only)
 settings/rewardImages/{id}: 'data:image/jpeg;base64,…'            // v19: separate path, lazily loaded
 settings/rewardClaims/{id}: { uid, rewardId, naam, diamanten, dag }  // legacy (pre-v19.7 approved redemptions); still counted as spent
@@ -492,7 +492,7 @@ comments). They are path-scoped and enforce the real access control:
   `members/{uid}/fcmTokens` (own push tokens), otherwise `members` stays parent-only. The
   RTDB allow-cascade (a deeper `.write:true`) grants it without loosening the node.
 
-### Push notifications (daily evening reminder — v17)
+### Push notifications (daily evening reminder — v17; parent purchase alert — v19.9)
 A kid with unfinished chores gets a push on their phone **even when the app is closed**. A
 push to a closed device can't be done client-side, so this splits into a device half and a
 server half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
@@ -507,6 +507,10 @@ server half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`
   public Web-Push key the user pastes from the Console. All push code is soft/try-caught —
   never blocks the app. `?test` note: GitHub Pages serves this app on a **subpath**, so all
   SW/manifest/icon paths are **relative** (no leading `/`).
+  **v19.9**: the footer button is no longer `isChild()`-gated — a parent can enable
+  notifications on their own device too, since `members/{uid}/fcmTokens` is already
+  self-writable for any member regardless of role (see rules below), and a parent now needs
+  a token to receive the purchase alert.
 - **Reminder time** is per family: `settings/notifyTime` (`"HH:MM"` on the whole/half hour, or
   `"uit"`, default `"19:00"`), set by a parent in Beheer → Instellingen via a `<select>`
   dropdown (`notifyTimeOptions`/`setNotifyTime` — native wheel picker on mobile; only `:00`/`:30`
@@ -547,6 +551,18 @@ server half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`
   - GitHub's eigen `on: schedule` **blijft gewoon staan** als derde, gratis (publieke repo =
     onbeperkte Actions-minuten) extra vangnet — idempotent via `lastNotified`, dus geen risico
     op een dubbele melding als er toevallig meerdere triggers rond hetzelfde moment vuren.
+- **Aankoop-melding aan de ouders (v19.9).** Een kind koopt zonder toestemming te vragen
+  (zie 💎 Diamanten & beloningen), dus de ouder moet er los daarvan van weten. `runShiftMaintenance`-stijl:
+  `purchaseNotifyPlan(familyData)` in `notify.js` (pure, getest in `test/notify.test.js` —
+  geen browser nodig) scant alle `streaks/{kidUid}/purchases/{id}` zonder `gemeld`-vlag en
+  geeft ze terug samen met de fcmTokens van alle leden met `rol === 'ouder'`. `main()` stuurt
+  per onvermelde aankoop een push naar elk ouder-token (`"🛒 {kind} heeft iets gekocht!"` /
+  `"{beloning} · {prijs} 💎 — nog te geven."`) en zet dan **altijd** `gemeld:true` — ook als er
+  geen enkel ouder-token was — zodat een aankoop maximaal één melding oplevert en er nooit een
+  stapel oude meldingen alsnog binnenkomt zodra een ouder later pas meldingen aanzet. Draait
+  bij **elke** run (los van `notifyTime`), want een aankoop kan op elk moment gebeuren. Geen
+  logica-duplicatie met `index.html`: de app berekent hier niets voor, ze toont enkel de
+  `purchases`-lijst.
 - **⚠️ Logic duplication — keep in sync.** The DB stores task *definitions* + rotation *state*
   + `checks` (what's *done*), **not** a ready-made "today's chores" list — the app computes it
   each render, so `notify.js` must recompute it too. The pure helpers there (`dayIndex`,

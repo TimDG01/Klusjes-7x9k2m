@@ -14,6 +14,16 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.9 — juli 2026
+- **Ouders krijgen een melding bij een aankoop.** Zodra een kind iets koopt in de shop, gaat
+  er (bij de eerstvolgende run van het server-script, meestal binnen het half uur) een
+  push-melding naar elke ouder die "🔔 Meldingen aan" heeft aangezet — met wie wat kocht en
+  voor hoeveel diamanten. Precies **één** melding per aankoop, ook als het script daarna nog
+  vaak draait.
+- Daarvoor kan een **ouder** nu ook zelf "🔔 Meldingen aan" tikken in de footer — die knop was
+  tot nu toe enkel voor kinderen zichtbaar.
+- Geen rules-wijziging nodig.
+
 ## v19.8 — juli 2026
 - **Shop overzichtelijker**: "Al gekregen" staat nu standaard **dichtgeklapt** (met het aantal
   ertussen haakjes, zoals de Beheer-secties); "Gekocht — nog te krijgen" blijft open staan.

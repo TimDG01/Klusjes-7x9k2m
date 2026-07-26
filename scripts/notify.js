@@ -335,10 +335,43 @@ function familySendPlan(familyData, now, todayKey, force) {
   return { due: true, plan };
 }
 
+// ---- v19.9: ouders een melding sturen bij een aankoop in de shop ----
+// Puur/testbaar, zelfde vorm als familySendPlan: geeft { parentTokens, plan } terug.
+// plan-items zijn nog niet gemeld (streaks/{kidUid}/purchases/{id}/gemeld ontbreekt) —
+// de aanroeper stuurt en markeert daarna, zodat elke aankoop maar ÉÉN keer een melding
+// geeft, ongeacht hoe vaak dit script draait (idempotent, net als lastNotified/pushHandled
+// vroeger). Geen logica-duplicatie met index.html nodig: de app berekent hier niets voor
+// (ze toont enkel purchases, ze beslist nooit zelf om te melden).
+function purchaseNotifyPlan(familyData) {
+  const membersCache = familyData.members || {};
+  const streaksCache = familyData.streaks || {};
+  const parentTokens = [];
+  for (const uid of Object.keys(membersCache)) {
+    if (membersCache[uid].rol !== 'ouder') continue;
+    const tokMap = membersCache[uid].fcmTokens || {};
+    for (const key of Object.keys(tokMap)) {
+      if (tokMap[key]) parentTokens.push({ uid, key, token: tokMap[key] });
+    }
+  }
+  const plan = [];
+  for (const kidUid of Object.keys(streaksCache)) {
+    const purchases = (streaksCache[kidUid] && streaksCache[kidUid].purchases) || {};
+    for (const purchaseId of Object.keys(purchases)) {
+      const p = purchases[purchaseId];
+      if (!p || p.gemeld) continue;
+      const kidName = (membersCache[kidUid] && membersCache[kidUid].weergavenaam) || 'Een kind';
+      const naam = p.naam || 'iets';
+      const prijs = Number(p.diamanten) || 0;
+      plan.push({ kidUid, purchaseId, kidName, naam, prijs });
+    }
+  }
+  return { parentTokens, plan };
+}
+
 module.exports = {
   dayIndex, dayKey, parseDayKey, openChoresFor, familySendPlan,
   brusselsNow, timeToMinutes, activeKidUids, tasksForKidDay, shiftForDay,
-  shiftPendingDay, shiftDetachPlan, runShiftMaintenance
+  shiftPendingDay, shiftDetachPlan, runShiftMaintenance, purchaseNotifyPlan
 };
 
 // ---- live uitvoering (enkel wanneer direct gedraaid, niet bij require in tests) ----
@@ -365,6 +398,7 @@ async function main() {
 
   const families = (await db.ref('families').get()).val() || {};
   let totalSent = 0;
+  let totalPurchaseSent = 0;
   let totalDetached = 0;
 
   for (const fid of Object.keys(families)) {
@@ -381,6 +415,45 @@ async function main() {
       }
     } catch (e) {
       console.error(`Beurt-onderhoud mislukt voor ${fid}:`, (e && e.message) || e);
+    }
+
+    // v19.9: ouders melden bij een aankoop — los van het meld-uur, bij ELKE run, want
+    // een aankoop kan op elk moment van de dag gebeuren.
+    try {
+      const { parentTokens, plan: purchasePlan } = purchaseNotifyPlan(families[fid]);
+      for (const item of purchasePlan) {
+        for (const pt of parentTokens) {
+          try {
+            await messaging.send({
+              token: pt.token,
+              data: {
+                title: `🛒 ${item.kidName} heeft iets gekocht!`,
+                body: `"${item.naam}" · ${item.prijs} 💎 — nog te geven.`,
+                tag: 'klusjes-aankoop',
+                url: '.'
+              },
+              webpush: { headers: { Urgency: 'high' } }
+            });
+            totalPurchaseSent++;
+          } catch (e) {
+            const code = (e && e.code) || (e && e.errorInfo && e.errorInfo.code);
+            if (code === 'messaging/registration-token-not-registered' ||
+                code === 'messaging/invalid-registration-token' ||
+                code === 'messaging/invalid-argument') {
+              await db.ref(`families/${fid}/members/${pt.uid}/fcmTokens/${pt.key}`).remove().catch(() => {});
+              console.log(`Ouder-token opgeruimd voor ${pt.uid} (${code})`);
+            } else {
+              console.error(`Aankoop-melding mislukt voor ${pt.uid}:`, code || (e && e.message));
+            }
+          }
+        }
+        // Altijd markeren, ook zonder ouder-tokens: één poging per aankoop, nooit een
+        // opeenstapeling van oude meldingen zodra een ouder later meldingen aanzet.
+        await db.ref(`families/${fid}/streaks/${item.kidUid}/purchases/${item.purchaseId}/gemeld`)
+          .set(true).catch(() => {});
+      }
+    } catch (e) {
+      console.error(`Aankoop-meldingen mislukt voor gezin ${fid}:`, (e && e.message) || e);
     }
 
     const { due, plan } = familySendPlan(families[fid], now, todayKey, force);
@@ -419,6 +492,6 @@ async function main() {
     if (due && !force) await db.ref(`families/${fid}/settings/lastNotified`).set(todayKey);
   }
 
-  console.log(`Klaar. ${totalSent} melding(en) verstuurd, ${totalDetached} beurt(en) losgemaakt.`);
+  console.log(`Klaar. ${totalSent} melding(en) verstuurd, ${totalPurchaseSent} aankoop-melding(en) verstuurd, ${totalDetached} beurt(en) losgemaakt.`);
   process.exit(0);
 }
