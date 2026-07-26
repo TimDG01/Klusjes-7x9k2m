@@ -297,7 +297,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.1';
+const VERSION = 'klusjes-pwa v19.2';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -2185,7 +2185,28 @@ const REWARD_ICONS = [
   { key: 'laatop',     emoji: '🌙', naam: 'Later opblijven' },
   { key: 'huisdier',   emoji: '🐶', naam: 'Huisdier' },
   { key: 'winkelen',   emoji: '🛍️', naam: 'Winkelen' },
-  { key: 'verrassing', emoji: '🎁', naam: 'Verrassing' }
+  { key: 'verrassing', emoji: '🎁', naam: 'Verrassing' },
+  // Spel- en avontuurthema (leest als Minecraft zonder het merk zelf te gebruiken)
+  { key: 'mijnwerken', emoji: '⛏️', naam: 'Mijnwerken' },
+  { key: 'zwaard',     emoji: '🗡️', naam: 'Zwaard' },
+  { key: 'zombie',     emoji: '🧟', naam: 'Zombie' },
+  { key: 'boog',       emoji: '🏹', naam: 'Boogschieten' },
+  { key: 'schat',      emoji: '💰', naam: 'Schat' },
+  { key: 'kasteel',    emoji: '🏰', naam: 'Kasteel' },
+  { key: 'raket',      emoji: '🚀', naam: 'Raket' },
+  { key: 'robot',      emoji: '🤖', naam: 'Robot' },
+  // Meer variatie, bewust niet als "voor jongens" of "voor meisjes" gelabeld
+  { key: 'eenhoorn',   emoji: '🦄', naam: 'Eenhoorn' },
+  { key: 'paard',      emoji: '🐴', naam: 'Paardrijden' },
+  { key: 'dansen',     emoji: '💃', naam: 'Dansen' },
+  { key: 'karaoke',    emoji: '🎤', naam: 'Karaoke' },
+  { key: 'nagels',     emoji: '💅', naam: 'Nagels lakken' },
+  { key: 'cupcake',    emoji: '🧁', naam: 'Cupcake' },
+  { key: 'bloemen',    emoji: '🌸', naam: 'Bloemen' },
+  { key: 'rolschaats', emoji: '🛼', naam: 'Rolschaatsen' },
+  { key: 'puzzel',     emoji: '🧩', naam: 'Puzzel' },
+  { key: 'vlinder',    emoji: '🦋', naam: 'Vlinder' },
+  { key: 'ster',       emoji: '⭐', naam: 'Ster' }
 ];
 function rewardIcon(key){
   const it = REWARD_ICONS.find(i => i.key === key);

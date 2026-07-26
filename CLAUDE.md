@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.1`): a Dutch-language family chores app —
+**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.2`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -399,7 +399,7 @@ Kids earn diamonds and spend them on parent-defined rewards. Full build log:
   the request and writing the claim in **one `rootUpdate`**. A claim **freezes** `naam` +
   `diamanten`, so editing or deleting a reward never rewrites history.
 - **Card art, in priority order**: own photo → chosen icon (`icoon`, a key into
-  `REWARD_ICONS`) → 🎁. `REWARD_ICONS` is ~32 curated **emoji** with Dutch labels, picked in
+  `REWARD_ICONS`) → 🎁. `REWARD_ICONS` is ~51 curated **emoji** with Dutch labels, picked in
   Beheer from a button grid (`setRewardIcon`) — the same reasoning as the weekday picker:
   a 30-way choice is past what `prompt()` can do. Emoji rather than hand-drawn SVG on
   purpose: the custom SVG constants exist because colour emoji ignore CSS `color` when an

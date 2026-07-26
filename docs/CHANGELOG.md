@@ -14,6 +14,13 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.2 — juli 2026
+- **19 extra iconen** voor beloningen, nu 51 in totaal: een avontuur-/spelreeks (⛏️ mijnwerken,
+  🗡️ zwaard, 🧟 zombie, 🏹 boogschieten, 💰 schat, 🏰 kasteel, 🚀 raket, 🤖 robot) en meer
+  variatie daarnaast (🦄 eenhoorn, 🐴 paardrijden, 💃 dansen, 🎤 karaoke, 💅 nagels, 🧁 cupcake,
+  🌸 bloemen, 🛼 rolschaatsen, 🧩 puzzel, 🦋 vlinder, ⭐ ster). Bewust één gemeenschappelijke
+  lijst, niet opgesplitst per geslacht.
+
 ## v19.1 — juli 2026
 - **Ruim 30 kant-en-klare iconen** voor beloningen (filmavond 🎬, wandeltocht 🥾, pretpark 🎡,
   pizza 🍕, …). Kies er één in Beheer bij de beloning; een eigen foto blijft mogelijk en
