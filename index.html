@@ -312,7 +312,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.5';
+const VERSION = 'klusjes-pwa v19.6';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -1674,7 +1674,7 @@ function render(){
     <div class="footer-row">
       <div class="footer-btns">
         <button class="admin-link" onclick="openBadges()">🏆 Badges</button>
-        <button class="admin-link" onclick="openRewards()">🎁 Beloningen</button>
+        <button class="admin-link" onclick="openRewards()">🛒 Shop</button>
         ${(pushSupported && isChild() && Notification.permission !== 'granted') ? `<button class="admin-link" onclick="enableNotifications()">${BELL_ICON} Meldingen aan</button>` : ''}
         ${isChild() ? '' : `<button class="admin-link" onclick="openMembers()">${FAMILY_ICON} Gezin</button>
         <button class="admin-link" onclick="openAdmin()">${GEAR_ICON} Beheer</button>`}
@@ -2336,7 +2336,8 @@ function openRewards(kidKey){
 
 function renderRewards(){
   const kids = activeKids().filter(k => !rewardsFilter || k.uid === rewardsFilter);
-  const title = rewardsFilter ? `🎁 Beloningen van ${escapeHtml(memberName(rewardsFilter))}` : '🎁 Beloningen';
+  // 🛒 = de weg naar de shop; 🎁 blijft voorbehouden aan een losse beloning zonder eigen icoon
+  const title = rewardsFilter ? `🛒 Shop van ${escapeHtml(memberName(rewardsFilter))}` : '🛒 Shop';
   document.getElementById('app').innerHTML = `
     <div class="admin-header">
       <button class="admin-back" onclick="backToDay()">‹ Terug</button>

@@ -287,7 +287,7 @@ async function tap(page, label){
     const { page } = await openApp(browser, { seed: s, user: KID });
     await page.locator('.diamond-chip').first().click();
     await page.waitForTimeout(200);
-    check('chip opent de winkel', await page.locator('.admin-title', { hasText: 'Beloningen' }).count(), 1);
+    check('chip opent de shop', await page.locator('.admin-title', { hasText: 'Shop' }).count(), 1);
     check('saldo in de kop', await page.locator('.admin-role-title', { hasText: '5 💎' }).count(), 1);
     check('twee kaarten', await page.locator('.badge-card').count(), 2);
     const film = page.locator('.badge-card', { hasText: 'Filmavond' }).first();
@@ -623,6 +623,22 @@ async function tap(page, label){
     check('na openklappen wel de rijen', await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).count(), 1);
     check('maar het iconenraster nog niet', await page.locator('.icon-pick-btn').count(), 0);
     check('inhoud hangt onder de kop', await page.locator('.admin-group-body .admin-collapse-head').count() > 0, true);
+    await page.close();
+  }
+
+  section('32. 🛒 wijst naar de shop, 🎁 blijft voor een losse beloning');
+  {
+    const s = winkel({ saldo: 5 });
+    delete s.families[FID].settings.rewards.r2.icoon;      // Pretpark zonder icoon of foto
+    const { page } = await openApp(browser, { seed: s, user: KID });
+    const footer = await page.locator('.footer-btns').textContent();
+    check('footerknop heet Shop', /🛒\s*Shop/.test(footer), true);
+    check('en draagt geen 🎁 meer', footer.includes('🎁'), false);
+    await page.evaluate(() => window.openRewards());
+    await page.waitForTimeout(250);
+    check('schermtitel ook', (await page.locator('.admin-title').textContent()).includes('🛒 Shop'), true);
+    const park = page.locator('.badge-card', { hasText: 'Pretpark' }).first();
+    check('beloning zonder icoon houdt 🎁', (await park.locator('.reward-art').textContent()).trim(), '🎁');
     await page.close();
   }
 
