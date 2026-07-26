@@ -1,13 +1,10 @@
 # Bouwplan v19 — Beloningen: 💎 diamanten verdienen en inwisselen
 
-> **Werkbestand over sessies heen.** Vink af wat af is en commit dit mee. Actuele
-> werkafspraken: `CLAUDE.md`; wijzigingen per versie: `docs/CHANGELOG.md`. **NOOIT op
-> `main`** tot de gebruiker zelf getest heeft — alles op branch
-> `claude/sharp-dijkstra-7x5ww6`, te bekijken via de githack-link.
->
-> **Hervatten?** Kijk hieronder welke fase-vakjes al aangevinkt zijn en ga verder met de
-> eerste die nog openstaat. Elke fase laat de app werkend en `cd test && npm test` groen
-> achter, dus je kunt na elke fase veilig stoppen.
+> **✅ AFGEROND — dit is nu een historisch bouwlog.** Alle fases zijn voltooid en staan
+> op `main` (laatst: v19.9, zie `docs/CHANGELOG.md`). Voor de **huidige** werking van
+> diamanten/beloningen: lees `CLAUDE.md` (sectie "💎 Diamanten & beloningen") — niet dit
+> bestand, want het aanvragen-flow uit fase 4b hieronder is in v19.7 vervangen door direct
+> kopen. Dit blijft hier staan als *waarom*-achtergrond bij de oorspronkelijke keuzes.
 
 ## Doel (idee van de gebruiker)
 Streaks en badges belonen nu alleen binnen de app. Daar komt een echte beloning bij: de
@@ -211,7 +208,10 @@ Zonder één dependency:
       aanvraag openstaat; goedkeuren bevriest naam + prijs in de claim, dus een latere
       prijswijziging herschrijft de historiek niet. Een kind kan niet goedkeuren, niet
       weigeren en niet voor een broer of zus aanvragen. 75 gevallen in `rewards.test.js`,
-      suite 115 groen.)*
+      suite 115 groen.
+      **⚠️ Later vervangen in v19.7**: dit hele aanvragen-en-goedkeuren-flow is eruit
+      gehaald en verving door direct kopen — zie `docs/CHANGELOG.md` v19.7. Deze fase blijft
+      hier staan als historisch bouwlog, niet als de huidige werking.)*
 - [x] **Fase 5 — Afbeeldingen.** Luie `settings/rewardImages`-listener, `pickRewardImage` +
       canvas-verkleining + groottegrens, `safeImageSrc`. Tests: verificatie 10.
       *(Gedaan: foto kiezen/vervangen/verwijderen in Beheer, in de app verkleind tot
@@ -219,8 +219,17 @@ Zonder één dependency:
       Listener hangt pas aan bij het openen van Beheer of de winkel. 87 gevallen in
       `rewards.test.js`; apart geverifieerd dat de canvas-uitvoer die witte lijst passeert
       (~5 kB voor een testafbeelding).)*
-- [ ] **Fase 6 — Afwerken.** `VERSION` → `v19`, `docs/CHANGELOG.md`, `CLAUDE.md`, alle vakjes
+- [x] **Fase 6 — Afwerken.** `VERSION` → `v19`, `docs/CHANGELOG.md`, `CLAUDE.md`, alle vakjes
       hierboven afvinken, volledige suite groen. **Niet** naar `main`.
+      *(Gedaan, samen met fase 5. Nadien nog v19.1 t/m v19.9 bovenop: iconen (v19.1–19.2),
+      Beheer ingeklapt (v19.3–19.4), icoon-weergave-fix (v19.5), 🛒 Shop-naam (v19.6), direct
+      kopen i.p.v. aanvragen (v19.7), "al gekregen" ingeklapt (v19.8), aankoop-melding aan
+      ouders (v19.9) — allemaal gedocumenteerd in `docs/CHANGELOG.md` en al op `main`.)*
+
+## Status: afgerond
+Alle fases van dit bouwplan zijn voltooid en staan op `main` (laatst: v19.9). Dit bestand
+blijft als historisch bouwlog staan — voor de actuele werking van diamanten/beloningen is
+`CLAUDE.md` (sectie "💎 Diamanten & beloningen") de bron van waarheid, niet dit plan.
 
 ## Verificatie
 Nieuw bestand `test/rewards.test.js` dat **`test/fake-firebase.js` hergebruikt** (niet
