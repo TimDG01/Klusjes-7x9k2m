@@ -106,6 +106,8 @@ async function attempt(browser, { scope, user, offset, label, checkId }){
     const { page } = await open(browser, null, PARENT);
     await page.evaluate(() => window.openAdmin());
     await page.waitForTimeout(150);
+    await page.evaluate(() => window.toggleAdminRow('sec:instellingen'));   // secties staan ingeklapt
+    await page.waitForTimeout(150);
     const sel = page.locator('select[onchange*="setKidCheckScope"]');
     check('keuzelijst staat in Beheer', await sel.count(), 1);
     check('vier standen', await sel.locator('option').count(), 4);

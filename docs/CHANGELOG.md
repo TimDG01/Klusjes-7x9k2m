@@ -14,6 +14,13 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.3 — juli 2026
+- **Beheer opgeruimd.** De vijf onderdelen (Taken, Beurt-taken, Beloningen, Instellingen,
+  Reeksen & badges) staan nu standaard **ingeklapt**, elk met een korte samenvatting
+  (aantal taken, ingesteld meld-uur, …). Je landt dus op een kort menu en klapt open wat je
+  nodig hebt. Het iconenraster bij een beloning zit achter een eigen knop, zodat die 51
+  knoppen niet meer in de weg staan.
+
 ## v19.2 — juli 2026
 - **19 extra iconen** voor beloningen, nu 51 in totaal: een avontuur-/spelreeks (⛏️ mijnwerken,
   🗡️ zwaard, 🧟 zombie, 🏹 boogschieten, 💰 schat, 🏰 kasteel, 🚀 raket, 🤖 robot) en meer

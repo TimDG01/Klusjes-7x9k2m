@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.2`): a Dutch-language family chores app —
+**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.3`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -434,6 +434,12 @@ exception is weekday selection, done via 7 individual toggle buttons
 (`renderWeekdayPicker`, click-to-flip-and-write) because a 7-way multi-select is where
 `prompt()` hits its limit. Admin handlers take `(taskId)` / `(shiftId)` — no per-bucket
 logic.
+- **Beheer is collapsed at two levels** (v19.3): the five top-level sections are themselves
+  accordion heads via `adminSection(key, titel, sub, maakInhoud)` with keys `'sec:*'`, all
+  **closed by default**, so the screen opens as a short menu with one-line summaries. The
+  content function is only *called* when open, so a closed section costs nothing to render —
+  that is what keeps the 51-button reward icon grid (itself behind `'icons:'+id`) out of the
+  way. New admin sections should be added the same way, with a `sub` summary.
 - **Beheer rows are a collapsed accordion** (v18.2): each task and each shift renders as a
   clickable `admin-collapse-head` showing only a one-line summary — `weekdaySummary(days)`
   (`'elke dag'` / `'nooit'` / abbreviated weekday list) plus recurring/one-off + who's in the

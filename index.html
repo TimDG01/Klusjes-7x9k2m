@@ -297,7 +297,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.2';
+const VERSION = 'klusjes-pwa v19.3';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -3142,13 +3142,38 @@ function renderAdmin(){
       <button class="admin-back" onclick="backToDay()">‹ Terug</button>
       <div class="admin-title">Beheer taken</div>
     </div>
-    ${renderAdminTasks()}
-    ${renderAdminShifts()}
-    ${renderAdminRewards()}
-    ${renderAdminSettings()}
-    ${renderAdminStreak()}
+    ${adminSection('sec:taken', 'Taken', `${taskList().filter(t => !t.fromShift).length} taken`, renderAdminTasks)}
+    ${adminSection('sec:beurten', 'Beurt-taken', `${shiftsArray().length} beurt-taken`, renderAdminShifts)}
+    ${adminSection('sec:beloningen', '🎁 Beloningen', `${rewardsArray().length} beloningen`, renderAdminRewards)}
+    ${adminSection('sec:instellingen', 'Instellingen', `melding ${notifyTimeKey} · kinderen: ${KID_CHECK_SCOPE_LABELS[kidCheckScopeKey] || 'elke dag'}`, renderAdminSettings)}
+    ${adminSection('sec:reeksen', 'Reeksen &amp; badges', reeksenSamenvatting(), renderAdminStreak)}
     ${versionLine()}
   `;
+}
+
+// Beheer groeit met elke feature mee; daarom staat elke sectie standaard INGEKLAPT en zie
+// je eerst een kort menu. Zelfde accordion als de rijen erbinnen (adminOpen +
+// toggleAdminRow), en de inhoud wordt pas opgebouwd wanneer ze open staat — dat scheelt
+// ook het tekenen van bv. het 51-knoppen-iconenraster zolang je er niet bent.
+function adminSection(key, titel, sub, maakInhoud){
+  const open = adminOpen.has(key);
+  return `
+    <div class="admin-section">
+      <div class="admin-collapse-head" onclick="toggleAdminRow('${key}')">
+        <span class="admin-caret">${open ? '▾' : '▸'}</span>
+        <div class="admin-collapse-main">
+          <div class="admin-role-title" style="margin:0;">${titel}</div>
+          <div class="admin-collapse-sub">${sub}</div>
+        </div>
+      </div>
+    </div>
+    ${open ? maakInhoud() : ''}
+  `;
+}
+
+function reeksenSamenvatting(){
+  const d = parseDayKey(streakStartKey) || parseDayKey(DEFAULT_STREAK_START);
+  return `tellen vanaf ${d.getDate()} ${MN[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 // Instellingen: per-kind vlaggen. Voorlopig één: mag het kind zijn eigen beurten
@@ -3161,7 +3186,6 @@ function renderAdminSettings(){
   ).join('');
   return `
     <div class="admin-section">
-      <div class="admin-role-title">Instellingen</div>
       <div class="admin-role-title" style="font-size:13px;margin:12px 0 6px;">Zelf beurten verschuiven</div>
       <div class="admin-weekday-row" style="flex-wrap:wrap;">${chips || '<span class="admin-vacuum-note">Nog geen kinderen in het gezin.</span>'}</div>
       <div class="admin-vacuum-note">Aangevinkte kinderen mogen hun eigen beurt zelf een dag vervroegen of doorschuiven (⏮/⏭). Uit = alleen een ouder kan verschuiven.</div>
@@ -3249,7 +3273,6 @@ function renderAdminStreak(){
   const d = parseDayKey(streakStartKey) || parseDayKey(DEFAULT_STREAK_START);
   return `
     <div class="admin-section">
-      <div class="admin-role-title">Reeksen &amp; badges</div>
       <div class="admin-next-row">
         <span>Tellen vanaf: <b>${d.getDate()} ${MN[d.getMonth()]} ${d.getFullYear()}</b><br>
         <small>dagen vóór deze datum tellen niet mee voor reeksen en badges</small></span>
@@ -3471,12 +3494,15 @@ function renderAdminRewards(){
           <span>Prijs: <b>${prijs} 💎</b></span>
           <button class="admin-icon-btn" onclick="editRewardCost('${r.id}')" title="Prijs wijzigen">${PENCIL_ICON}</button>
         </div>
-        <div class="admin-role-title" style="font-size:13px;margin:12px 0 2px;">Icoon</div>
+        <div class="admin-next-row">
+          <span>Icoon: <b>${rewardIcon(r.icoon) || '🎁'}</b><br><small>${r.icoon ? (REWARD_ICONS.find(i => i.key === r.icoon) || {}).naam : 'geen gekozen'}</small></span>
+          <button class="admin-icon-btn" onclick="toggleAdminRow('icons:${r.id}')" title="Ander icoon kiezen">${PENCIL_ICON}</button>
+        </div>
+        ${adminOpen.has('icons:' + r.id) ? `
         <div class="icon-pick">
           <button class="icon-pick-btn${r.icoon ? '' : ' active'}" onclick="setRewardIcon('${r.id}','')" title="Geen icoon">🎁</button>
           ${REWARD_ICONS.map(i => `<button class="icon-pick-btn${r.icoon === i.key ? ' active' : ''}" onclick="setRewardIcon('${r.id}','${i.key}')" title="${i.naam}">${i.emoji}</button>`).join('')}
-        </div>
-        <div class="admin-vacuum-note">Kies een icoon, of zet hieronder een eigen foto — die krijgt dan voorrang.</div>
+        </div>` : ''}
 
         <div class="admin-next-row">
           <span>Eigen foto:<br><small>${rewardImage(r.id) ? 'ingesteld — overschrijft het icoon' : 'nog geen'}</small></span>

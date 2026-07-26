@@ -42,6 +42,12 @@ const badges = page => page.evaluate(([f, k]) => {
 
 // De vieringspopup legt zich over de kaart zodra een dag compleet is; net als een
 // gebruiker klikken we ze eerst weg ("Toppie") voor we de volgende rij aantikken.
+// Beheer-secties staan sinds v19.3 standaard ingeklapt
+async function openSectie(page, key){
+  await page.evaluate(k => window.toggleAdminRow(k), key);
+  await page.waitForTimeout(150);
+}
+
 async function tap(page, label){
   const close = page.locator('.celebration-close');
   if (await close.count()) await close.first().click();
@@ -189,6 +195,7 @@ async function tap(page, label){
     const { page } = await openApp(browser, { seed: s, user: PARENT });
     await page.evaluate(() => window.openAdmin());
     await page.waitForTimeout(150);
+    await openSectie(page, 'sec:beloningen');
     check('beloning staat in Beheer', await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).count(), 1);
     check('samenvatting toont de prijs', await page.locator('.admin-collapse-sub', { hasText: '5 💎' }).count(), 1);
 
@@ -512,6 +519,7 @@ async function tap(page, label){
     const { page } = await openApp(browser, { seed: s, user: PARENT });
     await page.evaluate(() => window.openAdmin());
     await page.waitForTimeout(300);
+    await openSectie(page, 'sec:beloningen');
     await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).first().click();
     await page.waitForTimeout(200);
     check('Beheer toont de huidige foto', await page.locator('.admin-next-row img').count(), 1);
@@ -557,7 +565,10 @@ async function tap(page, label){
     const { page } = await openApp(browser, { seed: winkel({ saldo: 5 }), user: PARENT });
     await page.evaluate(() => window.openAdmin());
     await page.waitForTimeout(250);
+    await openSectie(page, 'sec:beloningen');
     await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).first().click();
+    await page.waitForTimeout(200);
+    await page.locator('button[title="Ander icoon kiezen"]').first().click();   // raster staat ingeklapt
     await page.waitForTimeout(200);
     check('meer dan 30 iconen om uit te kiezen', (await page.locator('.icon-pick-btn').count()) > 30, true);
     await page.locator('.icon-pick-btn[title="Wandeltocht"]').first().click();
@@ -583,6 +594,20 @@ async function tap(page, label){
     await p2.page.waitForTimeout(200);
     check('onbekende sleutel geweigerd', !!(await p2.page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).icoon, false);
     await p2.page.close();
+  }
+
+  section('31. Beheer is compact: secties staan ingeklapt');
+  {
+    const { page } = await openApp(browser, { seed: winkel({ saldo: 5 }), user: PARENT });
+    await page.evaluate(() => window.openAdmin());
+    await page.waitForTimeout(250);
+    check('vijf sectiekoppen', await page.locator('.admin-collapse-head').count(), 5);
+    check('geen beloningsrijen zichtbaar', (await page.locator('#app').textContent()).includes('Filmavond'), false);
+    check('wel een samenvatting', (await page.locator('.admin-collapse-sub', { hasText: '2 beloningen' }).count()), 1);
+    await openSectie(page, 'sec:beloningen');
+    check('na openklappen wel', await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).count(), 1);
+    check('maar het iconenraster nog niet', await page.locator('.icon-pick-btn').count(), 0);
+    await page.close();
   }
 
   await browser.close();
