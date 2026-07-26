@@ -14,6 +14,12 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.6 — juli 2026
+- **"🛒 Shop" in plaats van "🎁 Beloningen"** voor de ingang naar het beloningsscherm (de
+  footerknop en de titel). Het is voor de kinderen immers een winkeltje: sparen en uitgeven.
+  Het cadeautje 🎁 blijft voorbehouden aan een losse beloning zonder eigen icoon of foto, en
+  in Beheer heet de sectie nog steeds "Beloningen" — daar beheer je de catalogus.
+
 ## v19.5 — juli 2026
 - **Beheer toonde altijd 🎁 bij een beloning**, ook nadat je een icoon of foto had gekozen —
   daardoor leek het alsof je keuze niet aankwam. De rij toont nu het gekozen icoon, of een

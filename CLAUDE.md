@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.5`): a Dutch-language family chores app —
+**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.6`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -398,6 +398,9 @@ Kids earn diamonds and spend them on parent-defined rewards. Full build log:
   open request at a time); a **parent** approves — re-checking affordability, then deleting
   the request and writing the claim in **one `rootUpdate`**. A claim **freezes** `naam` +
   `diamanten`, so editing or deleting a reward never rewrites history.
+- The **entry point** to the shop is `🛒 Shop` (footer button + `renderRewards` title); `🎁`
+  stays reserved for a single reward without its own art. Beheer's section keeps the name
+  **Beloningen** — that screen manages the catalogue rather than spending.
 - **Card art, in priority order**: own photo → chosen icon (`icoon`, a key into
   `REWARD_ICONS`) → 🎁. `REWARD_ICONS` is ~51 curated **emoji** with Dutch labels, picked in
   Beheer from a button grid (`setRewardIcon`) — the same reasoning as the weekday picker:
