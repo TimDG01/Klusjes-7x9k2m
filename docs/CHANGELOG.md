@@ -14,6 +14,10 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.10 — juli 2026
+- Nieuw beloningsicoon: 🚗 **Autoritje**, toegevoegd aan de iconenkeuze in Beheer → Beloningen.
+- Geen rules-wijziging nodig.
+
 ## v19.9 — juli 2026
 - **Ouders krijgen een melding bij een aankoop.** Zodra een kind iets koopt in de shop, gaat
   er (bij de eerstvolgende run van het server-script, meestal binnen het half uur) een
