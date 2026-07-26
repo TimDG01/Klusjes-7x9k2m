@@ -120,6 +120,7 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .diamond-chip{flex:0 0 auto;padding:7px 10px;border-radius:10px;background:var(--track);color:var(--text);font-size:13px;font-weight:600;white-space:nowrap;}
 .reward-art{font-size:40px;line-height:1;}
 .reward-art img{display:block;width:88px;height:88px;margin:0 auto;border-radius:10px;object-fit:cover;}
+.admin-reward-thumb{width:20px;height:20px;border-radius:5px;object-fit:cover;vertical-align:-4px;}
 .icon-pick{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:6px;}
 .icon-pick-btn{font-size:21px;line-height:1;padding:6px 0;border-radius:8px;background:var(--track);}
 .icon-pick-btn.active{outline:2px solid var(--blue);}
@@ -311,7 +312,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.4';
+const VERSION = 'klusjes-pwa v19.5';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -3533,7 +3534,9 @@ function renderAdminRewards(){
         <div class="admin-collapse-head" onclick="toggleAdminRow('reward:${r.id}')">
           <span class="admin-caret">${open ? '▾' : '▸'}</span>
           <div class="admin-collapse-main">
-            <div class="admin-role-title" style="margin:0;">🎁 ${escapeHtml(r.naam || 'Beloning')}</div>
+            <div class="admin-role-title" style="margin:0;">${rewardImage(r.id)
+              ? `<img src="${rewardImage(r.id)}" alt="" class="admin-reward-thumb">`
+              : (rewardIcon(r.icoon) || '🎁')} ${escapeHtml(r.naam || 'Beloning')}</div>
             <div class="admin-collapse-sub">${sub}</div>
           </div>
         </div>

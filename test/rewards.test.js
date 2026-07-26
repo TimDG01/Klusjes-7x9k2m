@@ -558,6 +558,14 @@ async function tap(page, label){
     check('foto getoond', await film.locator('img').count(), 1);
     check('icoon niet meer zichtbaar', (await film.textContent()).includes('🎬'), false);
     await page.close();
+
+    // ook in Beheer krijgt de foto voorrang, als kleine thumb
+    const p2 = await openApp(browser, { seed: s, user: PARENT });
+    await p2.page.evaluate(() => window.openAdmin());
+    await p2.page.waitForTimeout(250);
+    await openSectie(p2.page, 'sec:beloningen');
+    check('Beheer toont de foto als thumb', await p2.page.locator('.admin-collapse-head .admin-reward-thumb').count(), 1);
+    await p2.page.close();
   }
 
   section('29. Icoon kiezen in Beheer (ouder-only)');
@@ -574,6 +582,11 @@ async function tap(page, label){
     await page.locator('.icon-pick-btn[title="Wandeltocht"]').first().click();
     await page.waitForTimeout(250);
     check('icoon bewaard', (await page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).icoon, 'wandeling');
+    // de rij in Beheer moet het GEKOZEN icoon tonen; er stond hier een vaste 🎁, waardoor
+    // het leek alsof de keuze niet aankwam terwijl ze wel degelijk bewaard was
+    const kop = await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).first().textContent();
+    check('Beheer toont het gekozen icoon', kop.includes('🥾'), true);
+    check('en niet meer de vaste 🎁', kop.includes('🎁'), false);
     // weer wissen via de 🎁-knop
     await page.locator('.icon-pick-btn[title="Geen icoon"]').first().click();
     await page.waitForTimeout(250);

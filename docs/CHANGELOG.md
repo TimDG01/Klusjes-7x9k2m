@@ -14,6 +14,12 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.5 — juli 2026
+- **Beheer toonde altijd 🎁 bij een beloning**, ook nadat je een icoon of foto had gekozen —
+  daardoor leek het alsof je keuze niet aankwam. De rij toont nu het gekozen icoon, of een
+  klein voorbeeldje van je eigen foto. Op het beloningsscherm van de kinderen klopte het al;
+  daar is niets veranderd.
+
 ## v19.4 — juli 2026
 - **Beheer-secties zien er nu uit als openvouwen** in plaats van als vijf knoppen: de koppen
   staan als een lijst met dunne scheidingslijnen, het driehoekje draait open en de titel
