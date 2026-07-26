@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19`): a Dutch-language family chores app —
+**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.1`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -195,7 +195,7 @@ streaks/{uid}/days/{yyyy-M-d}: true                    // completion flag: that 
 streaks/{uid}/badges/b{n}: 'yyyy-M-d'                  // n-th badge (ordinal key), value = earn-day; permanent
 streaks/{uid}/diamonds/{yyyy-M-d}: 1|4                 // v19 earning ledger; 'bonus-{ts}': ±n for a manual parent adjustment
 streaks/{uid}/rewardRequests/{id}: { rewardId, diamanten, dag }   // v19: the one open request (child-writable)
-settings/rewards/{id}: { naam, omschrijving, diamanten, order }   // v19 reward catalogue (parent-only)
+settings/rewards/{id}: { naam, omschrijving, diamanten, order, icoon? }  // v19 reward catalogue (parent-only)
 settings/rewardImages/{id}: 'data:image/jpeg;base64,…'            // v19: separate path, lazily loaded
 settings/rewardClaims/{id}: { uid, rewardId, naam, diamanten, dag }  // v19: approved redemptions (parent-only)
 
@@ -398,6 +398,12 @@ Kids earn diamonds and spend them on parent-defined rewards. Full build log:
   open request at a time); a **parent** approves — re-checking affordability, then deleting
   the request and writing the claim in **one `rootUpdate`**. A claim **freezes** `naam` +
   `diamanten`, so editing or deleting a reward never rewrites history.
+- **Card art, in priority order**: own photo → chosen icon (`icoon`, a key into
+  `REWARD_ICONS`) → 🎁. `REWARD_ICONS` is ~32 curated **emoji** with Dutch labels, picked in
+  Beheer from a button grid (`setRewardIcon`) — the same reasoning as the weekday picker:
+  a 30-way choice is past what `prompt()` can do. Emoji rather than hand-drawn SVG on
+  purpose: the custom SVG constants exist because colour emoji ignore CSS `color` when an
+  icon must be **tinted**, which is irrelevant here — and storing a key costs zero DB bytes.
 - **Images**: Firebase Storage needs Blaze and this project stays on Spark, so a photo is
   shrunk **in-app** (canvas, square-cropped to 320×320, `toDataURL('image/jpeg', 0.72)`,
   one retry at 0.5, hard refusal over 60 kB) and stored as a data-URI under

@@ -120,6 +120,9 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .diamond-chip{flex:0 0 auto;padding:7px 10px;border-radius:10px;background:var(--track);color:var(--text);font-size:13px;font-weight:600;white-space:nowrap;}
 .reward-art{font-size:40px;line-height:1;}
 .reward-art img{display:block;width:88px;height:88px;margin:0 auto;border-radius:10px;object-fit:cover;}
+.icon-pick{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:6px;}
+.icon-pick-btn{font-size:21px;line-height:1;padding:6px 0;border-radius:8px;background:var(--track);}
+.icon-pick-btn.active{outline:2px solid var(--blue);}
 .reward-ask{margin-top:8px;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.24);color:#fff;font-size:12px;font-weight:700;}
 .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
 .badge-card{position:relative;overflow:hidden;border-radius:14px;padding:14px 10px 12px;text-align:center;background:linear-gradient(150deg,var(--bc1),var(--bc2));color:#fff;}
@@ -294,7 +297,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19';
+const VERSION = 'klusjes-pwa v19.1';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -2144,6 +2147,51 @@ function openBadges(kidKey){
   render();
 }
 
+// --- Kant-en-klare beloningsiconen (v19.1) ---
+// Bewust emoji en géén handgetekende SVG's zoals TRASH_ICON en co. Die bestaan omdat
+// kleur-emoji CSS `color` negeren en dus onbruikbaar zijn wanneer een icoon getint moet
+// worden; hier is kleur net gewenst. Emoji zijn bovendien meteen herkenbaar, kosten geen
+// enkele byte in de database (we bewaren enkel de sleutel) en schalen overal mee.
+// Een eigen foto krijgt altijd voorrang; zonder foto en zonder icoon blijft het 🎁.
+const REWARD_ICONS = [
+  { key: 'film',       emoji: '🎬', naam: 'Filmavond' },
+  { key: 'popcorn',    emoji: '🍿', naam: 'Popcorn' },
+  { key: 'tv',         emoji: '📺', naam: 'Tv-tijd' },
+  { key: 'game',       emoji: '🎮', naam: 'Gamen' },
+  { key: 'pizza',      emoji: '🍕', naam: 'Pizza' },
+  { key: 'frietjes',   emoji: '🍟', naam: 'Frietjes' },
+  { key: 'ijs',        emoji: '🍦', naam: 'IJsje' },
+  { key: 'snoep',      emoji: '🍬', naam: 'Snoep' },
+  { key: 'taart',      emoji: '🍰', naam: 'Taart' },
+  { key: 'pannenkoek', emoji: '🥞', naam: 'Pannenkoeken' },
+  { key: 'restaurant', emoji: '🍽️', naam: 'Restaurant' },
+  { key: 'wandeling',  emoji: '🥾', naam: 'Wandeltocht' },
+  { key: 'fiets',      emoji: '🚲', naam: 'Fietstocht' },
+  { key: 'zwemmen',    emoji: '🏊', naam: 'Zwemmen' },
+  { key: 'voetbal',    emoji: '⚽', naam: 'Voetbal' },
+  { key: 'speeltuin',  emoji: '🛝', naam: 'Speeltuin' },
+  { key: 'pretpark',   emoji: '🎡', naam: 'Pretpark' },
+  { key: 'dierentuin', emoji: '🦁', naam: 'Dierentuin' },
+  { key: 'museum',     emoji: '🏛️', naam: 'Museum' },
+  { key: 'strand',     emoji: '🏖️', naam: 'Strand' },
+  { key: 'kamperen',   emoji: '⛺', naam: 'Kamperen' },
+  { key: 'bowling',    emoji: '🎳', naam: 'Bowlen' },
+  { key: 'trampoline', emoji: '🤸', naam: 'Trampoline' },
+  { key: 'boek',       emoji: '📚', naam: 'Boek' },
+  { key: 'muziek',     emoji: '🎵', naam: 'Muziek' },
+  { key: 'bouwen',     emoji: '🧱', naam: 'Bouwen' },
+  { key: 'knutselen',  emoji: '🎨', naam: 'Knutselen' },
+  { key: 'logeren',    emoji: '🛌', naam: 'Logeren' },
+  { key: 'laatop',     emoji: '🌙', naam: 'Later opblijven' },
+  { key: 'huisdier',   emoji: '🐶', naam: 'Huisdier' },
+  { key: 'winkelen',   emoji: '🛍️', naam: 'Winkelen' },
+  { key: 'verrassing', emoji: '🎁', naam: 'Verrassing' }
+];
+function rewardIcon(key){
+  const it = REWARD_ICONS.find(i => i.key === key);
+  return it ? it.emoji : null;
+}
+
 // --- Beloningsafbeeldingen (v19) ---
 // Firebase Storage vereist het Blaze-abonnement; dit project blijft bewust op Spark. De
 // foto gaat daarom als data-URI de database in, maar dan wél klein: in de app verkleind
@@ -2218,6 +2266,15 @@ function pickRewardImage(rewardId){
   inp.click();
 }
 
+// Icoon kiezen (of wissen met een lege sleutel). Een grid van 30+ knoppen i.p.v. een
+// prompt(): net als bij de weekdagkiezer is dat waar prompt() zijn grens bereikt.
+function setRewardIcon(rewardId, key){
+  if (!isParent()) return;
+  if (!rewardsCache[rewardId]) return;
+  if (key && !REWARD_ICONS.some(i => i.key === key)) return;
+  update(dbRef('settings/rewards/' + rewardId), { icoon: key || null });
+}
+
 function removeRewardImage(rewardId){
   if (!isParent()) return;
   if (!rewardImage(rewardId)) return;
@@ -2284,7 +2341,7 @@ function renderRewardSection(kidKey, name){
       <div class="badge-card${betaalbaar ? '' : ' locked'}" style="--bc1:#7048E8;--bc2:#0FA3A3;">
         <div class="reward-art">${rewardImage(r.id)
           ? `<img src="${rewardImage(r.id)}" alt="">`
-          : '🎁'}</div>
+          : (rewardIcon(r.icoon) || '🎁')}</div>
         <div class="badge-name">${escapeHtml(r.naam || 'Beloning')}</div>
         ${r.omschrijving ? `<div class="badge-date">${escapeHtml(r.omschrijving)}</div>` : ''}
         <div class="badge-date"><b>${prijs} 💎</b>${betaalbaar ? '' : ` · nog ${tekort}`}</div>
@@ -3393,8 +3450,15 @@ function renderAdminRewards(){
           <span>Prijs: <b>${prijs} 💎</b></span>
           <button class="admin-icon-btn" onclick="editRewardCost('${r.id}')" title="Prijs wijzigen">${PENCIL_ICON}</button>
         </div>
+        <div class="admin-role-title" style="font-size:13px;margin:12px 0 2px;">Icoon</div>
+        <div class="icon-pick">
+          <button class="icon-pick-btn${r.icoon ? '' : ' active'}" onclick="setRewardIcon('${r.id}','')" title="Geen icoon">🎁</button>
+          ${REWARD_ICONS.map(i => `<button class="icon-pick-btn${r.icoon === i.key ? ' active' : ''}" onclick="setRewardIcon('${r.id}','${i.key}')" title="${i.naam}">${i.emoji}</button>`).join('')}
+        </div>
+        <div class="admin-vacuum-note">Kies een icoon, of zet hieronder een eigen foto — die krijgt dan voorrang.</div>
+
         <div class="admin-next-row">
-          <span>Foto:<br><small>${rewardImage(r.id) ? 'ingesteld' : 'nog geen — er staat 🎁 op de kaart'}</small></span>
+          <span>Eigen foto:<br><small>${rewardImage(r.id) ? 'ingesteld — overschrijft het icoon' : 'nog geen'}</small></span>
           <span class="admin-task-actions">
             ${rewardImage(r.id) ? `<img src="${rewardImage(r.id)}" alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;">` : ''}
             <button class="admin-icon-btn" onclick="pickRewardImage('${r.id}')" title="${rewardImage(r.id) ? 'Foto vervangen' : 'Foto kiezen'}">${PENCIL_ICON}</button>
@@ -3661,7 +3725,7 @@ Object.assign(window, {
   enableNotifications, setNotifyTime, setKidCheckScope,
   addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
   openRewards, requestReward, approveRequest, refuseRequest,
-  pickRewardImage, removeRewardImage
+  pickRewardImage, removeRewardImage, setRewardIcon
 });
 
 render();

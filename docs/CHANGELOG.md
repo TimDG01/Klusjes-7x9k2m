@@ -14,6 +14,11 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.1 — juli 2026
+- **Ruim 30 kant-en-klare iconen** voor beloningen (filmavond 🎬, wandeltocht 🥾, pretpark 🎡,
+  pizza 🍕, …). Kies er één in Beheer bij de beloning; een eigen foto blijft mogelijk en
+  krijgt dan voorrang. Zonder icoon én zonder foto blijft het 🎁.
+
 ## v19 — juli 2026
 - **Nieuw: 💎 diamanten en beloningen.** Kinderen sparen diamanten en wisselen die in voor
   beloningen die jij zelf aanmaakt (filmavond, avondeten kiezen, een uitstap…).

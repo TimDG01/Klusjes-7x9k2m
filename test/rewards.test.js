@@ -523,6 +523,68 @@ async function tap(page, label){
     await page.close();
   }
 
+  section('27. Kant-en-klare iconen');
+  {
+    const s = winkel({ saldo: 5 });
+    s.families[FID].settings.rewards.r1.icoon = 'film';
+    const { page } = await openApp(browser, { seed: s, user: KID });
+    await page.evaluate(() => window.openRewards());
+    await page.waitForTimeout(250);
+    const film = page.locator('.badge-card', { hasText: 'Filmavond' }).first();
+    const park = page.locator('.badge-card', { hasText: 'Pretpark' }).first();
+    check('gekozen icoon staat op de kaart', (await film.textContent()).includes('🎬'), true);
+    check('zonder icoon blijft het 🎁', (await park.textContent()).includes('🎁'), true);
+    await page.close();
+  }
+
+  section('28. Een eigen foto krijgt voorrang op het icoon');
+  {
+    const foto = 'data:image/jpeg;base64,' + 'A'.repeat(64);
+    const s = winkel({ saldo: 5 });
+    s.families[FID].settings.rewards.r1.icoon = 'film';
+    s.families[FID].settings.rewardImages = { r1: foto };
+    const { page } = await openApp(browser, { seed: s, user: KID });
+    await page.evaluate(() => window.openRewards());
+    await page.waitForTimeout(250);
+    const film = page.locator('.badge-card', { hasText: 'Filmavond' }).first();
+    check('foto getoond', await film.locator('img').count(), 1);
+    check('icoon niet meer zichtbaar', (await film.textContent()).includes('🎬'), false);
+    await page.close();
+  }
+
+  section('29. Icoon kiezen in Beheer (ouder-only)');
+  {
+    const { page } = await openApp(browser, { seed: winkel({ saldo: 5 }), user: PARENT });
+    await page.evaluate(() => window.openAdmin());
+    await page.waitForTimeout(250);
+    await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).first().click();
+    await page.waitForTimeout(200);
+    check('meer dan 30 iconen om uit te kiezen', (await page.locator('.icon-pick-btn').count()) > 30, true);
+    await page.locator('.icon-pick-btn[title="Wandeltocht"]').first().click();
+    await page.waitForTimeout(250);
+    check('icoon bewaard', (await page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).icoon, 'wandeling');
+    // weer wissen via de 🎁-knop
+    await page.locator('.icon-pick-btn[title="Geen icoon"]').first().click();
+    await page.waitForTimeout(250);
+    check('icoon gewist', !!(await page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).icoon, false);
+    await page.close();
+  }
+
+  section('30. Een kind kan geen icoon zetten, en onzin wordt geweigerd');
+  {
+    const { page } = await openApp(browser, { seed: winkel({ saldo: 5 }), user: KID });
+    await page.evaluate(() => window.setRewardIcon('r1', 'film'));
+    await page.waitForTimeout(200);
+    check('kind kan niets zetten', !!(await page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).icoon, false);
+    await page.close();
+
+    const p2 = await openApp(browser, { seed: winkel({ saldo: 5 }), user: PARENT });
+    await p2.page.evaluate(() => window.setRewardIcon('r1', 'bestaat-niet'));
+    await p2.page.waitForTimeout(200);
+    check('onbekende sleutel geweigerd', !!(await p2.page.evaluate(f => window.__store.root.families[f].settings.rewards.r1, FID)).icoon, false);
+    await p2.page.close();
+  }
+
   await browser.close();
   done();
 })();
