@@ -601,12 +601,15 @@ async function tap(page, label){
     const { page } = await openApp(browser, { seed: winkel({ saldo: 5 }), user: PARENT });
     await page.evaluate(() => window.openAdmin());
     await page.waitForTimeout(250);
-    check('vijf sectiekoppen', await page.locator('.admin-collapse-head').count(), 5);
+    check('vijf sectiekoppen', await page.locator('.admin-group-head').count(), 5);
+    check('niets opengeklapt', await page.locator('.admin-group-body').count(), 0);
     check('geen beloningsrijen zichtbaar', (await page.locator('#app').textContent()).includes('Filmavond'), false);
-    check('wel een samenvatting', (await page.locator('.admin-collapse-sub', { hasText: '2 beloningen' }).count()), 1);
+    check('wel een samenvatting', (await page.locator('.admin-group-sub', { hasText: '2 beloningen' }).count()), 1);
     await openSectie(page, 'sec:beloningen');
-    check('na openklappen wel', await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).count(), 1);
+    check('één sectie open', await page.locator('.admin-group-body').count(), 1);
+    check('na openklappen wel de rijen', await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).count(), 1);
     check('maar het iconenraster nog niet', await page.locator('.icon-pick-btn').count(), 0);
+    check('inhoud hangt onder de kop', await page.locator('.admin-group-body .admin-collapse-head').count() > 0, true);
     await page.close();
   }
 

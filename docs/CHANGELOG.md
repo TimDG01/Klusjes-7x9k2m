@@ -14,6 +14,12 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.4 — juli 2026
+- **Beheer-secties zien er nu uit als openvouwen** in plaats van als vijf knoppen: de koppen
+  staan als een lijst met dunne scheidingslijnen, het driehoekje draait open en de titel
+  kleurt blauw zodra een sectie openstaat. De inhoud verschijnt tussen de lijnen, zodat je
+  ziet dat ze bij die kop hoort.
+
 ## v19.3 — juli 2026
 - **Beheer opgeruimd.** De vijf onderdelen (Taken, Beurt-taken, Beloningen, Instellingen,
   Reeksen & badges) staan nu standaard **ingeklapt**, elk met een korte samenvatting

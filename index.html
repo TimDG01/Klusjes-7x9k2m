@@ -158,6 +158,20 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 /* Inklapbare kop van een taak/beurt-taak: hele regel klikbaar, caret + label +
    samenvatting. De caret is een tekst-driehoek (▸/▾, geen emoji) zodat hij met
    currentColor meekleurt. */
+/* De vijf hoofdsecties van Beheer. De kop is bewust GEEN .admin-section-kaart: vijf van
+   die dikke afgeronde kaarten onder elkaar lazen als knoppen i.p.v. als koppen die
+   openvouwen. Nu een smallere balk in een andere tint dan de kaarten eronder, en de
+   inhoud met een linkerrandje ingesprongen zodat ze zichtbaar bij die kop hoort. */
+.admin-group{border-bottom:1px solid var(--border);}
+.admin-group:last-of-type{border-bottom:none;}
+.admin-group-head{display:flex;align-items:center;gap:12px;width:100%;padding:15px 2px;background:none;text-align:left;}
+.admin-group-caret{flex:0 0 auto;width:14px;font-size:11px;color:var(--text3);transition:transform .15s;}
+.admin-group.open .admin-group-caret{transform:rotate(90deg);color:var(--blue);}
+.admin-group-title{display:block;font-size:15px;font-weight:700;}
+.admin-group.open .admin-group-title{color:var(--blue);}
+.admin-group-sub{display:block;font-size:12px;color:var(--text2);margin-top:2px;overflow-wrap:break-word;}
+.admin-group-body{padding:2px 0 12px;}
+.admin-group-body .admin-section:last-child{margin-bottom:0;}
 .admin-collapse-head{display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0;}
 .admin-caret{flex:0 0 auto;font-size:12px;color:var(--text2);width:12px;}
 .admin-collapse-main{flex:1;min-width:0;}
@@ -297,7 +311,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.3';
+const VERSION = 'klusjes-pwa v19.4';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -3158,16 +3172,16 @@ function renderAdmin(){
 function adminSection(key, titel, sub, maakInhoud){
   const open = adminOpen.has(key);
   return `
-    <div class="admin-section">
-      <div class="admin-collapse-head" onclick="toggleAdminRow('${key}')">
-        <span class="admin-caret">${open ? '▾' : '▸'}</span>
-        <div class="admin-collapse-main">
-          <div class="admin-role-title" style="margin:0;">${titel}</div>
-          <div class="admin-collapse-sub">${sub}</div>
-        </div>
-      </div>
+    <div class="admin-group${open ? ' open' : ''}">
+      <button class="admin-group-head" onclick="toggleAdminRow('${key}')">
+        <span class="admin-group-caret">▶</span>
+        <span class="admin-collapse-main">
+          <span class="admin-group-title">${titel}</span>
+          <span class="admin-group-sub">${sub}</span>
+        </span>
+      </button>
+      ${open ? `<div class="admin-group-body">${maakInhoud()}</div>` : ''}
     </div>
-    ${open ? maakInhoud() : ''}
   `;
 }
 
