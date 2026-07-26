@@ -14,6 +14,24 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19 — juli 2026
+- **Nieuw: 💎 diamanten en beloningen.** Kinderen sparen diamanten en wisselen die in voor
+  beloningen die jij zelf aanmaakt (filmavond, avondeten kiezen, een uitstap…).
+  - **Verdienen**: 1 diamant per volledig afgewerkte dag, plus 3 extra bij elke badge.
+    Enkel voor **vandaag** — terugbladeren en een oude dag aanvinken levert niets op. Iets
+    weer uitvinken haalt de diamant van vandaag ook weer weg, dus aan- en uitvinken levert
+    netto niets op. Iedereen **start op 0**: dagen die al afgewerkt waren tellen niet mee.
+  - **Beheer → Beloningen**: beloningen toevoegen met naam, omschrijving, prijs in
+    diamanten en een **foto** (die wordt in de app verkleind, dus ze blijft klein). Bij
+    Instellingen kun je per kind diamanten handmatig bijsturen.
+  - **🎁 Beloningen-scherm** (footer, en via de 💎-chip op de kaart van een kind): het
+    saldo en alle beloningen; wat nog te duur is toont hoeveel er nog nodig is.
+  - **Aanvragen en goedkeuren**: het kind tikt "Vraag dit", jij keurt goed of weigert. Pas
+    bij goedkeuring gaan de diamanten af. Eén openstaande aanvraag per kind; beloningen
+    zijn onbeperkt herhaalbaar. Ingewisselde beloningen blijven in de geschiedenis staan,
+    ook als je de beloning later aanpast of verwijdert.
+- Geen rules-wijziging nodig.
+
 ## v18.9 — juli 2026
 - **Nieuw: "Kinderen mogen afvinken op"** (Beheer → Instellingen, ouder-only). Regelt of een
   kind ook op een àndere dag dan vandaag mag af- of uitvinken — zo kan een vergeten klusje van

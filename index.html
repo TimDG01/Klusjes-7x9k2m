@@ -119,6 +119,7 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .streak-row .streak-strip{margin:0;}
 .diamond-chip{flex:0 0 auto;padding:7px 10px;border-radius:10px;background:var(--track);color:var(--text);font-size:13px;font-weight:600;white-space:nowrap;}
 .reward-art{font-size:40px;line-height:1;}
+.reward-art img{display:block;width:88px;height:88px;margin:0 auto;border-radius:10px;object-fit:cover;}
 .reward-ask{margin-top:8px;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.24);color:#fff;font-size:12px;font-weight:700;}
 .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
 .badge-card{position:relative;overflow:hidden;border-radius:14px;padding:14px 10px 12px;text-align:center;background:linear-gradient(150deg,var(--bc1),var(--bc2));color:#fff;}
@@ -293,7 +294,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v18.9';
+const VERSION = 'klusjes-pwa v19';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -1359,6 +1360,7 @@ function teardownFamily(){
   rewardsCache = {};
   rewardClaimsCache = {};
   rewardImagesCache = {};
+  rewardImagesAttached = false;
   celebratedDays = new Set();
   loadError = null;
 }
@@ -2142,6 +2144,87 @@ function openBadges(kidKey){
   render();
 }
 
+// --- Beloningsafbeeldingen (v19) ---
+// Firebase Storage vereist het Blaze-abonnement; dit project blijft bewust op Spark. De
+// foto gaat daarom als data-URI de database in, maar dan wél klein: in de app verkleind
+// tot 320×320 JPEG (± 20–40 kB). Ze leven op een APART pad met een LUIE listener, want ze
+// zijn veruit de zwaarste data en het dagscherm heeft er niets aan.
+let rewardImagesAttached = false;
+function attachRewardImages(){
+  if (rewardImagesAttached || !familyInited) return;
+  rewardImagesAttached = true;
+  familyUnsubs.push(onValue(dbRef('settings/rewardImages'), snap => {
+    rewardImagesCache = snap.val() || {};
+    render();
+  }, () => { rewardImagesCache = {}; render(); }));
+}
+
+// Strikte witte lijst vóór een waarde in een <img src> belandt. Deze app heeft ooit een
+// opgeslagen-XSS gehad; alles wat uit de database komt is verdacht tot bewezen anders.
+function safeImageSrc(v){
+  return (typeof v === 'string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) ? v : null;
+}
+function rewardImage(rewardId){
+  return safeImageSrc(rewardImagesCache[rewardId]);
+}
+
+// Verkleinen in de browser: vierkant bijsnijden (cover) naar 320×320 en als JPEG
+// uitschrijven. Te groot ondanks dat? Eén herkansing op lagere kwaliteit, en anders
+// helemaal niets wegschrijven — er mag nooit een megabyte in de database belanden.
+const REWARD_IMG_SIZE = 320;
+const REWARD_IMG_MAX = 60 * 1024;
+function shrinkImage(file, cb){
+  try {
+    const reader = new FileReader();
+    reader.onerror = () => alert('Die afbeelding kon niet gelezen worden.');
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => alert('Dat bestand lijkt geen afbeelding te zijn.');
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = c.height = REWARD_IMG_SIZE;
+          const ctx = c.getContext('2d');
+          const zijde = Math.min(img.width, img.height);           // vierkant uit het midden
+          const sx = (img.width - zijde) / 2, sy = (img.height - zijde) / 2;
+          ctx.drawImage(img, sx, sy, zijde, zijde, 0, 0, REWARD_IMG_SIZE, REWARD_IMG_SIZE);
+          let uri = c.toDataURL('image/jpeg', 0.72);
+          if (uri.length > REWARD_IMG_MAX) uri = c.toDataURL('image/jpeg', 0.5);
+          if (uri.length > REWARD_IMG_MAX){
+            alert('Die foto blijft te groot. Probeer een andere.');
+            return;
+          }
+          if (!safeImageSrc(uri)){ alert('De afbeelding kon niet verwerkt worden.'); return; }
+          cb(uri);
+        } catch (e){ alert('De afbeelding kon niet verwerkt worden.'); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  } catch (e){ alert('De afbeelding kon niet gelezen worden.'); }
+}
+
+// Op iOS opent dit meteen de camera of de fotobibliotheek.
+function pickRewardImage(rewardId){
+  if (!isParent()) return;
+  if (!rewardsCache[rewardId]) return;
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/*';
+  inp.onchange = () => {
+    const f = inp.files && inp.files[0];
+    if (f) shrinkImage(f, uri => set(dbRef('settings/rewardImages/' + rewardId), uri));
+  };
+  inp.click();
+}
+
+function removeRewardImage(rewardId){
+  if (!isParent()) return;
+  if (!rewardImage(rewardId)) return;
+  if (!confirm('Foto van deze beloning verwijderen?')) return;
+  remove(dbRef('settings/rewardImages/' + rewardId));
+}
+
 // --- Beloningswinkel (v19) ---
 // rewardsFilter werkt als badgesFilter: een kind ziet altijd enkel zichzelf, een ouder
 // één kind (via de 💎-chip) of iedereen (via de footerknop).
@@ -2153,6 +2236,7 @@ function openRewards(kidKey){
   } else {
     rewardsFilter = (membersCache[kidKey] && membersCache[kidKey].rol === 'kind') ? kidKey : null;
   }
+  attachRewardImages();   // pas nu de foto's ophalen
   screen = 'rewards';
   render();
 }
@@ -2198,7 +2282,9 @@ function renderRewardSection(kidKey, name){
     const tekort = prijs - saldo;
     return `
       <div class="badge-card${betaalbaar ? '' : ' locked'}" style="--bc1:#7048E8;--bc2:#0FA3A3;">
-        <div class="reward-art">🎁</div>
+        <div class="reward-art">${rewardImage(r.id)
+          ? `<img src="${rewardImage(r.id)}" alt="">`
+          : '🎁'}</div>
         <div class="badge-name">${escapeHtml(r.naam || 'Beloning')}</div>
         ${r.omschrijving ? `<div class="badge-date">${escapeHtml(r.omschrijving)}</div>` : ''}
         <div class="badge-date"><b>${prijs} 💎</b>${betaalbaar ? '' : ` · nog ${tekort}`}</div>
@@ -2949,6 +3035,7 @@ function explainAddParent(){
 // zijn voor kinderen al verborgen; deze routes zitten ook programmatiek dicht.
 function openAdmin(){
   if (!isParent()) return;
+  attachRewardImages();   // Beheer toont de foto's van de beloningen
   screen = 'admin';
   render();
 }
@@ -3306,6 +3393,14 @@ function renderAdminRewards(){
           <span>Prijs: <b>${prijs} 💎</b></span>
           <button class="admin-icon-btn" onclick="editRewardCost('${r.id}')" title="Prijs wijzigen">${PENCIL_ICON}</button>
         </div>
+        <div class="admin-next-row">
+          <span>Foto:<br><small>${rewardImage(r.id) ? 'ingesteld' : 'nog geen — er staat 🎁 op de kaart'}</small></span>
+          <span class="admin-task-actions">
+            ${rewardImage(r.id) ? `<img src="${rewardImage(r.id)}" alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;">` : ''}
+            <button class="admin-icon-btn" onclick="pickRewardImage('${r.id}')" title="${rewardImage(r.id) ? 'Foto vervangen' : 'Foto kiezen'}">${PENCIL_ICON}</button>
+            ${rewardImage(r.id) ? `<button class="admin-icon-btn danger" onclick="removeRewardImage('${r.id}')" title="Foto verwijderen">${TRASH_ICON}</button>` : ''}
+          </span>
+        </div>
       </div>
     ` : '';
     return `
@@ -3565,7 +3660,8 @@ Object.assign(window, {
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
   enableNotifications, setNotifyTime, setKidCheckScope,
   addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
-  openRewards, requestReward, approveRequest, refuseRequest
+  openRewards, requestReward, approveRequest, refuseRequest,
+  pickRewardImage, removeRewardImage
 });
 
 render();

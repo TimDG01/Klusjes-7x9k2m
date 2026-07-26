@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v18** (`VERSION` = `klusjes-pwa v18.9`): a Dutch-language family chores app —
+**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -193,6 +193,11 @@ days/{yyyy-M-d}/snap/{uid}/{taskId}: { label, order, weekdays?, members?, … } 
 days/{yyyy-M-d}/shift/{shiftId}: { uid, line }         // frozen turn-task history
 streaks/{uid}/days/{yyyy-M-d}: true                    // completion flag: that kid finished everything that day
 streaks/{uid}/badges/b{n}: 'yyyy-M-d'                  // n-th badge (ordinal key), value = earn-day; permanent
+streaks/{uid}/diamonds/{yyyy-M-d}: 1|4                 // v19 earning ledger; 'bonus-{ts}': ±n for a manual parent adjustment
+streaks/{uid}/rewardRequests/{id}: { rewardId, diamanten, dag }   // v19: the one open request (child-writable)
+settings/rewards/{id}: { naam, omschrijving, diamanten, order }   // v19 reward catalogue (parent-only)
+settings/rewardImages/{id}: 'data:image/jpeg;base64,…'            // v19: separate path, lazily loaded
+settings/rewardClaims/{id}: { uid, rewardId, naam, diamanten, dag }  // v19: approved redemptions (parent-only)
 
 /familyCodes/{CODE6}: familyId    // top-level pointer (baseRef)
 /userIndex/{uid}: familyId        // top-level pointer (baseRef)
@@ -367,6 +372,45 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   `BADGES` — a new badge needs an entry in **both**. Gradient ids are uniqued per instance
   via `svgUid`. Badge names are code constants (skip `escapeHtml`); anything
   task-label-derived still must not.
+
+### 💎 Diamanten & beloningen (v19)
+Kids earn diamonds and spend them on parent-defined rewards. Full build log:
+**`docs/PLAN-v19-beloningen.md`**.
+- **Earning is WRITTEN, never derived.** `writeCompletionFlag` adds one key to its existing
+  atomic `rootUpdate`: `streaks/{uid}/diamonds/{dayKey} = DIAMANTEN_PER_DAG (1) +
+  DIAMANTEN_PER_BADGE (3) on a badge day`. Deriving from the completion flags was rejected
+  for three reasons: every family would instantly get diamonds for all past days (they must
+  **start at 0**), the balance would move when a parent edits `settings/streakStart`, and
+  the old-day backfill would mint diamonds out of nowhere. Day-keyed = **idempotent**, so
+  "max 1 per day" is a property of the shape, not a guard — never replace it with an
+  incrementing counter (`render()` runs from several async listeners and on several devices).
+- **Only for today.** `writeCompletionFlag` also runs for a *past* day that becomes complete
+  (the deliberate "kid forgot to tap" streak repair — that stays), so the diamond write is
+  gated on `key === dayKey(new Date())`. Without it, paging back and ticking an old day is
+  free diamonds (found on-device during v19 testing).
+- The badge bonus uses `sim.earnDays.includes(key)`, **not** `newRanks`: `newRanks` is empty
+  once the badge exists, so an uncheck-and-recheck would strip the day's 3 badge diamonds
+  while the kid keeps the (permanent) badge.
+- **Unchecking today** removes the day's diamond too (so tick-then-untick nets zero) — never
+  on a past day, and never if it would push the balance below what's already been spent.
+- **Spending** is a ledger: `kidDiamonds(uid)` = sum of `diamonds` − sum of that kid's
+  `settings/rewardClaims`. A child writes only its own `streaks/{uid}/rewardRequests` (one
+  open request at a time); a **parent** approves — re-checking affordability, then deleting
+  the request and writing the claim in **one `rootUpdate`**. A claim **freezes** `naam` +
+  `diamanten`, so editing or deleting a reward never rewrites history.
+- **Images**: Firebase Storage needs Blaze and this project stays on Spark, so a photo is
+  shrunk **in-app** (canvas, square-cropped to 320×320, `toDataURL('image/jpeg', 0.72)`,
+  one retry at 0.5, hard refusal over 60 kB) and stored as a data-URI under
+  `settings/rewardImages/{id}` — a **separate path with a lazy listener**
+  (`attachRewardImages()`, called from `openRewards`/`openAdmin`, flag
+  `rewardImagesAttached` reset in `teardownFamily`), because it is by far the heaviest node
+  and the day screen has no use for it. Rendering goes through `safeImageSrc()`, a strict
+  `data:image/(png|jpeg|webp);base64,…` allow-list — this app has shipped a stored-XSS
+  before. `deleteReward` removes the reward **and** its image in one update (no orphans).
+- **✅ No rules change**: `settings` is node-wide parent-only and `streaks/$childId` is
+  parent-or-self, and both **cascade** to the new sub-keys. `scripts/notify.js` is untouched
+  — rewards don't affect the "open chores" computation, so the ⚠️ logic-duplication burden
+  doesn't grow.
 
 ### Admin & members screens
 No client-side password — access is the **parent role** (`isParent()`; children don't see

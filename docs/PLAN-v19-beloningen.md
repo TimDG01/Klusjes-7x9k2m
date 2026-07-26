@@ -212,8 +212,13 @@ Zonder één dependency:
       prijswijziging herschrijft de historiek niet. Een kind kan niet goedkeuren, niet
       weigeren en niet voor een broer of zus aanvragen. 75 gevallen in `rewards.test.js`,
       suite 115 groen.)*
-- [ ] **Fase 5 — Afbeeldingen.** Luie `settings/rewardImages`-listener, `pickRewardImage` +
+- [x] **Fase 5 — Afbeeldingen.** Luie `settings/rewardImages`-listener, `pickRewardImage` +
       canvas-verkleining + groottegrens, `safeImageSrc`. Tests: verificatie 10.
+      *(Gedaan: foto kiezen/vervangen/verwijderen in Beheer, in de app verkleind tot
+      320×320 JPEG met een harde grens van 60 kB, getoond via een strikte witte lijst.
+      Listener hangt pas aan bij het openen van Beheer of de winkel. 87 gevallen in
+      `rewards.test.js`; apart geverifieerd dat de canvas-uitvoer die witte lijst passeert
+      (~5 kB voor een testafbeelding).)*
 - [ ] **Fase 6 — Afwerken.** `VERSION` → `v19`, `docs/CHANGELOG.md`, `CLAUDE.md`, alle vakjes
       hierboven afvinken, volledige suite groen. **Niet** naar `main`.
 

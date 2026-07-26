@@ -468,6 +468,61 @@ async function tap(page, label){
     await page.close();
   }
 
+  section('24. Afbeeldingen: luie listener, tonen, en de witte lijst');
+  {
+    // 1×1 JPEG als geldige data-URI
+    const foto = 'data:image/jpeg;base64,' + 'A'.repeat(64);
+    const s = winkel({ saldo: 5 });
+    s.families[FID].settings.rewardImages = { r1: foto, r2: 'javascript:alert(1)' };
+    const { page } = await openApp(browser, { seed: s, user: KID });
+
+    // luie listener: pas ná het openen van de winkel zijn de foto's geladen
+    const voor = await page.evaluate(() => document.querySelectorAll('.reward-art img').length);
+    check('op het dagscherm nog geen foto\'s geladen', voor, 0);
+
+    await page.evaluate(() => window.openRewards());
+    await page.waitForTimeout(300);
+    check('geldige foto verschijnt als <img>', await page.locator('.badge-card', { hasText: 'Filmavond' }).locator('img').count(), 1);
+    const park = page.locator('.badge-card', { hasText: 'Pretpark' }).first();
+    check('onveilige waarde wordt geweigerd', await park.locator('img').count(), 0);
+    check('en valt terug op 🎁', (await park.textContent()).includes('🎁'), true);
+    check('komt ook niet in de DOM', (await page.locator('#app').innerHTML()).includes('javascript:'), false);
+    await page.close();
+  }
+
+  section('25. Een kind kan geen foto zetten of wissen');
+  {
+    const foto = 'data:image/jpeg;base64,' + 'A'.repeat(64);
+    const s = winkel({ saldo: 5 });
+    s.families[FID].settings.rewardImages = { r1: foto };
+    const { page } = await openApp(browser, { seed: s, user: KID });
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(() => window.removeRewardImage('r1'));
+    await page.waitForTimeout(200);
+    const na = await page.evaluate(f => window.__store.root.families[f].settings.rewardImages, FID);
+    check('foto staat er nog', !!(na && na.r1), true);
+    await page.close();
+  }
+
+  section('26. Ouder: Beheer toont de fotoknop en wissen werkt');
+  {
+    const foto = 'data:image/jpeg;base64,' + 'A'.repeat(64);
+    const s = winkel({ saldo: 5 });
+    s.families[FID].settings.rewardImages = { r1: foto };
+    const { page } = await openApp(browser, { seed: s, user: PARENT });
+    await page.evaluate(() => window.openAdmin());
+    await page.waitForTimeout(300);
+    await page.locator('.admin-collapse-head', { hasText: 'Filmavond' }).first().click();
+    await page.waitForTimeout(200);
+    check('Beheer toont de huidige foto', await page.locator('.admin-next-row img').count(), 1);
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.evaluate(() => window.removeRewardImage('r1'));
+    await page.waitForTimeout(250);
+    const na = await page.evaluate(f => window.__store.root.families[f].settings.rewardImages || {}, FID);
+    check('foto gewist door de ouder', !!na.r1, false);
+    await page.close();
+  }
+
   await browser.close();
   done();
 })();
