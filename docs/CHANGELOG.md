@@ -14,6 +14,18 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v19.7 — juli 2026
+- **Kinderen kopen nu zelf, zonder eerst te vragen.** Wie genoeg diamanten heeft tikt "Koop"
+  (met een bevestiging) en de beloning staat meteen op zijn naam; de diamanten gaan er direct af.
+- **Twee lijstjes per kind** in de shop: *Gekocht — nog te krijgen* en *Al gekregen*. Het kind
+  ziet dus zelf of het al geleverd is.
+- **De ouder ziet die aankopen ook** en duidt met ✓ aan wanneer de beloning echt gegeven is
+  (↩ om dat terug te draaien). Met 🗑 kan een aankoop teruggedraaid worden — de diamanten
+  komen dan terug, handig bij een mistik van een kind.
+- Het oude aanvragen-en-goedkeuren is vervallen. Al goedgekeurde inwisselingen van vóór deze
+  versie blijven gewoon meetellen voor het saldo.
+- Geen rules-wijziging nodig.
+
 ## v19.6 — juli 2026
 - **"🛒 Shop" in plaats van "🎁 Beloningen"** voor de ingang naar het beloningsscherm (de
   footerknop en de titel). Het is voor de kinderen immers een winkeltje: sparen en uitgeven.

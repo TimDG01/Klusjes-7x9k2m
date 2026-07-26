@@ -312,7 +312,7 @@ const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.6';
+const VERSION = 'klusjes-pwa v19.7';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -727,13 +727,14 @@ let membersLoaded = false;
 let shiftsCache = {}; // { shiftId: { name, order?, weekdays, lines, members?, next?, override?, lastDone? } }
 let vacuumLoaded = false; // (gate-naam behouden; dekt nu de shifts-listener)
 
-// diamonds/rewardRequests horen bij het kind en leven daarom onder streaks/{uid} — ze
-// komen mee met deze ene listener (geen extra leesverkeer) én vallen onder dezelfde
-// rules-regel, die een kind zijn eigen tak laat schrijven.
-let streaksCache = {}; // { uid: { days, badges, diamonds, rewardRequests } }
+// diamonds/purchases horen bij het kind en leven daarom onder streaks/{uid} — ze komen
+// mee met deze ene listener (geen extra leesverkeer) én vallen onder dezelfde rules-regel,
+// die een kind zijn eigen tak laat schrijven. Dat is ook precies waarom een kind sinds
+// v19.7 zelf kan kopen zonder dat de rules aangepast moesten worden.
+let streaksCache = {}; // { uid: { days, badges, diamonds, purchases } }
 let streaksLoaded = false;
 function streaksOf(uid){
-  return streaksCache[uid] || { days: {}, badges: {}, diamonds: {}, rewardRequests: {} };
+  return streaksCache[uid] || { days: {}, badges: {}, diamonds: {}, purchases: {} };
 }
 
 // Beloningen (v19). Eigen listeners, allemaal zonder laad-gate en niet-fataal: dit is een
@@ -1125,15 +1126,19 @@ function kidDiamondsEarned(uid){
   }, 0);
 }
 
-// Uitgegeven = de goedgekeurde inwisselingen van dit kind. De claim bewaart zijn eigen
-// prijs, dus een latere prijswijziging of een verwijderde beloning verandert dit niet.
+// Uitgegeven = wat dit kind zelf gekocht heeft. Elke regel bewaart zijn eigen prijs, dus
+// een latere prijswijziging of een verwijderde beloning verandert het saldo niet.
+// settings/rewardClaims telt mee voor de historiek van vóór v19.7, toen een ouder een
+// aanvraag goedkeurde — die records blijven bestaan en mogen niet plots gratis worden.
 function kidDiamondsSpent(uid){
-  return Object.keys(rewardClaimsCache).reduce((sum, id) => {
-    const c = rewardClaimsCache[id];
-    if (!c || c.uid !== uid) return sum;
+  const som = (obj, hoort) => Object.keys(obj).reduce((sum, id) => {
+    const c = obj[id];
+    if (!c || !hoort(c)) return sum;
     const n = Number(c.diamanten);
     return sum + (Number.isFinite(n) ? n : 0);
   }, 0);
+  return som(streaksOf(uid).purchases || {}, () => true)
+       + som(rewardClaimsCache, c => c.uid === uid);
 }
 
 // Saldo. Nooit negatief tonen: een grootboek dat door een handmatige correctie onder nul
@@ -1142,12 +1147,16 @@ function kidDiamonds(uid){
   return Math.max(0, kidDiamondsEarned(uid) - kidDiamondsSpent(uid));
 }
 
-// De ene openstaande aanvraag van dit kind, of null. Er kan er bewust maar één tegelijk
-// zijn (zie het plan): dat scheelt reserveringswiskunde en is voor een kind duidelijker.
-function openRequestOf(uid){
-  const reqs = streaksOf(uid).rewardRequests || {};
-  const id = Object.keys(reqs)[0];
-  return id ? { id, ...reqs[id] } : null;
+// De aankopen van dit kind, nieuwste eerst (push-sleutels lopen chronologisch).
+function purchasesOf(uid){
+  const p = streaksOf(uid).purchases || {};
+  return Object.keys(p).sort().reverse().map(id => ({ id, ...p[id] }));
+}
+
+// 'yyyy-M-d' leesbaar maken voor een kind: "26 juli".
+function dagLabel(key){
+  const d = parseDayKey(key);
+  return d ? `${d.getDate()} ${MN[d.getMonth()]}` : String(key || '');
 }
 
 // Rang (= ontwerp-index) van de badge die op deze dag verdiend werd, of null.
@@ -1255,8 +1264,8 @@ function initFamily(){
       streaksCache[uid] = {
         days: v[uid].days || {},
         badges: v[uid].badges || {},
-        diamonds: v[uid].diamonds || {},              // v19: verdiengrootboek per dag
-        rewardRequests: v[uid].rewardRequests || {}   // v19: openstaande aanvraag
+        diamonds: v[uid].diamonds || {},      // v19: verdiengrootboek per dag
+        purchases: v[uid].purchases || {}     // v19.7: wat het kind zelf gekocht heeft
       };
     });
     streaksLoaded = true;
@@ -2351,24 +2360,8 @@ function renderRewards(){
 
 function renderRewardSection(kidKey, name){
   const saldo = kidDiamonds(kidKey);
-  const req = openRequestOf(kidKey);
-  // wie mag hier aanvragen: een ouder altijd, een kind enkel voor zichzelf
-  const magVragen = isParent() || (isChild() && authUser && authUser.uid === kidKey);
-
-  const aanvraag = req ? (() => {
-    const r = rewardsCache[req.rewardId];
-    const naam = (r && r.naam) || 'Beloning';   // de beloning kan intussen verwijderd zijn
-    return `
-      <div class="admin-next-row">
-        <span>Aangevraagd: <b>${escapeHtml(naam)}</b> · ${Number(req.diamanten) || 0} 💎<br>
-        <small>${isParent() ? 'Keur goed of weiger.' : 'Wacht op goedkeuring van een ouder.'}</small></span>
-        ${isParent() ? `<span class="admin-task-actions">
-          <button class="admin-icon-btn accent" onclick="approveRequest('${kidKey}')" title="Goedkeuren">✓</button>
-          <button class="admin-icon-btn danger" onclick="refuseRequest('${kidKey}')" title="Weigeren">${TRASH_ICON}</button>
-        </span>` : ''}
-      </div>
-    `;
-  })() : '';
+  // een kind koopt enkel voor zichzelf; een ouder mag het ook namens een kind doen
+  const magKopen = isParent() || (isChild() && authUser && authUser.uid === kidKey);
 
   const cards = rewardsArray().map(r => {
     const prijs = Number(r.diamanten) || 0;
@@ -2382,84 +2375,79 @@ function renderRewardSection(kidKey, name){
         <div class="badge-name">${escapeHtml(r.naam || 'Beloning')}</div>
         ${r.omschrijving ? `<div class="badge-date">${escapeHtml(r.omschrijving)}</div>` : ''}
         <div class="badge-date"><b>${prijs} 💎</b>${betaalbaar ? '' : ` · nog ${tekort}`}</div>
-        ${(betaalbaar && !req && magVragen)
-          ? `<button class="reward-ask" onclick="requestReward('${r.id}','${kidKey}')">Vraag dit</button>` : ''}
+        ${(betaalbaar && magKopen)
+          ? `<button class="reward-ask" onclick="buyReward('${r.id}','${kidKey}')">Koop</button>` : ''}
       </div>
     `;
   }).join('');
 
-  // korte historiek: push-sleutels lopen chronologisch, dus omgekeerd sorteren = nieuwste eerst
-  const hist = Object.keys(rewardClaimsCache)
-    .filter(id => rewardClaimsCache[id] && rewardClaimsCache[id].uid === kidKey)
-    .sort().reverse().slice(0, 5)
-    .map(id => {
-      const c = rewardClaimsCache[id];
-      return `<div class="admin-vacuum-note">${escapeHtml(c.naam || 'Beloning')} · ${Number(c.diamanten) || 0} 💎 · ${escapeHtml(c.dag || '')}</div>`;
-    }).join('');
+  // Aankopen, nieuwste eerst. Nog niet geleverd staat bovenaan zodat een ouder meteen
+  // ziet wat er nog moet gebeuren.
+  const aankopen = purchasesOf(kidKey);
+  const open = aankopen.filter(p => !p.gegeven);
+  const klaar = aankopen.filter(p => p.gegeven);
+  const rij = p => `
+    <div class="admin-next-row">
+      <span>${rewardIcon(p.icoon) || '🎁'} <b>${escapeHtml(p.naam || 'Beloning')}</b> · ${Number(p.diamanten) || 0} 💎<br>
+      <small>${p.gegeven
+        ? `gekregen op ${escapeHtml(dagLabel(p.gegeven))}`
+        : `gekocht op ${escapeHtml(dagLabel(p.dag))} · ${isParent() ? 'nog te geven' : 'nog niet gekregen'}`}</small></span>
+      ${isParent() ? `<span class="admin-task-actions">
+        <button class="admin-icon-btn${p.gegeven ? '' : ' accent'}" onclick="toggleGiven('${kidKey}','${p.id}')" title="${p.gegeven ? 'Toch nog niet gegeven' : 'Aanduiden als gegeven'}">${p.gegeven ? '↩' : '✓'}</button>
+        <button class="admin-icon-btn danger" onclick="refundPurchase('${kidKey}','${p.id}')" title="Aankoop terugdraaien (diamanten terug)">${TRASH_ICON}</button>
+      </span>` : ''}
+    </div>
+  `;
 
   return `
     <div class="admin-section">
       <div class="admin-role-title">${escapeHtml(name)} — ${saldo} 💎</div>
-      ${aanvraag}
       ${cards
         ? `<div class="badge-grid">${cards}</div>`
         : '<div class="admin-vacuum-note">Nog geen beloningen. Een ouder maakt ze aan via Beheer.</div>'}
-      ${hist ? `<div class="admin-role-title" style="font-size:13px;margin:14px 0 4px;">Al ingewisseld</div>${hist}` : ''}
+      ${open.length ? `<div class="admin-role-title" style="font-size:13px;margin:14px 0 4px;">Gekocht — nog te krijgen</div>${open.map(rij).join('')}` : ''}
+      ${klaar.length ? `<div class="admin-role-title" style="font-size:13px;margin:14px 0 4px;">Al gekregen</div>${klaar.slice(0, 5).map(rij).join('')}` : ''}
+      ${(!open.length && !klaar.length) ? '<div class="admin-vacuum-note">Nog niets gekocht.</div>' : ''}
     </div>
   `;
 }
 
-// Een kind vraagt een beloning aan (ouder mag het ook namens een kind). Bewust maar
-// ÉÉN openstaande aanvraag per kind: dat scheelt reserveringswiskunde bij meerdere
-// aanvragen die samen niet betaalbaar zijn, en is voor een kind veel duidelijker.
-function requestReward(rewardId, kidKey){
+// Een kind koopt zelf, zonder toestemming te vragen — de ouder ziet de aankoop nadien in
+// het lijstje en duidt aan wanneer ze geleverd is. Naam, prijs en icoon worden BEVROREN,
+// zodat een latere prijswijziging of een verwijderde beloning de historiek niet herschrijft.
+function buyReward(rewardId, kidKey){
   const r = rewardsCache[rewardId];
   if (!r) return;
   const uid = isChild() ? (authUser && authUser.uid) : kidKey;
   if (!uid || !membersCache[uid]) return;
-  if (openRequestOf(uid)){
-    alert('Er staat al een aanvraag open. Wacht tot een ouder ze bekijkt.');
-    return;
-  }
   const prijs = Number(r.diamanten) || 0;
   if (kidDiamonds(uid) < prijs){
     alert('Nog niet genoeg diamanten voor deze beloning.');
     return;
   }
-  push(dbRef(`streaks/${uid}/rewardRequests`), { rewardId, diamanten: prijs, dag: dayKey(clampedToday()) });
+  if (!confirm(`"${r.naam || 'Beloning'}" kopen voor ${prijs} 💎?`)) return;
+  const rec = { rewardId, naam: r.naam || 'Beloning', diamanten: prijs, dag: dayKey(clampedToday()) };
+  if (r.icoon) rec.icoon = r.icoon;
+  push(dbRef(`streaks/${uid}/purchases`), rec);
 }
 
-// Goedkeuren (ouder): betaalbaarheid OPNIEUW controleren — het saldo kan intussen gedaald
-// zijn — en dan aanvraag wissen + claim schrijven in één atomische update. De claim
-// bevriest naam en prijs, zodat een latere prijswijziging of verwijdering de historiek
-// niet herschrijft.
-function approveRequest(kidKey){
+// De ouder duidt aan dat de beloning echt gegeven is (of draait dat terug bij een vergissing).
+function toggleGiven(kidKey, purchaseId){
   if (!isParent()) return;
-  const req = openRequestOf(kidKey);
-  if (!req) return;
-  const prijs = Number(req.diamanten) || 0;
-  if (kidDiamonds(kidKey) < prijs){
-    alert('Er zijn intussen niet genoeg diamanten. De aanvraag blijft staan.');
-    return;
-  }
-  const r = rewardsCache[req.rewardId];
-  const naam = (r && r.naam) || 'Beloning';
-  if (!confirm(`"${naam}" goedkeuren? Dat kost ${prijs} 💎.`)) return;
-  const claimKey = push(dbRef('settings/rewardClaims')).key;
-  rootUpdate({
-    [`streaks/${kidKey}/rewardRequests/${req.id}`]: null,
-    [`settings/rewardClaims/${claimKey}`]: {
-      uid: kidKey, rewardId: req.rewardId, naam, diamanten: prijs, dag: dayKey(clampedToday())
-    }
-  });
+  const p = (streaksOf(kidKey).purchases || {})[purchaseId];
+  if (!p) return;
+  update(dbRef(`streaks/${kidKey}/purchases/${purchaseId}`),
+         { gegeven: p.gegeven ? null : dayKey(clampedToday()) });
 }
 
-function refuseRequest(kidKey){
+// Aankoop terugdraaien (ouder): de regel verdwijnt en de diamanten komen vanzelf weer vrij,
+// want het saldo is verdiend min gekocht. Voor een mistik van een kind.
+function refundPurchase(kidKey, purchaseId){
   if (!isParent()) return;
-  const req = openRequestOf(kidKey);
-  if (!req) return;
-  if (!confirm('Deze aanvraag weigeren? Er gaan geen diamanten af.')) return;
-  remove(dbRef(`streaks/${kidKey}/rewardRequests/${req.id}`));
+  const p = (streaksOf(kidKey).purchases || {})[purchaseId];
+  if (!p) return;
+  if (!confirm(`"${p.naam || 'Beloning'}" terugdraaien? De ${Number(p.diamanten) || 0} 💎 komen terug.`)) return;
+  remove(dbRef(`streaks/${kidKey}/purchases/${purchaseId}`));
 }
 
 function renderBadges(){
@@ -3789,7 +3777,7 @@ Object.assign(window, {
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
   enableNotifications, setNotifyTime, setKidCheckScope,
   addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
-  openRewards, requestReward, approveRequest, refuseRequest,
+  openRewards, buyReward, toggleGiven, refundPurchase,
   pickRewardImage, removeRewardImage, setRewardIcon
 });
 

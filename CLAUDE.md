@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.6`): a Dutch-language family chores app —
+**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.7`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
 app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
@@ -194,10 +194,10 @@ days/{yyyy-M-d}/shift/{shiftId}: { uid, line }         // frozen turn-task histo
 streaks/{uid}/days/{yyyy-M-d}: true                    // completion flag: that kid finished everything that day
 streaks/{uid}/badges/b{n}: 'yyyy-M-d'                  // n-th badge (ordinal key), value = earn-day; permanent
 streaks/{uid}/diamonds/{yyyy-M-d}: 1|4                 // v19 earning ledger; 'bonus-{ts}': ±n for a manual parent adjustment
-streaks/{uid}/rewardRequests/{id}: { rewardId, diamanten, dag }   // v19: the one open request (child-writable)
+streaks/{uid}/purchases/{id}: { rewardId, naam, diamanten, dag, icoon?, gegeven? }  // v19.7: child buys directly; `gegeven` = day the parent handed it over
 settings/rewards/{id}: { naam, omschrijving, diamanten, order, icoon? }  // v19 reward catalogue (parent-only)
 settings/rewardImages/{id}: 'data:image/jpeg;base64,…'            // v19: separate path, lazily loaded
-settings/rewardClaims/{id}: { uid, rewardId, naam, diamanten, dag }  // v19: approved redemptions (parent-only)
+settings/rewardClaims/{id}: { uid, rewardId, naam, diamanten, dag }  // legacy (pre-v19.7 approved redemptions); still counted as spent
 
 /familyCodes/{CODE6}: familyId    // top-level pointer (baseRef)
 /userIndex/{uid}: familyId        // top-level pointer (baseRef)
@@ -393,11 +393,19 @@ Kids earn diamonds and spend them on parent-defined rewards. Full build log:
   while the kid keeps the (permanent) badge.
 - **Unchecking today** removes the day's diamond too (so tick-then-untick nets zero) — never
   on a past day, and never if it would push the balance below what's already been spent.
-- **Spending** is a ledger: `kidDiamonds(uid)` = sum of `diamonds` − sum of that kid's
-  `settings/rewardClaims`. A child writes only its own `streaks/{uid}/rewardRequests` (one
-  open request at a time); a **parent** approves — re-checking affordability, then deleting
-  the request and writing the claim in **one `rootUpdate`**. A claim **freezes** `naam` +
-  `diamanten`, so editing or deleting a reward never rewrites history.
+- **Spending (v19.7): the child buys directly, no approval.** `buyReward` writes
+  `streaks/{uid}/purchases/{id}` — that path is child-writable under the existing
+  `streaks/$childId` rule, which is exactly why direct buying needed **no rules change**.
+  The record **freezes** `naam` + `diamanten` (+ `icoon`), so editing or deleting a reward
+  never rewrites history. `kidDiamonds(uid)` = sum of `diamonds` − sum of `purchases` − sum
+  of that kid's legacy `settings/rewardClaims` (records from before v19.7, when a parent
+  approved a request; they must not silently become free).
+- **Fulfilment**: `gegeven` (a dayKey) marks that the parent actually handed the reward over.
+  Absent = still owed. `toggleGiven` sets/clears it, `refundPurchase` deletes the whole
+  purchase so the diamonds come back (for a kid's mis-tap). Both parent-only. The child sees
+  the same two lists ("nog te krijgen" / "al gekregen") without the buttons.
+  The old request flow (`rewardRequests`, `requestReward`/`approveRequest`/`refuseRequest`)
+  is **gone**; a stray `rewardRequests` node from v19–v19.6 is simply ignored.
 - The **entry point** to the shop is `🛒 Shop` (footer button + `renderRewards` title); `🎁`
   stays reserved for a single reward without its own art. Beheer's section keeps the name
   **Beloningen** — that screen manages the catalogue rather than spending.
