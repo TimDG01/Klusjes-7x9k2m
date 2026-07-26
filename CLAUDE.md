@@ -6,19 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.9`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
-and completion-driven "shift" turn tasks, streaks & badges, and a daily push reminder. The
-app itself is **one static file, `index.html`** (inline CSS + one `<script type="module">`),
-zero dependencies, no build step, hosted on GitHub Pages from `main`. Push notifications add a
-few companion files (see **Push notifications**): `manifest.json` + `icon-*.png`,
-`firebase-messaging-sw.js` (service worker), and a `scripts/` + `.github/workflows/` server
-side. Other companion files: `firebase-rules-v16.json` (RTDB security rules, paste-ready for
-the Firebase Console), and a **`test/`** folder (headless suite + fake Firebase SDK).
-Documentation lives in **`docs/`**: `docs/PLAN-v16.md` / `docs/PLAN-v17-meldingen.md` /
-`docs/PLAN-v18-beurten.md` / `docs/PLAN-v19-beloningen.md` (build logs — deep background)
-and `docs/CHANGELOG.md` (what changed per version). Only `CLAUDE.md` and the app/deploy files stay at the repo root —
-`index.html`, `manifest.json`, `firebase-messaging-sw.js` and `icon-*.png` **must** stay
-there (GitHub Pages serves the root, and the service worker's scope depends on its
-location).
+and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a reward shop, and
+push reminders. The app itself is **one static file, `index.html`** (inline CSS + one
+`<script type="module">`), zero dependencies, no build step, hosted on GitHub Pages from
+`main`. Companion files: `manifest.json` + `icon-*.png` + `firebase-messaging-sw.js` (PWA +
+push), `firebase-rules-v16.json` (RTDB rules, paste-ready for the Console), `scripts/` +
+`.github/workflows/` (server half), and **`test/`** (headless suite + fake Firebase SDK).
+Docs live in **`docs/`**: `CHANGELOG.md` (what shipped per version) and `PLAN-v16.md` /
+`PLAN-v17-meldingen.md` / `PLAN-v18-beurten.md` / `PLAN-v19-beloningen.md` (frozen build
+logs — the *why* behind big decisions; this file is the working summary).
+**`index.html`, `manifest.json`, `firebase-messaging-sw.js` and `icon-*.png` must stay at
+the repo root** — Pages serves the root and the service worker's scope depends on its
+location.
 
 ## Workflow for every change (checklist)
 
@@ -68,23 +67,20 @@ verifies which build it runs.
 ## Commands
 
 There is no build or lint step — the app is a single static file. There **is** a committed
-test suite in **`test/`** (Node + Playwright; `node_modules` is gitignored). The app itself
-still has no dependencies and no build.
+test suite in **`test/`** (Node + Playwright; `node_modules` is gitignored).
 
 - **Production / deploy**: **GitHub Pages serves the `main` branch** — every push to `main`
-  auto-deploys via the built-in "pages build and deployment" workflow (live within a couple
-  of minutes, plus up to ~10 min HTTP cache). The family uses an iOS home-screen bookmark;
-  a fully closed-and-reopened app picks up a deploy automatically; the footer `VERSION`
-  verifies the build. Pages on the free plan requires a public repo, so **making this repo
-  private would take the app offline**.
+  auto-deploys (live within a couple of minutes, plus up to ~10 min HTTP cache). The family
+  uses an iOS home-screen bookmark; a fully closed-and-reopened app picks up a deploy
+  automatically; the footer `VERSION` verifies the build. Pages on the free plan requires a
+  public repo, so **making this repo private would take the app offline**.
 - **Branch preview — the user's standing preference.** Pages only serves `main`, so when the
-  user asks for a link to try a feature branch on their phone, always give a **githack** URL
-  (confirmed working, juli 2026):
+  user asks for a link to try a feature branch on their phone, always give a **githack** URL:
   `https://raw.githack.com/TimDG01/Klusjes-7x9k2m/<branch>/index.html` — append `?test` for
-  the sandboxed variant. Don't propose alternatives unless githack fails. Two limits worth
-  repeating to the user: push notifications and the home-screen icon **don't** work there
-  (they need the Pages origin + an installed PWA), and without `?test` they are logged into
-  the **real** family data.
+  the sandboxed variant, and a `?v=<n>` cache-buster when they report a stale version. Don't
+  propose alternatives unless githack fails. Two limits worth repeating to the user: push
+  notifications and the home-screen icon **don't** work there (they need the Pages origin +
+  an installed PWA), and without `?test` they are logged into the **real** family data.
 - **Firebase project**: `klusjesv2` (config inline in `index.html`; the visible apiKey is a
   public identifier, not a secret — access control lives in Auth + the rules), with Auth
   (email/password) enabled and the rules from `firebase-rules-v16.json` applied.
@@ -99,15 +95,20 @@ still has no dependencies and no build.
   (`dialogs` collects every `alert()`/`confirm()` text). Inside the page,
   `window.__store.root` is the database and `window.__flushDb()` fires listeners after a
   direct poke. Add a test as `test/*.test.js` using `test/assert.js`; `test/README.md` has
-  the details. Three fake-SDK properties were learned the hard way and must not be
+  the details. Four fake-SDK properties were learned the hard way and must not be
   "simplified" away: (1) `val()` returns dense integer-keyed nodes as **arrays** (like real
-  RTDB), or every `Array.isArray(weekdays)` check silently falls back to "every day"; (2)
-  listeners notify **asynchronously, coalesced, and only on real change** — a synchronous
+  RTDB), or every `Array.isArray(weekdays)` check silently falls back to "every day";
+  (2) listeners notify **asynchronously, coalesced, and only on real change** — a synchronous
   notify inside a write causes re-entrant renders with stale caches that the real
   (always-async) SDK can't produce (this once caused an infinite completion-flag loop);
-  (3) child-account creation uses a **second app instance**, so fake auth keeps
-  per-instance state. A quick logic-only smoke test also works in plain Node: extract the
-  `<script type="module">`, stub the imports/DOM as globals, and call the pure helpers.
+  (3) child-account creation uses a **second app instance**, so fake auth keeps per-instance
+  state; (4) `push(ref, value)` must **write** the value, not just mint a key — otherwise
+  every "add" button silently does nothing in tests. Pure helpers in `scripts/notify.js` are
+  testable in plain Node (see `test/notify.test.js`) — no browser needed.
+- **Testing gotchas**: the celebration popup overlays the card once a day is complete, so
+  dismiss `.celebration-close` before the next click; Beheer sections are collapsed by
+  default, so open the right `'sec:*'` row before asserting on its contents; for a visual
+  change, take a screenshot and *look* at it — green tests say nothing about how it reads.
 - **Manual acceptance on a real device**: append `?test` to the URL. `BASE_ROOT` becomes
   `'test/'` and **every** database path — the family subtree, the two top-level pointers,
   and the keys of root-level multi-path updates — lives under `/test/...`, self-seeded by
@@ -130,7 +131,7 @@ block summarizes the account/data model.
   `familyId`) and sets `DB_ROOT = BASE_ROOT + 'families/{familyId}/'`. `BASE_ROOT` is `''`
   normally, `'test/'` under `?test`. Every DB access goes through `dbRef(path)` or
   `rootUpdate(obj)` (root-level multi-path updates — prefixes each key with `DB_ROOT`), so
-  all paths (`settings/…`, `days/…`, `streaks/…`) nest under the family automatically.
+  all paths nest under the family automatically.
 - **The only two top-level nodes** are the lookup tables `/familyCodes/{CODE6}: familyId`
   and `/userIndex/{uid}: familyId` — the signposts you need *before* you know your
   `familyId`. They are reached via `baseRef(path)` (BASE_ROOT prefix only, no family
@@ -151,29 +152,29 @@ block summarizes the account/data model.
   reset (needs the old PIN). A forgotten PIN is a known limitation — client-side you can't
   reset another account's password without the Admin SDK / a Cloud Function.
 - **Members.** `families/{fid}/members/{uid}: { rol:'ouder'|'kind', weergavenaam,
-  gebruikersnaam?, kleur, actief, magVerschuiven? }`. `activeKids()` returns active child
-  members (sorted by uid — stable across renames); kid colors come from the member record.
-  Removing a child is a **soft-delete** (`actief:false`) so history/streaks survive; the
-  login account itself can't be deleted client-side. `magVerschuiven` is the per-kid
-  permission flag "may move own shift turns" (absent = no): it lives on the member record
-  deliberately — no extra listener (membersCache already loads) and the security rules read
+  gebruikersnaam?, kleur, actief, magVerschuiven?, fcmTokens? }`. `activeKids()` returns
+  active child members (sorted by uid — stable across renames); kid colors come from the
+  member record. Removing a child is a **soft-delete** (`actief:false`) so history/streaks
+  survive; the login account itself can't be deleted client-side. `magVerschuiven` is the
+  per-kid permission flag "may move own shift turns" (absent = no): it lives on the member
+  record deliberately — no extra listener (membersCache already loads) and the rules read
   the same flag server-side, so toggling it off is actually enforced, not just hidden UI.
   Read via `kidMayMove(uid)`; the combined "may the *logged-in* user move kid X's turn"
   check is `mayMoveShiftOf(uid)` (parent: always; child: own turn + flag).
-- **Which days a child may (un)check — `settings/kidCheckScope` (v18.9).** Family-wide, set by
-  a parent in Beheer → Instellingen via a `<select>` (`kidCheckScopeOptions`/`setKidCheckScope`,
-  same pattern as `notifyTime`); read by a **no-gate/non-fatal** listener into `kidCheckScopeKey`,
-  reset in `teardownFamily`. Values: `'alles'` (every day), `'geen-verleden'` (today + future),
-  `'enkel-vandaag'` (today only), `'nooit'` (parent only). **Absent = `'alles'` = pre-v18.9
-  behaviour**, so existing families are untouched (schema-additive, like `weekdays` absent).
-  One helper carries the whole rule *and* the wording: `checkBlockReason()` returns `null` when
-  allowed, else the message to `alert()`. It's called at the top of **`toggleTask`** and
+- **Which days a child may (un)check — `settings/kidCheckScope`.** Family-wide, set by a
+  parent in Beheer → Instellingen via a `<select>` (`kidCheckScopeOptions`/`setKidCheckScope`,
+  same pattern as `notifyTime`); read by a **no-gate/non-fatal** listener into
+  `kidCheckScopeKey`, reset in `teardownFamily`. Values: `'alles'` (every day),
+  `'geen-verleden'` (today + future), `'enkel-vandaag'` (today only), `'nooit'` (parent
+  only). **Absent = `'alles'`** — schema-additive, so existing families are untouched.
+  One helper carries the whole rule *and* the wording: `checkBlockReason()` returns `null`
+  when allowed, else the message to `alert()`. Call it at the top of **`toggleTask`** and
   **`toggleShift`** — the only two check-write paths, so `taskRow`, `shiftRow` **and**
-  `owedShiftRow` (which routes through `toggleTask`) are all covered without touching render.
-  A parent always passes. ⚠️ This is **client-side only**: `days/$dayKey` is an opaque wildcard
-  in the rules and RTDB can't compute "today", so it can't be enforced server-side — same
-  category as the pre-existing parent-only un-freeze of a one-off. Deliberately *not* extended
-  to the shift move buttons (⏮/⏭), which already only ever act on today or later.
+  `owedShiftRow` (which routes through `toggleTask`) are all covered without touching
+  render. A parent always passes. ⚠️ **Client-side only**: `days/$dayKey` is an opaque
+  wildcard in the rules and RTDB can't compute "today", so this can't be enforced
+  server-side — same category as the parent-only un-freeze of a one-off. Deliberately *not*
+  extended to the shift move buttons (⏮/⏭), which already only act on today or later.
 - Bootstrap ordering matters: creating a family writes
   `meta`+`members`+`familyCodes`+`userIndex` first, and `settings/*` in a **second**
   update — the settings rule is parent-only based on the *pre-write* `root`, so the creator
@@ -187,57 +188,54 @@ settings/tasks/{taskId}: { label, recurring, order, weekdays?, members?, interva
 settings/shifts/{shiftId}: { name, weekdays[], lines[], members?[], next?:{uid,lineIdx},
                              override?:'yyyy-M-d', lastDone?:'yyyy-M-d', order? }   // completion-driven turn task
 settings/streakStart: 'yyyy-M-d'                       // streak/badge launch floor; DEFAULT_STREAK_START (9 jul 2026) fallback
-settings/kidCheckScope: 'alles'|'geen-verleden'|'enkel-vandaag'|'nooit'   // which days a CHILD may (un)check; absent = 'alles' = pre-v18.9
+settings/kidCheckScope: 'alles'|'geen-verleden'|'enkel-vandaag'|'nooit'   // which days a CHILD may (un)check; absent = 'alles'
+settings/notifyTime: 'HH:MM'|'uit'                     // per-family reminder hour; settings/lastNotified = server dedup flag
+settings/rewards/{id}: { naam, omschrijving, diamanten, order, icoon? }  // reward catalogue (parent-only)
+settings/rewardImages/{id}: 'data:image/jpeg;base64,…'            // separate path, lazily loaded
+settings/rewardClaims/{id}: { uid, rewardId, naam, diamanten, dag }  // legacy (pre-v19.7 approved redemptions); still counted as spent
 days/{yyyy-M-d}/checks/{uid}/{taskId}: boolean         // per-day checked state, incl. 'shift-{shiftId}' for turn tasks
 days/{yyyy-M-d}/snap/{uid}/{taskId}: { label, order, weekdays?, members?, … }   // frozen one-off, written at check-off
 days/{yyyy-M-d}/shift/{shiftId}: { uid, line }         // frozen turn-task history
 streaks/{uid}/days/{yyyy-M-d}: true                    // completion flag: that kid finished everything that day
 streaks/{uid}/badges/b{n}: 'yyyy-M-d'                  // n-th badge (ordinal key), value = earn-day; permanent
-streaks/{uid}/diamonds/{yyyy-M-d}: 1|4                 // v19 earning ledger; 'bonus-{ts}': ±n for a manual parent adjustment
-streaks/{uid}/purchases/{id}: { rewardId, naam, diamanten, dag, icoon?, gegeven?, gemeld? }  // v19.7: child buys directly; `gegeven` = day the parent handed it over; `gemeld` (v19.9) = server-written, purchase-alert sent
-settings/rewards/{id}: { naam, omschrijving, diamanten, order, icoon? }  // v19 reward catalogue (parent-only)
-settings/rewardImages/{id}: 'data:image/jpeg;base64,…'            // v19: separate path, lazily loaded
-settings/rewardClaims/{id}: { uid, rewardId, naam, diamanten, dag }  // legacy (pre-v19.7 approved redemptions); still counted as spent
+streaks/{uid}/diamonds/{yyyy-M-d}: 1|4                 // earning ledger; 'bonus-{ts}': ±n for a manual parent adjustment
+streaks/{uid}/purchases/{id}: { rewardId, naam, diamanten, dag, icoon?, gegeven?, gemeld? }
+                                                       // child buys directly; gegeven = day handed over; gemeld = server-written, alert sent
 
 /familyCodes/{CODE6}: familyId    // top-level pointer (baseRef)
 /userIndex/{uid}: familyId        // top-level pointer (baseRef)
 ```
 - Each independent piece of remote state gets its **own permanent `onValue` listener** plus
-  its own `*Loaded` boolean gate (`tasksLoaded`, `vacuumLoaded` [covers the shifts
-  listener], `dayLoaded`, `streaksLoaded`, `metaLoaded`, `membersLoaded`), all of which
-  `render()` waits on. These listeners start in `initFamily()` **after** login + family
-  resolution (not at module load). A new piece of synced state should follow this pattern.
-  `teardownFamily()` (on logout) detaches them all and resets caches/gates/`DB_ROOT`, so
-  re-login starts clean.
-- The `/streaks` listener is deliberately **non-fatal**: an absent node means "nothing
-  earned yet" (marks loaded without seeding), and a *read error* falls back to an empty
-  cache and still flips `streaksLoaded` — a missing `/streaks` rule degrades to "no badges
-  yet" instead of hanging the app. Badges are a layer on top and must never take the core
-  down. The tasks/shifts/day/members listeners are fatal (errors set `loadError` →
-  connection-error screen).
+  its own `*Loaded` boolean gate (`tasksLoaded`, `vacuumLoaded` [covers shifts], `dayLoaded`,
+  `streaksLoaded`, `metaLoaded`, `membersLoaded`), all of which `render()` waits on. These
+  listeners start in `initFamily()` **after** login + family resolution (not at module load).
+  A new piece of synced state should follow this pattern. `teardownFamily()` (on logout)
+  detaches them all and resets caches/gates/`DB_ROOT`, so re-login starts clean.
+- **Extra layers must be non-fatal.** The `/streaks` listener and the settings listeners
+  (`streakStart`, `notifyTime`, `kidCheckScope`, `rewards`, `rewardClaims`) have **no load
+  gate**: an absent node means "nothing yet" and a *read error* falls back to an empty cache
+  without hanging the app. Only tasks/shifts/day/members are fatal (errors set `loadError` →
+  connection-error screen). Badges, diamonds and rewards must never take the core down.
 - The day listener (`attachDayListener`) is torn down and reattached on every
   `changeDay`/`goToday`, using an incrementing `dayListenerToken` to make stale callbacks
   no-ops. Any new per-day-scoped listener should reuse this token pattern, not the day-key.
 - `weekdays: number[]` (0=zondag..6=zaterdag, matches `Date.getDay()` and `WD`): **absent =
-  every day** (how legacy/seeded records behave — schema-additive extensions need no
-  migration); **explicit `[]` = never active**. See `taskWeekdays`/`shiftWeekdays`.
-- **Backward-compat, in memory:** an older DB with A/B/uid task *buckets* is detected
-  (`looksLikeBuckets`) and converted on load (`migrateTaskBuckets`: A→pointer 0,
-  B→pointer 1, uid-bucket→`members:[uid]`), then written flat **once** by the first parent
-  (`maybeMigrateTasks`).
+  every day**, **explicit `[]` = never active**. See `taskWeekdays`/`shiftWeekdays`.
+- **Legacy in-memory migration:** an older DB with A/B/uid task *buckets* is detected
+  (`looksLikeBuckets`) and converted on load (`migrateTaskBuckets`), then written flat once
+  by the first parent (`maybeMigrateTasks`).
 
 ### Task semantics (flat rotation model — `settings/tasks/{taskId}`)
-A/B buckets are **gone**. Rotation is a per-task **ring + pointer**:
+Rotation is a per-task **ring + pointer** (A/B buckets are gone):
 - `taskRing(t)` = the participant order. `members` empty/absent = all active kids;
   otherwise exactly that subset (filtered to still-active kids). **One participant = a
   fixed task** (`isFixedTask`, shows the 👤 marker).
 - `taskAssignee(t, dayIdx)` = `ring[((pointer + steps) % n + n) % n]`, with `steps =
-  interval === 'weekly' ? floor((dayIdx - anchorIdx)/7) : (dayIdx - anchorIdx)`. Two kids
-  with pointer 0 vs 1 = exactly the old A/B daily flip; 3+ kids rotate cleanly.
+  interval === 'weekly' ? floor((dayIdx - anchorIdx)/7) : (dayIdx - anchorIdx)`.
   `anchorIdx`/`pointer` are adjustable (admin ⏮/⏭ via
   `advanceTaskPointer`/`rewindTaskPointer`).
 - `tasksForKidDay(uid, idx, dow)` picks a kid's tasks for a day: assignee must match, then
-  either the `onDay` exact-date pin (below) or the weekday filter.
+  either the `onDay` exact-date pin or the weekday filter.
 - `recurring:false` (one-off): same visibility rule, but the moment it's checked it's
   `remove()`d from `settings/tasks` — gone from every other day. Check-off first
   **freezes** the task into `days/{key}/snap/{uid}/{taskId}` (label/order + full rotation
@@ -247,88 +245,71 @@ A/B buckets are **gone**. Rotation is a per-task **ring + pointer**:
   `rootUpdate({...})`** — keep them atomic. Restoring a definition is a settings write, so
   **un-checking a frozen one-off is parent-only**; the child UI explains this.
 - **`onDay: 'yyyy-M-d'`** pins a task to one exact day instead of a weekday pattern
-  (absent = normal weekday behavior; schema-additive). Its *effective* day self-heals:
-  `onDayEffIdx(t)` returns `max(onDayIdx, todayIdx)`, so a lapsed unchecked pin slides
-  forward to today instead of vanishing (same idea as a shift's past `override`).
+  (absent = normal weekday behavior). Its *effective* day self-heals: `onDayEffIdx(t)`
+  returns `max(onDayIdx, todayIdx)`, so a lapsed unchecked pin slides forward to today
+  instead of vanishing (same idea as a shift's past `override`).
   **`fromShift: shiftId`** tags a task as a detached turn (see Shifts): `renderAdminTasks`
   hides it from Beheer, and `renderCard` draws it via `owedShiftRow` (a movable beurt row)
   instead of a plain `taskRow`. Both fields are carried through freeze/restore by
   `copyRotation`.
 
 ### Shift tasks (turn tasks — `settings/shifts/{shiftId}`)
-Vacuuming ("Stofzuigen") is no longer hardcoded — it's the first of possibly several
-**shift tasks**: a chore that rotates one *person* + one *line* (the old "floors") per
-turn, **completion-driven**. `settings/shifts/{shiftId}/next` holds the one open turn as
-`{uid, lineIdx}`; it only advances (person steps through the ring, line cycles) when the
-turn is checked off. The pointer stores the **uid** (robust across member changes), not an
-index. Empty `members` = all active kids; the ring is always filtered to still-active
-kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `shiftForDay`
-(returns mode `done`/`pending`/`projected`), `shiftsForKid`, `toggleShift`.
+A shift task rotates one *person* + one *line* per turn, **completion-driven**.
+`settings/shifts/{shiftId}/next` holds the one open turn as `{uid, lineIdx}`; it only
+advances (person steps through the ring, line cycles) when the turn is checked off. The
+pointer stores the **uid** (robust across member changes), not an index. Empty `members` =
+all active kids; the ring is always filtered to still-active kids. Key functions:
+`shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `shiftForDay` (returns mode
+`done`/`pending`/`projected`), `shiftsForKid`, `toggleShift`.
 - Exactly **one** interactive ("pending") turn exists across all days. `shiftPendingDay()`
-  picks the day: an `override` date wins over the weekday schedule, but an override that
-  has slipped into the *past* is **clamped forward to today** (read-path only, self-heals
-  each render, no write) so a lapsed turn stays visible and clickable today. **A normally
-  scheduled turn that was missed is clamped to today only inside a `SHIFT_GRACE`-day window**;
-  as of **v18.1 `SHIFT_GRACE = 0`**, so that window is empty — a turn shows as a *pending shift*
-  only on its own scheduled day, and the moment that day passes unchecked it is **auto-detached
-  the next day into a movable one-off task while the rotation advances** (see below). (`SHIFT_GRACE`
-  is still a tunable constant: a value `n > 0` would instead keep a missed turn clamped to today
-  as a shift for `n` extra days before detaching — that was the v18 behavior.) The clamp branch
-  in `shiftPendingDay` (`tIdx - ndIdx <= SHIFT_GRACE → today`) is therefore inert at 0. A day
-  matching `lastDone` is skipped. Future scheduled days show a dimmed
-  **projection** (excluded from
-  the progress bar) that **is** clickable — checking it completes that projected turn and
-  jumps the pointer past it, letting an earlier open turn lapse silently (a parent covering
-  a skipped turn must not block the rotation). Past days render from the frozen
-  `days/{key}/shift/{shiftId}` snapshot.
-- Per-kid check-off writes `days/{key}/checks/{uid}/shift-{shiftId}`. **A child can
-  complete their own turn** (rules allow member writes to `checks/{uid}`, `days/.../shift`,
-  and the shift pointer fields `next`/`override`/`lastDone`). The two move buttons
-  (⏮ `shiftPrepone` one day earlier, ⏭ `shiftPostpone` one day later) are gated by
-  `mayMoveShiftOf(uid)`: parents always, a child only for its **own** turn and only when
-  its `magVerschuiven` member flag is on (the Beheer "Instellingen" toggle). The same check
-  guards the handlers themselves, not just the buttons. (There is no "pull to today"
-  button — stepping is enough.)
+  picks the day: an `override` date wins over the weekday schedule, but an override that has
+  slipped into the *past* is **clamped forward to today** (read-path only, self-heals each
+  render, no write). A day matching `lastDone` is skipped. Future scheduled days show a
+  dimmed **projection** (excluded from the progress bar) that **is** clickable — checking it
+  completes that projected turn and jumps the pointer past it, letting an earlier open turn
+  lapse silently (a parent covering a skipped turn must not block the rotation). Past days
+  render from the frozen `days/{key}/shift/{shiftId}` snapshot.
+- **`SHIFT_GRACE = 0`**: a missed turn shows as a pending shift only on its own scheduled
+  day; the next day it is auto-detached into a movable one-off while the rotation advances.
+  The clamp branch in `shiftPendingDay` (`tIdx - ndIdx <= SHIFT_GRACE → today`) is therefore
+  inert, but kept as a tunable: `n > 0` would hold a missed turn on today for `n` extra days
+  before detaching. Keep `index.html` and `scripts/notify.js` on the same value.
+- Per-kid check-off writes `days/{key}/checks/{uid}/shift-{shiftId}`. **A child can complete
+  their own turn** (rules allow member writes to `checks/{uid}`, `days/.../shift`, and the
+  shift pointer fields `next`/`override`/`lastDone`). The two move buttons (⏮ `shiftPrepone`
+  one day earlier, ⏭ `shiftPostpone` one day later) are gated by `mayMoveShiftOf(uid)` —
+  and the same check guards the handlers themselves, not just the buttons.
 - Un-checking a turn only rewinds the pointer when the day matches `lastDone` (the
   just-completed turn); older checked days toggle freely. That rewind also restores
   `override` to the day (check-off clears it), so a moved turn doesn't snap back to the
   next scheduled weekday and appear to vanish.
-- **Detach = keep rotating (the fix for the "beurt draait niet meer door" problem).** Both
-  the manual ⏭ and the automatic v18 lapse-detach funnel through one helper
+- **Detach = keep rotating** (the fix for "de beurt draait niet meer door"). Both the manual
+  ⏭ and the automatic lapse-detach funnel through one helper
   `detachShiftTurn(sh, dueDayKey, uid, lineIdx, onDayKey)` — one atomic `rootUpdate` that:
-  (1) creates a **regular `recurring:false` one-off task** for that person under a
-  **deterministic key** `settings/tasks/shift-{shiftId}-{dueDayKey}` — `{ label:'🔁 {name}:
-  {line}', recurring:false, members:[uid], onDay:<onDayKey>, fromShift:<shiftId>,
-  fromShiftDay:<dueDayKey>, order }` — reusing the whole one-off freeze/restore machinery (and
-  the child-completable rules path); (2) **advances the shift pointer** (`next =
-  shiftAdvance(...,1)`, `override:null`) so the next scheduled day gives the turn to the next
-  person; and (3) sets `lastDone = dueDayKey` so `shiftPendingDay` moves past the resolved day
-  instead of falling back onto it. The deterministic key + `fromShiftDay` make it **idempotent**
-  — client render-path, a second render, and the server cron all write the same key, never a
-  duplicate. `shiftPostpone` (manual ⏭) calls it for the pending day → next day; ⏮ on the
-  *pending* row is unchanged (pulls the turn one day earlier).
-- **Auto-detach after the grace window (v18).** `shiftAutoDetachIfLapsed(sh)` skips a shift
-  with an active `override`; otherwise, if the first scheduled day after `lastDone` is
-  **> `SHIFT_GRACE` days** past, it calls `detachShiftTurn` for that day (onDay = the same
-  day, so `onDayEffIdx` self-heals it forward to today). It runs on **two** paths so the
-  rotation can never permanently stall: the client **render-path** (`render()` calls
-  `shiftsArray().forEach(shiftAutoDetachIfLapsed)` — **parent-only**, since it's a settings
-  write) *and* the **server cron** (`scripts/notify.js` → `runShiftMaintenance`, admin rights,
-  every run, so it advances even when nobody opens the app). Both are idempotent; the server
-  loops to converge multiple missed days in one run.
-- A detached turn is **not** a plain personal task — it stays **movable**. `owedShiftRow`
-  draws it as a beurt row with ⏮/⏭ (gated by `mayMoveShiftOf`, like the pending row), and
-  `moveOwedShift(taskId, ±1)` re-pins its `onDay` (never before today, computed from the
-  self-healed effective day). So it can keep being postponed day after day, and if ignored
-  it slides to today (via `onDayEffIdx`) rather than disappearing. It still participates in
-  day completion/streaks and, when checked off, freezes into `snap` + removes its
-  definition like any one-off (a child may do this under the existing `recurring===false`
-  rule).
-- **Admin** (`renderAdminShifts`): one section per shift with name / weekdays / lines
-  (CRUD) / members (per-kid on-off) / next turn with ⏮/⏭
-  (`rewindShiftTurn`/`advanceShiftTurn`), plus create/delete a shift task. There is no live
-  legacy calendar fallback in the render path — every shift on `klusjesv2` starts fresh
-  with a valid pointer (a one-time historical migration set it; see `docs/PLAN-v16.md` fase 8).
+  (1) creates a **regular `recurring:false` one-off task** under the **deterministic key**
+  `settings/tasks/shift-{shiftId}-{dueDayKey}` — `{ label:'🔁 {name}: {line}',
+  recurring:false, members:[uid], onDay, fromShift, fromShiftDay, order }` — reusing the
+  whole one-off freeze/restore machinery (and the child-completable rules path);
+  (2) **advances the shift pointer** (`next = shiftAdvance(...,1)`, `override:null`); and
+  (3) sets `lastDone = dueDayKey` so `shiftPendingDay` moves past the resolved day. The
+  deterministic key + `fromShiftDay` make it **idempotent** — client render-path, a second
+  render, and the server cron all write the same key, never a duplicate.
+- **Auto-detach.** `shiftAutoDetachIfLapsed(sh)` skips a shift with an active `override`;
+  otherwise, if the first scheduled day after `lastDone` is more than `SHIFT_GRACE` days
+  past, it calls `detachShiftTurn` for that day. It runs on **two** paths so the rotation can
+  never permanently stall: the client **render-path** (parent-only, since it's a settings
+  write) *and* the **server cron** (`scripts/notify.js` → `runShiftMaintenance`, admin
+  rights, every run, so it advances even when nobody opens the app). Both are idempotent;
+  the server loops to converge multiple missed days in one run.
+- A detached turn stays **movable**: `owedShiftRow` draws it as a beurt row with ⏮/⏭ (gated
+  by `mayMoveShiftOf`), and `moveOwedShift(taskId, ±1)` re-pins its `onDay` (never before
+  today). If ignored it slides to today via `onDayEffIdx` rather than disappearing. It still
+  counts for day completion/streaks and, when checked off, freezes into `snap` + removes its
+  definition like any one-off.
+- **Admin** (`renderAdminShifts`): one section per shift with name / weekdays / lines (CRUD)
+  / members (per-kid on-off) / next turn with ⏮/⏭ (`rewindShiftTurn`/`advanceShiftTurn`),
+  plus create/delete. Every shift starts with a valid pointer — there is no legacy calendar
+  fallback in the render path (see `docs/PLAN-v16.md` fase 8).
 
 ### Streaks & badges
 - **Day complete** for a kid = the exact id-set `render()` uses for the celebration
@@ -338,21 +319,18 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   (an already-present flag is never rewritten). On **past** days the flag is add-only
   (backfills a genuinely-complete old day — the "kid forgot to tap" repair; newly added
   tasks must never retro-break old days); only on **today** is an unearned flag removed
-  again; future days never get one. A logged-in child writes this **only for its own uid**
-  (its kids-list is just its own card — the streaks rule rejects sibling writes).
+  again; future days never get one. A logged-in child writes this **only for its own uid**.
 - **Streak-start is a launch floor**: streaks/badges count only from `settings/streakStart`
   onward (both the write/backfill guard and the `simulateStreak` walk start at
-  `streakStartIdx()`). Editable in Beheer ("Reeksen & badges" → `editStreakStart`, a
-  `dd-mm-jjjj` prompt); `streakStartKey` holds it, defaulting to `DEFAULT_STREAK_START`
-  (9 juli 2026). Its listener has **no load gate and is non-fatal**. It sits *above*
-  `START` (the day-index anchor), never below.
+  `streakStartIdx()`). Editable in Beheer ("Reeksen & badges" → `editStreakStart`);
+  `streakStartKey` defaults to `DEFAULT_STREAK_START` (9 juli 2026). It sits *above* `START`
+  (the day-index anchor), never below.
 - Streak math (`simulateStreak`) is a **pure read-path forward walk** over the flags,
-  recomputed every render: days where the kid has zero scheduled tasks
-  (`kidScheduledCount`, which uses *current* settings for history and deliberately
-  **excludes shift turns** — a rolled-forward turn must not break a past streak) neither
-  count nor break; today-in-progress never breaks; one missed task-day per 7-day cycle is
-  forgiven (the joker ❤️/💔, reset on badge or break); a miss with no running streak burns
-  nothing.
+  recomputed every render: days where the kid has zero scheduled tasks (`kidScheduledCount`,
+  which uses *current* settings for history and deliberately **excludes shift turns** — a
+  rolled-forward turn must not break a past streak) neither count nor break; today-in-progress
+  never breaks; one missed task-day per 7-day cycle is forgiven (the joker ❤️/💔, reset on
+  badge or break); a miss with no running streak burns nothing.
 - A **badge** is earned each time the streak count hits a multiple of 7, written in the
   **same root-level multi-path update as the completion flag**. Badges are permanent:
   unchecking drops the streak but never a badge. **Badges are keyed by ordinal**
@@ -360,22 +338,19 @@ kids. Key functions: `shiftPendingDay`, `shiftEffectiveNext`, `shiftAdvance`, `s
   a 7-multiple isn't stable (completing a forgotten earlier day shifts it), and a day-keyed
   scheme minted stale duplicates. Badge count = `simulateStreak().earnDays.length`
   (monotonic); `writeCompletionFlag` tops up `b{have+1..want}`, never removing. A badge
-  shows its rank mapped over the **13** `BADGES` entries (`kidBadgeList`, `badgeDesign`),
-  ending in the heart "Trots op jou"; past 13 the ladder wraps with a level chip so it
-  never runs out.
+  shows its rank mapped over the **13** `BADGES` entries (`kidBadgeList`, `badgeDesign`);
+  past 13 the ladder wraps with a level chip so it never runs out.
 - The gallery (`screen === 'badges'`) has two entry points via `openBadges(kidKey?)` (sets
   module-level `badgesFilter`): a kid's **streak strip** opens that kid alone; the **🏆
-  footer button** opens everyone. `renderBadges` filters by `badgesFilter` (reset every
-  call). Medals are hand-drawn inline SVGs (`badgeSVG`: ribbon tails, scalloped rim
-  `scallopPath`, `c1→c2` gradient ring with an optional iridescent `c3`, radial sheen,
-  recessed disc, a white `MOTIFS[idx]` centerpiece). `MOTIFS` runs index-parallel to
-  `BADGES` — a new badge needs an entry in **both**. Gradient ids are uniqued per instance
-  via `svgUid`. Badge names are code constants (skip `escapeHtml`); anything
-  task-label-derived still must not.
+  footer button** opens everyone. Medals are hand-drawn inline SVGs (`badgeSVG`). `MOTIFS`
+  runs index-parallel to `BADGES` — a new badge needs an entry in **both**. Gradient ids are
+  uniqued per instance via `svgUid`. Badge names are code constants (skip `escapeHtml`);
+  anything task-label-derived still must not.
 
-### 💎 Diamanten & beloningen (v19)
-Kids earn diamonds and spend them on parent-defined rewards. Full build log:
-**`docs/PLAN-v19-beloningen.md`**.
+### 💎 Diamanten & beloningen
+Kids earn diamonds and spend them in a shop on parent-defined rewards. Full build log:
+**`docs/PLAN-v19-beloningen.md`** (note: its fase 4b describes a request/approve flow that
+v19.7 replaced with direct buying — the text below is current).
 - **Earning is WRITTEN, never derived.** `writeCompletionFlag` adds one key to its existing
   atomic `rootUpdate`: `streaks/{uid}/diamonds/{dayKey} = DIAMANTEN_PER_DAG (1) +
   DIAMANTEN_PER_BADGE (3) on a badge day`. Deriving from the completion flags was rejected
@@ -387,34 +362,35 @@ Kids earn diamonds and spend them on parent-defined rewards. Full build log:
 - **Only for today.** `writeCompletionFlag` also runs for a *past* day that becomes complete
   (the deliberate "kid forgot to tap" streak repair — that stays), so the diamond write is
   gated on `key === dayKey(new Date())`. Without it, paging back and ticking an old day is
-  free diamonds (found on-device during v19 testing).
+  free diamonds (found on-device during testing).
 - The badge bonus uses `sim.earnDays.includes(key)`, **not** `newRanks`: `newRanks` is empty
   once the badge exists, so an uncheck-and-recheck would strip the day's 3 badge diamonds
   while the kid keeps the (permanent) badge.
 - **Unchecking today** removes the day's diamond too (so tick-then-untick nets zero) — never
   on a past day, and never if it would push the balance below what's already been spent.
-- **Spending (v19.7): the child buys directly, no approval.** `buyReward` writes
+- **Spending: the child buys directly, no approval.** `buyReward` writes
   `streaks/{uid}/purchases/{id}` — that path is child-writable under the existing
   `streaks/$childId` rule, which is exactly why direct buying needed **no rules change**.
   The record **freezes** `naam` + `diamanten` (+ `icoon`), so editing or deleting a reward
   never rewrites history. `kidDiamonds(uid)` = sum of `diamonds` − sum of `purchases` − sum
-  of that kid's legacy `settings/rewardClaims` (records from before v19.7, when a parent
-  approved a request; they must not silently become free).
+  of that kid's legacy `settings/rewardClaims` (pre-v19.7 approved redemptions; they must
+  not silently become free).
 - **Fulfilment**: `gegeven` (a dayKey) marks that the parent actually handed the reward over.
   Absent = still owed. `toggleGiven` sets/clears it, `refundPurchase` deletes the whole
-  purchase so the diamonds come back (for a kid's mis-tap). Both parent-only. The child sees
-  the same two lists ("nog te krijgen" / "al gekregen") without the buttons.
-  The old request flow (`rewardRequests`, `requestReward`/`approveRequest`/`refuseRequest`)
-  is **gone**; a stray `rewardRequests` node from v19–v19.6 is simply ignored.
+  purchase so the diamonds come back (for a kid's mis-tap). Both parent-only. Both roles see
+  the same two lists — "Gekocht — nog te krijgen" (always open) and "Al gekregen" (collapsed
+  by default via `adminOpen`), the child without the buttons.
 - The **entry point** to the shop is `🛒 Shop` (footer button + `renderRewards` title); `🎁`
   stays reserved for a single reward without its own art. Beheer's section keeps the name
   **Beloningen** — that screen manages the catalogue rather than spending.
 - **Card art, in priority order**: own photo → chosen icon (`icoon`, a key into
-  `REWARD_ICONS`) → 🎁. `REWARD_ICONS` is ~51 curated **emoji** with Dutch labels, picked in
-  Beheer from a button grid (`setRewardIcon`) — the same reasoning as the weekday picker:
-  a 30-way choice is past what `prompt()` can do. Emoji rather than hand-drawn SVG on
-  purpose: the custom SVG constants exist because colour emoji ignore CSS `color` when an
-  icon must be **tinted**, which is irrelevant here — and storing a key costs zero DB bytes.
+  `REWARD_ICONS`) → 🎁. The same order applies to the Beheer row, so the parent sees their
+  choice where they made it. `REWARD_ICONS` is ~51 curated **emoji** with Dutch labels,
+  picked from a button grid (`setRewardIcon`, itself behind `'icons:'+id`) — the same
+  reasoning as the weekday picker: a 50-way choice is past what `prompt()` can do. Emoji
+  rather than hand-drawn SVG on purpose: custom SVGs exist because colour emoji ignore CSS
+  `color` when an icon must be **tinted**, which is irrelevant here — and storing a key
+  costs zero DB bytes.
 - **Images**: Firebase Storage needs Blaze and this project stays on Spark, so a photo is
   shrunk **in-app** (canvas, square-cropped to 320×320, `toDataURL('image/jpeg', 0.72)`,
   one retry at 0.5, hard refusal over 60 kB) and stored as a data-URI under
@@ -424,45 +400,40 @@ Kids earn diamonds and spend them on parent-defined rewards. Full build log:
   and the day screen has no use for it. Rendering goes through `safeImageSrc()`, a strict
   `data:image/(png|jpeg|webp);base64,…` allow-list — this app has shipped a stored-XSS
   before. `deleteReward` removes the reward **and** its image in one update (no orphans).
-- **✅ No rules change**: `settings` is node-wide parent-only and `streaks/$childId` is
-  parent-or-self, and both **cascade** to the new sub-keys. `scripts/notify.js` is untouched
-  — rewards don't affect the "open chores" computation, so the ⚠️ logic-duplication burden
-  doesn't grow.
+- **✅ No rules change was needed**: `settings` is node-wide parent-only and
+  `streaks/$childId` is parent-or-self, and both **cascade** to the new sub-keys.
 
 ### Admin & members screens
 No client-side password — access is the **parent role** (`isParent()`; children don't see
 the buttons and the `openAdmin`/`openMembers` routes are guarded). **Beheer**
-(`renderAdmin`) has one **Taken** section (`renderAdminTasks` — per task: participant chips
-`toggleTaskMember`, interval toggle `toggleTaskInterval`, pointer ⏮/⏭, label edit,
-recurring/one-off, delete; `fromShift` tasks are filtered out), one section per shift
-(`renderAdminShifts`), an **Instellingen** section (`renderAdminSettings` — a row of per-kid
-chips toggling `magVerschuiven` via `toggleKidMayMove` (new per-kid flags belong here), the
-`notifyTime` dropdown, and the `kidCheckScope` dropdown below), and **Reeksen & badges**
-(`renderAdminStreak`). The separate **Gezin** screen
-(`renderMembers`) manages children (add/rename/color/PIN/pause/delete) and shows the family
-code. All mutations are `prompt()`/`confirm()`-based to match the no-forms style; the
-exception is weekday selection, done via 7 individual toggle buttons
-(`renderWeekdayPicker`, click-to-flip-and-write) because a 7-way multi-select is where
-`prompt()` hits its limit. Admin handlers take `(taskId)` / `(shiftId)` — no per-bucket
-logic.
-- **Beheer is collapsed at two levels** (v19.3): the five top-level sections are themselves
-  accordion heads via `adminSection(key, titel, sub, maakInhoud)` with keys `'sec:*'`, all
-  **closed by default**, so the screen opens as a short menu with one-line summaries. The
-  content function is only *called* when open, so a closed section costs nothing to render —
-  that is what keeps the 51-button reward icon grid (itself behind `'icons:'+id`) out of the
-  way. New admin sections should be added the same way, with a `sub` summary. Style them as
-  a **list** (`.admin-group` + hairline `border-bottom`, no filled background): v19.3 first
-  gave each head its own `.admin-section` card, and five of those pills read as *buttons*
-  rather than as something that folds open — the fix was to drop the fill entirely.
-- **Beheer rows are a collapsed accordion** (v18.2): each task and each shift renders as a
-  clickable `admin-collapse-head` showing only a one-line summary — `weekdaySummary(days)`
-  (`'elke dag'` / `'nooit'` / abbreviated weekday list) plus recurring/one-off + who's in the
-  ring for a task, or the open turn / weekdays for a shift — with the full edit controls hidden
-  until expanded. Open/closed state lives in the module-level `adminOpen` **Set** keyed by
-  `'task:'+id` / `'shift:'+id`, toggled by `toggleAdminRow(key)` (in the `window` export). It's
-  a `Set` (not a per-render flag) deliberately: an opened row **stays open across the re-render**
-  that every edit triggers, so you can keep tweaking. New collapsible admin rows should reuse
-  `adminOpen` + `toggleAdminRow` and add a `weekdaySummary`-style one-liner.
+(`renderAdmin`) has five sections: **Taken** (`renderAdminTasks` — per task: participant
+chips, interval toggle, pointer ⏮/⏭, label edit, recurring/one-off, delete; `fromShift`
+tasks are filtered out), one per shift (`renderAdminShifts`), **Beloningen**
+(`renderAdminRewards`), **Instellingen** (`renderAdminSettings` — per-kid `magVerschuiven`
+chips (new per-kid flags belong here), the `notifyTime` dropdown, the `kidCheckScope`
+dropdown, and a per-kid diamond adjustment) and **Reeksen & badges** (`renderAdminStreak`).
+The separate **Gezin** screen (`renderMembers`) manages children
+(add/rename/color/PIN/pause/delete) and shows the family code. All mutations are
+`prompt()`/`confirm()`-based to match the no-forms style; the exceptions are the weekday
+picker and the reward-icon grid, where `prompt()` hits its limit.
+- **Beheer is collapsed at two levels.** The five top-level sections are accordion heads via
+  `adminSection(key, titel, sub, maakInhoud)` with keys `'sec:*'`, all **closed by default**,
+  so the screen opens as a short menu with one-line summaries. The content function is only
+  *called* when open, so a closed section costs nothing to render — that is what keeps the
+  51-button icon grid out of the way. New admin sections follow the same shape, with a `sub`
+  summary.
+- **Style section heads as a list** (`.admin-group` + hairline `border-bottom`, no filled
+  background), with a caret that rotates and a title that turns blue when open. Filled
+  rounded pills read as *buttons* rather than as something that folds open — that was tried
+  and rejected on-device.
+- **Rows inside a section are their own accordion**: each task/shift/reward renders as a
+  clickable `admin-collapse-head` with a one-line summary (`weekdaySummary(days)` →
+  `'elke dag'` / `'nooit'` / abbreviated list, plus who's in the ring / the open turn /
+  the price) and the edit controls hidden until expanded. Open/closed state lives in the
+  module-level `adminOpen` **Set** keyed by `'task:'+id` / `'shift:'+id` / `'reward:'+id` /
+  `'sec:*'`, toggled by `toggleAdminRow(key)` (in the `window` export). It's a `Set` (not a
+  per-render flag) deliberately: an opened row **stays open across the re-render** that every
+  edit triggers, so you can keep tweaking. Reuse it for any new collapsible row.
 
 ### Security rules — committed in this repo
 The rules live in `firebase-rules-v16.json` (paste-ready for the Console, with per-block NL
@@ -476,104 +447,88 @@ comments). They are path-scoped and enforce the real access control:
   member flag is **true** may additionally **create** a detached own turn (a new
   `settings/tasks` record with `recurring:false` + `fromShift` + `members[0] === auth.uid`)
   and **re-pin its `onDay`** — both conditions read the flag from `root`, so a parent
-  flipping the Beheer toggle off revokes this server-side. A child may write its own
-  `days/.../checks/{uid}`, `days/.../snap/{uid}`, `days/.../shift`, and `streaks/{uid}` —
-  nothing else.
+  flipping the Beheer toggle off revokes this server-side.
+- A child may write its own `days/.../checks/{uid}`, `days/.../snap/{uid}`,
+  `days/.../shift`, and **its whole `streaks/{uid}` subtree** (which is why diamonds and
+  purchases live there) — nothing else.
+- One `members` exception: any member may write its own `members/{uid}/fcmTokens` (own push
+  tokens), otherwise `members` stays parent-only. The RTDB allow-cascade (a deeper
+  `.write:true`) grants it without loosening the node.
 - `/familyCodes` is a targeted lookup (not enumerable, write-once); `/userIndex/{uid}` is
   strict self-only; `/test` is fully open to any authenticated user (the sandbox — the
   strict family rules reference `root.child('families')`, which wouldn't match under
   `test/families`).
-- **Shipping a rules change means telling the user to re-paste the file in the Console**
-  (checklist step 9) — e.g. the kid-driven move feature works for ⏮ only (⏭ fails silently
-  for a child) until the updated rules are pasted.
 - There are no `.validate` rules, so records are trusted by shape (a child could only fudge
   its own family's gamification).
-- The **notifications** feature adds one exception: a member may write its own
-  `members/{uid}/fcmTokens` (own push tokens), otherwise `members` stays parent-only. The
-  RTDB allow-cascade (a deeper `.write:true`) grants it without loosening the node.
+- **Shipping a rules change means telling the user to re-paste the file in the Console**
+  (checklist step 9) — until they do, the UI works but writes are silently rejected.
 
-### Push notifications (daily evening reminder — v17; parent purchase alert — v19.9)
-A kid with unfinished chores gets a push on their phone **even when the app is closed**. A
-push to a closed device can't be done client-side, so this splits into a device half and a
-server half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
-- **Device half (in `index.html` + companion files):** `manifest.json` + `icon-192/512.png`
+### Push notifications
+Two kinds of push, both delivered **even when the app is closed**, so both need a server
+half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
+1. **Daily reminder** to a kid with unfinished chores, at the family's `notifyTime`.
+2. **Purchase alert** to the parents when a child buys something in the shop.
+
+- **Device half (`index.html` + companion files):** `manifest.json` + `icon-192/512.png`
   (installable PWA — iOS 16.4+ web push requires an installed PWA with a manifest);
   `firebase-messaging-sw.js` (service worker, at repo root; uses the compat SDK via
   `importScripts` and shows the notification in `onBackgroundMessage`; **data-only messages**
   so we control title/body and avoid a double notification). In the app: a "🔔 Meldingen aan"
   footer button (`enableNotifications()`) that requests permission (must be a user gesture —
-  iOS) and stores the FCM token under `members/{uid}/fcmTokens/{sanitizedKey}: token` (token as
-  **value** since a raw token isn't a valid RTDB key). `VAPID_PUBLIC_KEY` near the config is a
-  public Web-Push key the user pastes from the Console. All push code is soft/try-caught —
-  never blocks the app. `?test` note: GitHub Pages serves this app on a **subpath**, so all
-  SW/manifest/icon paths are **relative** (no leading `/`).
-  **v19.9**: the footer button is no longer `isChild()`-gated — a parent can enable
-  notifications on their own device too, since `members/{uid}/fcmTokens` is already
-  self-writable for any member regardless of role (see rules below), and a parent now needs
-  a token to receive the purchase alert.
-- **Reminder time** is per family: `settings/notifyTime` (`"HH:MM"` on the whole/half hour, or
-  `"uit"`, default `"19:00"`), set by a parent in Beheer → Instellingen via a `<select>`
-  dropdown (`notifyTimeOptions`/`setNotifyTime` — native wheel picker on mobile; only `:00`/`:30`
-  offered for simplicity), read via a
-  no-gate/non-fatal listener like `streakStart`. `settings/lastNotified` (`"yyyy-M-d"`) is a
-  server-written dedup flag.
+  iOS) and stores the FCM token under `members/{uid}/fcmTokens/{sanitizedKey}: token` (token
+  as **value** since a raw token isn't a valid RTDB key). The button is shown to **any**
+  member, parent or child — a parent needs a token for the purchase alert.
+  `VAPID_PUBLIC_KEY` near the config is a public Web-Push key pasted from the Console. All
+  push code is soft/try-caught — never blocks the app. `?test` note: Pages serves this app
+  on a **subpath**, so all SW/manifest/icon paths are **relative** (no leading `/`).
+- **Reminder time** is per family: `settings/notifyTime` (`"HH:MM"` on the whole/half hour,
+  or `"uit"`, default `"19:00"`), set by a parent in Beheer → Instellingen via a `<select>`
+  (`notifyTimeOptions`/`setNotifyTime` — native wheel picker on mobile; only `:00`/`:30` for
+  simplicity), read via a no-gate/non-fatal listener. `settings/lastNotified` (`"yyyy-M-d"`)
+  is a server-written dedup flag.
 - **Server half (`scripts/notify.js` + `.github/workflows/klusjes-herinnering.yml`):** a
-  GitHub Action runs **~every 15 min on off-hour minutes** (`8,23,38,53` — deliberately away
-  from `:00`, where GitHub's best-effort scheduler delays/drops the most); the script (Firebase Admin SDK) first runs the v18
-  **shift maintenance** (`runShiftMaintenance` — auto-detaches lapsed turns with admin rights,
-  every run, so the rotation advances even when nobody opens the app), then sends, for each
-  family where Brussels-now ≥ `notifyTime` and it hasn't sent today, an FCM push to every active
-  kid with ≥1 open chore. **No Blaze/credit card** — FCM + RTDB reads are free on Spark. The
-  service-account JSON is the GitHub secret `FIREBASE_SERVICE_ACCOUNT`.
-- **Externe triggers (juli 2026) — GitHub's eigen schedule bleek onvoldoende.** In de praktijk
-  draait `on: schedule` op deze publieke repo veel trager dan de ingestelde ~15 min (soms maar
-  om de paar uur — GitHub's schedule is best-effort en mag runs droppen/vertragen). Er zijn
-  daarom twee externe, betrouwbaardere triggers bijgekomen die gewoon de bestaande
-  `workflow_dispatch` van `klusjes-herinnering.yml` aanroepen (`POST
-  .../actions/workflows/klusjes-herinnering.yml/dispatches`, body `{"ref":"main"}` — bewust
-  **geen** `force`, zodat de normale per-gezin/per-kind check in `notify.js` gewoon blijft
-  gelden, er wordt dus nooit blindelings gestuurd):
-  - **iOS Shortcuts** (Persoonlijke automatisering) op de ouder-telefoon: draait dagelijks rond
-    het ingestelde `notifyTime`, en kan ook handmatig getikt worden voor een instant-test/duw.
-  - **Google Apps Script** (script.google.com): tijdgestuurde trigger "Minuuttimer → om de 30
-    minuten" — 30 min volstaat, want `notifyTime` zelf kan toch al enkel op het hele/halve uur
-    staan (fijner pollen wint niets). Het GitHub-token staat daar als Script Property
-    (`GITHUB_TOKEN`), niet hardcoded in de scriptcode zelf.
-  - Beide gebruiken een **fine-grained GitHub Personal Access Token**, scope beperkt tot alleen
-    deze repo + **Actions: Read and write** (verder niets) — bij lekken kan hooguit een
-    onschadelijke, dubbel-gecheckte run gestart worden, geen toegang tot code/DB/de
-    Firebase-sleutel.
-  - Geen van beide staat in de repo — dit is pure account-/toestel-configuratie bij de
-    gebruiker; deze paragraaf is de enige plek waar de setup is vastgelegd.
-  - **Bus-factor:** het Google Apps Script draait op Tim's persoonlijke Google-account —
-    hetzelfde account waaronder ook het Firebase-project (`klusjesv2`) beheerd wordt. Verlies
-    van toegang tot dat ene account raakt dus zowel de Firebase-admintoegang als deze trigger.
-  - GitHub's eigen `on: schedule` **blijft gewoon staan** als derde, gratis (publieke repo =
-    onbeperkte Actions-minuten) extra vangnet — idempotent via `lastNotified`, dus geen risico
-    op een dubbele melding als er toevallig meerdere triggers rond hetzelfde moment vuren.
-- **Aankoop-melding aan de ouders (v19.9).** Een kind koopt zonder toestemming te vragen
-  (zie 💎 Diamanten & beloningen), dus de ouder moet er los daarvan van weten. `runShiftMaintenance`-stijl:
-  `purchaseNotifyPlan(familyData)` in `notify.js` (pure, getest in `test/notify.test.js` —
-  geen browser nodig) scant alle `streaks/{kidUid}/purchases/{id}` zonder `gemeld`-vlag en
-  geeft ze terug samen met de fcmTokens van alle leden met `rol === 'ouder'`. `main()` stuurt
-  per onvermelde aankoop een push naar elk ouder-token (`"🛒 {kind} heeft iets gekocht!"` /
-  `"{beloning} · {prijs} 💎 — nog te geven."`) en zet dan **altijd** `gemeld:true` — ook als er
-  geen enkel ouder-token was — zodat een aankoop maximaal één melding oplevert en er nooit een
-  stapel oude meldingen alsnog binnenkomt zodra een ouder later pas meldingen aanzet. Draait
-  bij **elke** run (los van `notifyTime`), want een aankoop kan op elk moment gebeuren. Geen
-  logica-duplicatie met `index.html`: de app berekent hier niets voor, ze toont enkel de
-  `purchases`-lijst.
+  GitHub Action runs the script (Firebase Admin SDK), which on **every** run does shift
+  maintenance (`runShiftMaintenance`) and purchase alerts, and additionally sends the daily
+  reminder for each family where Brussels-now ≥ `notifyTime` and it hasn't sent today.
+  **No Blaze/credit card** — FCM + RTDB reads are free on Spark. The service-account JSON is
+  the GitHub secret `FIREBASE_SERVICE_ACCOUNT`.
+- **Purchase alert**: `purchaseNotifyPlan(familyData)` (pure, tested in
+  `test/notify.test.js` — no browser needed) scans every `streaks/{kidUid}/purchases/{id}`
+  without a `gemeld` flag and returns them with the fcmTokens of all members with
+  `rol === 'ouder'`. `main()` pushes one message per unreported purchase to each parent
+  token, then **always** sets `gemeld:true` — even when there were no parent tokens — so a
+  purchase yields at most one alert and a pile of old ones never lands at once when a parent
+  enables notifications later. Runs on every run, independent of `notifyTime`, because a
+  purchase can happen at any moment. No logic duplication with `index.html`: the app only
+  displays the `purchases` list.
 - **⚠️ Logic duplication — keep in sync.** The DB stores task *definitions* + rotation *state*
   + `checks` (what's *done*), **not** a ready-made "today's chores" list — the app computes it
   each render, so `notify.js` must recompute it too. The pure helpers there (`dayIndex`,
   `taskRing`/`taskAssignee`/`tasksForKidDay` + `onDay`, `shiftPendingDay`/`shiftEffectiveNext`/
-  `shiftForDay`, and the v18 `shiftDetachPlan`/`runShiftMaintenance` mirroring
+  `shiftForDay`, `shiftDetachPlan`/`runShiftMaintenance` mirroring
   `shiftAutoDetachIfLapsed`/`detachShiftTurn`) are **verbatim copies** of the `index.html`
   versions, adapted to take a `ctx` object. Change the chore/shift math in `index.html` →
-  update `notify.js` too. A Node cross-check test (fake data, no network) asserts `notify.js`
-  and the app agree.
+  update `notify.js` too.
 - **Gotcha:** GitHub scheduled workflows (`on: schedule`) only fire from the **default branch
   (`main`)**; on a feature branch only `workflow_dispatch` (manual run, pick the branch) works.
+- **External triggers — GitHub's own schedule proved unreliable.** In practice `on: schedule`
+  on this public repo runs far slower than the configured ~15 min (sometimes hours apart —
+  it is best-effort and may drop or delay runs). Two external triggers therefore call the
+  existing `workflow_dispatch` (`POST .../actions/workflows/klusjes-herinnering.yml/dispatches`,
+  body `{"ref":"main"}` — deliberately **no** `force`, so the normal per-family/per-kid check
+  in `notify.js` still applies and nothing is ever sent blindly):
+  - **iOS Shortcuts** (personal automation) on the parent's phone: daily around `notifyTime`,
+    and tappable by hand for an instant test.
+  - **Google Apps Script** (script.google.com): time-driven trigger every 30 minutes — enough,
+    since `notifyTime` can only be on the hour/half hour. The GitHub token lives there as a
+    Script Property (`GITHUB_TOKEN`), not hardcoded.
+  - Both use a **fine-grained GitHub PAT** scoped to this repo + **Actions: Read and write**
+    only — a leak could at worst start a harmless, double-checked run.
+  - Neither lives in the repo (pure account/device configuration); this paragraph is the only
+    record of the setup. **Bus-factor:** the Apps Script runs on Tim's personal Google
+    account — the same one that administers the Firebase project (`klusjesv2`).
+  - GitHub's own `on: schedule` stays as a free third safety net — idempotent via
+    `lastNotified`, so overlapping triggers can't double-send.
 
 ### Other conventions worth knowing
 - The schedule is **open-ended with a fixed lower bound**: `START` (26 juni 2026) anchors
@@ -581,39 +536,25 @@ server half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`
   refuses `idx < 0` / clamps `goToday` to `START` — no end date. Anything that scans
   forward for a matching weekday iterates a rolling `SEARCH_HORIZON` (~370 days) as an
   infinite-loop guard for empty/weird weekday sets.
-- Color-emoji glyphs ignore CSS `color`, so any icon that must be tinted (red delete
-  buttons) or stay legible on the dark card background (the skip arrows, near-black as
-  emoji) is an inline outline SVG with `stroke="currentColor"` — `TRASH_ICON`,
-  `SKIP_FWD_ICON`, `SKIP_BACK_ICON`, colored via `.danger`/`.accent`/`.postpone-btn`.
-  Reach for these, not an emoji, when a glyph needs a specific color. Emoji are fine where
-  color is irrelevant (🧹/🔁/✏️ labels).
-- **Colored icon constants (v18.3)**: a second family of inline-SVG constants replaces specific
-  emoji with hand-drawn *multi-color* icons that carry their **own fills** (not `currentColor`),
-  so they stay legible on both the light and dark card — `COLORWHEEL_ICON` (🎨 kleur),
-  `SHIELD_PIN_ICON` (🔑 pin), `COPY_ICON` (📋 code), `FAMILY_ICON` (👨‍👩‍👧 Gezin-knop),
-  `ROTATE_ICON` (🔁 beurt, used in `shiftRow`/`owedShiftRow`/`renderAdminShifts`), `PERSON_ICON`
-  (👤 vaste-taak-marker), `HEARTBREAK_ICON` (💔 joker used). v18.4 added the rest:
-  `GEAR_ICON` (⚙️ Beheer),
-  `BELL_ICON` (🔔 Meldingen aan), `PENCIL_ICON` (✏️ every edit button — one `replace_all`),
-  `CALENDAR_ICON`/`CALENDAR_DAYS_ICON` (📅 the `toggleTaskInterval` toggle keeps **two** icons
-  so weekly vs daily stays visible: red single-day = weekly, blue grid = daily), and
-  `HEART_ICON` (❤️ joker available). (v18.4 also added `BADGE_ICON`/`FLAME_ICON`, but **v18.5
-  reverted 🏆 Badges and 🔥 streak back to plain emoji** at the user's request — those two
-  constants are gone; the footer button, streak chip/counter and gallery title use 🏆/🔥 emoji.)
-  Only ✓ (afvinken, already a white tick
-  in the green `.check` circle) and emoji inside plain-text `alert()`s / prose stay emoji.
-  Chosen from an icon picker artifact.
-  **`ROTATE_ICON` is display-only**: the `🔁` in *stored* shift labels (`detachShiftTurn`, and
-  `notify.js`'s copy) and the "terugkerend/eenmalig" toggle stay emoji — `owedShiftRow` strips a
-  leading `🔁 ` from `t.label` at render before prefixing the icon. The rest of the app's emoji
-  (🏆 🔔 ⚙️ ✏️ 📅 ✓ 🔥 ❤️) are still emoji, pending a picker choice.
+- **Icons: SVG when it must be a specific colour, emoji otherwise.** Colour-emoji glyphs
+  ignore CSS `color`, so anything that must be tinted (red delete) or stay legible on the
+  dark card is an inline SVG. Two families exist: outline icons following `currentColor`
+  (`TRASH_ICON`, `SKIP_FWD_ICON`, `SKIP_BACK_ICON`, coloured via `.danger`/`.accent`/
+  `.postpone-btn`) and multi-colour icons carrying their own fills (`COLORWHEEL_ICON`,
+  `SHIELD_PIN_ICON`, `COPY_ICON`, `FAMILY_ICON`, `ROTATE_ICON`, `PERSON_ICON`, `GEAR_ICON`,
+  `BELL_ICON`, `PENCIL_ICON`, `CALENDAR_ICON`/`CALENDAR_DAYS_ICON` — the interval toggle
+  keeps **two** so weekly vs daily stays visible — `HEART_ICON`, `HEARTBREAK_ICON`).
+  🏆 🔥 🛒 💎 🎁 ✓ and emoji inside `alert()`s/prose stay emoji by choice.
+  **`ROTATE_ICON` is display-only**: the `🔁` in *stored* shift labels (`detachShiftTurn` and
+  `notify.js`'s copy) stays emoji — `owedShiftRow` strips a leading `🔁 ` from `t.label`
+  before prefixing the icon.
 - The celebration popup (`showCelebration`) fires **per kid**, the moment that kid's tasks
   are all done — and only while viewing **today** (`isToday` gate). Its anti-repeat guard
   (`celebratedDays`, a `Set` of `dayKey:uid` strings) exists because `render()` can be
   triggered by any of several async listeners, not just the user's own tap. When multiple
   kids newly complete in one render the names merge into one popup. A completing tap that
-  also mints a badge shows it ("Nieuwe badge: …") — known from `writeCompletionFlag`'s
-  return value, or from the badge already in cache on another device.
+  also mints a badge shows it, known from `writeCompletionFlag`'s return value or from the
+  badge already in cache on another device.
 - All sounds are **synthesized with Web Audio** (`playChime` on check-off, `playFanfare`
   under the celebration) — never an external audio file; the app stays a single
   self-contained file. Hard-won rules: the shared `audioCtx` is created lazily *inside* a
@@ -623,8 +564,3 @@ server half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`
   (`lastChimeAt`) — the exception covers iOS's async `resume()` on first tap, the bail
   stops a tapless popup from queuing a sound that blares on the next tap. Every audio path
   is try/catch-wrapped so it can never block a state write or popup.
-
-## Deep background
-`docs/PLAN-v16.md` is the frozen, phase-by-phase build log of v16 (design decisions, rules
-review, migration details). Consult it for *why* something is the way it is; this file is
-the working summary. `docs/CHANGELOG.md` lists what shipped per version.
