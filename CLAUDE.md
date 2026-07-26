@@ -14,8 +14,8 @@ few companion files (see **Push notifications**): `manifest.json` + `icon-*.png`
 side. Other companion files: `firebase-rules-v16.json` (RTDB security rules, paste-ready for
 the Firebase Console), and a **`test/`** folder (headless suite + fake Firebase SDK).
 Documentation lives in **`docs/`**: `docs/PLAN-v16.md` / `docs/PLAN-v17-meldingen.md` /
-`docs/PLAN-v18-beurten.md` (build logs — deep background) and `docs/CHANGELOG.md` (what
-changed per version). Only `CLAUDE.md` and the app/deploy files stay at the repo root —
+`docs/PLAN-v18-beurten.md` / `docs/PLAN-v19-beloningen.md` (build logs — deep background)
+and `docs/CHANGELOG.md` (what changed per version). Only `CLAUDE.md` and the app/deploy files stay at the repo root —
 `index.html`, `manifest.json`, `firebase-messaging-sw.js` and `icon-*.png` **must** stay
 there (GitHub Pages serves the root, and the service worker's scope depends on its
 location).
