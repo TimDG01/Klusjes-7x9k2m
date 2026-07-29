@@ -14,6 +14,18 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v21.3 — juli 2026
+- **"Diamanten bijsturen" staat nu bij Beheer → 🎁 Beloningen** in plaats van bij
+  Instellingen. Instellingen gaat over hóe de app zich gedraagt; een saldo bijsturen is een
+  handeling op de munt van de winkel en hoort dus bij de beloningen. De sectiekop vermeldt
+  het ("· 💎 bijsturen"), zodat je het meteen terugvindt.
+- Meteen ook een verouderd zinnetje in die sectie rechtgezet: er stond nog "Ze vragen een
+  beloning aan, jij keurt goed", terwijl kinderen sinds v19.7 zelf kopen en jij enkel
+  aanduidt wanneer ze de beloning gekregen hebben.
+- Niets veranderd aan de werking zelf: bijsturen komt nog altijd als aparte bonusregel in de
+  geschiedenis, zodat het verdiende terug te vinden blijft.
+- Geen rules-wijziging nodig.
+
 ## v21.2 — juli 2026
 - **Bij een eigen klusje zie je nu of het terugkeert.** Het grijze labeltje achter de naam
   zegt **elke dag** of **eenmalig** in plaats van "eigen" — dat laatste stond al in de

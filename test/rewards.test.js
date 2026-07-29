@@ -260,6 +260,30 @@ async function tap(page, label){
     check('en blijft als aparte regel zichtbaar', Object.keys(led).length, 3);
     await page.close();
   }
+  {
+    // v21.3: het bijsturen staat in Beheer → Beloningen, niet meer bij Instellingen.
+    // Beide secties worden hier geopend, want ze staan standaard ingeklapt.
+    const { page } = await openApp(browser, { seed: seed({ diamonds: { [dk(-1)]: 4 } }), user: PARENT });
+    await page.evaluate(() => window.openAdmin());
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => window.toggleAdminRow('sec:beloningen'));
+    await page.waitForTimeout(250);
+    const beloningen = await page.locator('#app').innerText();
+    check('Beloningen bevat "Diamanten bijsturen"', beloningen.includes('Diamanten bijsturen'), true);
+    check('  met het saldo van het kind erbij', beloningen.includes('4 💎'), true);
+    check('  de sectiekop hint ernaar', (await page.locator('.admin-group-head').nth(2).innerText()).includes('💎 bijsturen'), true);
+    await page.evaluate(() => window.toggleAdminRow('sec:beloningen'));
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => window.toggleAdminRow('sec:instellingen'));
+    await page.waitForTimeout(250);
+    check('Instellingen bevat het niet meer',
+      (await page.locator('#app').innerText()).includes('Diamanten bijsturen'), false);
+    check('  maar wel nog de gewone instellingen',
+      (await page.locator('#app').innerText()).includes('Dagelijkse herinnering'), true);
+    await page.close();
+  }
 
   section('12. Een kind kan de catalogus niet wijzigen');
   {

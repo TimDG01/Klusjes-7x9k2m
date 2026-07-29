@@ -31,7 +31,7 @@ const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')
 // Eén gezin, per scenario aan te vullen. `shifts` wordt altijd expliciet gezet: ontbreekt die
 // node, dan zaait de app DEFAULT_SHIFTS erin en verschijnt er op ma/vr een extra rij (zie de
 // seed-valkuilen in README.md). weekdays:[7] bestaat niet, dus die beurt komt nooit op.
-function gezin({ eigen = null, days = {}, diamonds = {}, vrij = null, kids = 2 } = {}){
+function gezin({ eigen = null, days = {}, diamonds = {}, vrij = null, kids = 2, rewards = null } = {}){
   const members = {
     [PARENT]: { rol: 'ouder', weergavenaam: 'Ouder', kleur: '#185FA5', actief: true },
     [KID]: { rol: 'kind', weergavenaam: 'Lien', gebruikersnaam: 'lien', kleur: '#B5006E', actief: true }
@@ -48,7 +48,8 @@ function gezin({ eigen = null, days = {}, diamonds = {}, vrij = null, kids = 2 }
     settings: {
       streakStart: dk(-20), tasks,
       shifts: { s0: { name: 'Nooit', weekdays: [7], lines: ['x'], members: [KID] } },
-      ...(vrij ? { vrijeDagen: vrij } : {})
+      ...(vrij ? { vrijeDagen: vrij } : {}),
+      ...(rewards ? { rewards } : {})
     },
     streaks: {
       [KID]: { days, diamonds, ...(eigen ? { eigenTaken: eigen } : {}) },
@@ -99,6 +100,25 @@ const SCENARIOS = {
     stappen: async page => {
       await page.evaluate(d => window.setTestToday(d), iso(shift(-9)));
       await page.waitForTimeout(400);
+    }
+  },
+  // 💎 v21.3 — Beheer → Beloningen, opengeklapt: de catalogus met onderaan het bijsturen van
+  // de saldo's (dat stond tot v21.2 bij Instellingen).
+  'beheer-beloningen': {
+    seed: boom(gezin({
+      ...REEKS,
+      rewards: {
+        r1: { naam: 'Filmavond', omschrijving: 'zelf de film kiezen', diamanten: 10, order: 1, icoon: 'film' },
+        r2: { naam: 'Uitslapen', omschrijving: '', diamanten: 4, order: 2 }
+      }
+    }), false),
+    user: PARENT,
+    waitFor: '.card',
+    stappen: async page => {
+      await page.evaluate(() => window.openAdmin());
+      await page.waitForTimeout(250);
+      await page.evaluate(() => window.toggleAdminRow('sec:beloningen'));
+      await page.waitForTimeout(350);
     }
   },
   // 🏖️ v20 — vakantiedag: banner i.p.v. klusjes, met de reeks-strook die blijft staan.

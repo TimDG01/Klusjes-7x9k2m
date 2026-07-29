@@ -354,7 +354,7 @@ let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 let vrijeDagenCache = {};
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v21.2';
+const VERSION = 'klusjes-pwa v21.3';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -3474,7 +3474,7 @@ function renderAdmin(){
     </div>
     ${adminSection('sec:taken', 'Taken', `${taskList().filter(t => !t.fromShift).length} taken`, renderAdminTasks)}
     ${adminSection('sec:beurten', 'Beurt-taken', `${shiftsArray().length} beurt-taken`, renderAdminShifts)}
-    ${adminSection('sec:beloningen', '🎁 Beloningen', `${rewardsArray().length} beloningen`, renderAdminRewards)}
+    ${adminSection('sec:beloningen', '🎁 Beloningen', `${rewardsArray().length} beloningen · 💎 bijsturen`, renderAdminRewards)}
     ${adminSection('sec:instellingen', 'Instellingen', `melding ${notifyTimeKey} · kinderen: ${KID_CHECK_SCOPE_LABELS[kidCheckScopeKey] || 'elke dag'}`, renderAdminSettings)}
     ${adminSection('sec:reeksen', 'Reeksen &amp; badges', reeksenSamenvatting(), renderAdminStreak)}
     ${versionLine()}
@@ -3535,15 +3535,6 @@ function renderAdminSettings(){
         <select class="admin-select" onchange="setKidCheckScope(this.value)">${kidCheckScopeOptions()}</select>
       </div>
       <div class="admin-vacuum-note">"elke dag" = zoals voorheen. Kies "niet in het verleden" zodat een kind een vergeten klusje van gisteren niet alsnog kan afvinken, "enkel vandaag" om ook vooruit afvinken te blokkeren, of "nooit" als enkel een ouder mag afvinken.</div>
-
-      <div class="admin-role-title" style="font-size:13px;margin:16px 0 6px;">Diamanten bijsturen</div>
-      ${activeKids().map(k => `
-        <div class="admin-next-row">
-          <span>${escapeHtml(k.name)}: <b>${kidDiamonds(k.uid)} 💎</b></span>
-          <button class="admin-icon-btn" onclick="adjustDiamonds('${k.uid}')" title="Diamanten bijsturen">${PENCIL_ICON}</button>
-        </div>
-      `).join('') || '<div class="admin-vacuum-note">Nog geen kinderen in het gezin.</div>'}
-      <div class="admin-vacuum-note">Handmatig diamanten toekennen of aftrekken. Dit komt als extra regel in de geschiedenis, het verdiende blijft dus altijd terug te vinden.</div>
     </div>
   `;
 }
@@ -3859,11 +3850,25 @@ function renderAdminRewards(){
       </div>
     `;
   }).join('');
+  // Het saldo bijsturen hoort hier en niet bij Instellingen (waar het tot v21.2 stond):
+  // Instellingen gaat over hóe de app zich gedraagt, terwijl dit een handeling op de munt van
+  // de winkel is. Staat onderaan, ná de catalogus: die is waar een ouder deze sectie voor
+  // opent, bijsturen is het uitzonderingsgeval.
+  const saldoRijen = activeKids().map(k => `
+        <div class="admin-next-row">
+          <span>${escapeHtml(k.name)}: <b>${kidDiamonds(k.uid)} 💎</b></span>
+          <button class="admin-icon-btn" onclick="adjustDiamonds('${k.uid}')" title="Diamanten bijsturen">${PENCIL_ICON}</button>
+        </div>
+      `).join('');
   return `
     ${sections}
     <div class="admin-section">
       <button class="admin-add-btn" onclick="addReward()">+ Beloning toevoegen</button>
-      <div class="admin-vacuum-note">Kinderen sparen 💎 diamanten: ${DIAMANTEN_PER_DAG} per volledig afgewerkte dag en ${DIAMANTEN_PER_BADGE} extra bij elke badge. Ze vragen een beloning aan, jij keurt goed.</div>
+      <div class="admin-vacuum-note">Kinderen sparen 💎 diamanten: ${DIAMANTEN_PER_DAG} per volledig afgewerkte dag en ${DIAMANTEN_PER_BADGE} extra bij elke badge. Ze kopen zelf in de 🛒 Shop; jij duidt aan wanneer ze de beloning gekregen hebben.</div>
+
+      <div class="admin-role-title" style="font-size:13px;margin:16px 0 6px;">Diamanten bijsturen</div>
+      ${saldoRijen || '<div class="admin-vacuum-note">Nog geen kinderen in het gezin.</div>'}
+      <div class="admin-vacuum-note">Handmatig diamanten toekennen of aftrekken. Dit komt als extra regel in de geschiedenis, het verdiende blijft dus altijd terug te vinden.</div>
     </div>
   `;
 }

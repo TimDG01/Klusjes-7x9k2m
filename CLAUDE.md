@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v21.2** (`VERSION` = `klusjes-pwa v21.2`): a Dutch-language family chores app —
+**Klusjes-PWA v21.3** (`VERSION` = `klusjes-pwa v21.3`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a reward shop,
 🏖️ vacation days, 📝 kid-added own chores (that count for nothing), and push reminders.
@@ -510,9 +510,13 @@ the buttons and the `openAdmin`/`openMembers` routes are guarded). **Beheer**
 (`renderAdmin`) has five sections: **Taken** (`renderAdminTasks` — per task: participant
 chips, interval toggle, pointer ⏮/⏭, label edit, recurring/one-off, delete; `fromShift`
 tasks are filtered out), one per shift (`renderAdminShifts`), **Beloningen**
-(`renderAdminRewards`), **Instellingen** (`renderAdminSettings` — per-kid `magVerschuiven`
-chips (new per-kid flags belong here), the `notifyTime` dropdown, the `kidCheckScope`
-dropdown, and a per-kid diamond adjustment) and **Reeksen & badges** (`renderAdminStreak`).
+(`renderAdminRewards` — the catalogue, plus the per-kid **diamond adjustment**
+(`adjustDiamonds`) at the bottom), **Instellingen** (`renderAdminSettings` — per-kid
+`magVerschuiven` chips (new per-kid flags belong here), the `notifyTime` dropdown and the
+`kidCheckScope` dropdown) and **Reeksen & badges** (`renderAdminStreak`).
+**Instellingen is for how the app behaves, not for actions.** The diamond adjustment sat
+there until v21.2 and moved to Beloningen because it is an operation on the shop's currency,
+not a setting — apply the same test to anything new.
 The separate **Gezin** screen (`renderMembers`) manages children
 (add/rename/color/PIN/pause/delete) and shows the family code. All mutations are
 `prompt()`/`confirm()`-based to match the no-forms style; the exceptions are the weekday
