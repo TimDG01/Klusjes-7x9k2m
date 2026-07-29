@@ -10,8 +10,6 @@ const FID = 'f1', PARENT = 'p1', KID = 'k1', KID2 = 'k2';
 const dayKey = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 const shift = n => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
 const dk = n => dayKey(shift(n));
-const pad = n => String(n).padStart(2, '0');
-const nlDatum = n => { const d = shift(n); return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`; };
 
 // vrij[dagIndex] = [uids] → { '2026-8-3': { k1: true } }
 function vrijeDagen(vrij){
@@ -177,37 +175,23 @@ const open = (browser, opts, user, waitFor = '.card') =>
     await page.close();
   }
 
-  section('6. Beheer → 🏖️ Vakantie: een periode in één keer');
+  section('6. Elke dag apart, en Beheer blijft ongemoeid');
   {
+    // meerdere dagen na elkaar vrij zetten via de dagknop (er is bewust geen beheerscherm)
     const { page } = await open(browser, { kids: 2 }, PARENT, '.task');
-    await page.evaluate(() => window.openAdmin());
-    await page.waitForTimeout(150);
-    await page.evaluate(() => window.toggleAdminRow('sec:vakantie'));   // secties staan ingeklapt
-    await page.waitForTimeout(150);
-    check('de sectie staat in Beheer', await page.locator('.admin-add-btn', { hasText: 'Vakantieperiode' }).count(), 1);
-
-    await page.evaluate(a => { let i = 0; window.prompt = () => a[i++]; }, [nlDatum(3), nlDatum(5)]);
-    await page.locator('.admin-add-btn', { hasText: 'Vakantieperiode' }).click();
-    await page.waitForTimeout(300);
-    for (const n of [3, 4, 5]){
-      check(`dag +${n} staat vrij voor beide kinderen`,
-        (await leesVrij(page, dk(n), KID)) && (await leesVrij(page, dk(n), KID2)), true);
+    for (const n of [0, 1, 2]){
+      if (n) await page.evaluate(() => window.changeDay(1));
+      await page.waitForTimeout(200);
+      await page.locator('.free-btn').first().click();   // enkel het eerste kind
+      await page.waitForTimeout(200);
     }
-    check('  en de dag ervoor niet', await leesVrij(page, dk(2), KID), false);
-    check('  één periode in de lijst', await page.locator('.admin-task-label').count(), 1);
+    for (const n of [0, 1, 2]) check(`dag +${n} staat vrij`, await leesVrij(page, dk(n), KID), true);
+    check('  en het tweede kind blijft gewoon doorwerken', await leesVrij(page, dk(2), KID2), false);
 
-    // chip van het tweede kind uitzetten voor de hele periode
-    await page.locator('.admin-kid-btn', { hasText: 'Zus' }).first().click();
-    await page.waitForTimeout(300);
-    check('chip uit: het tweede kind is niet meer vrij', await leesVrij(page, dk(4), KID2), false);
-    check('  het eerste kind wel nog', await leesVrij(page, dk(4), KID), true);
-
-    // en de hele periode weer wissen
-    await page.evaluate(() => { window.confirm = () => true; });
-    await page.locator('.admin-icon-btn.danger').first().click();
-    await page.waitForTimeout(300);
-    check('prullenbak wist de hele periode', await leesVrij(page, dk(3), KID), false);
-    check('  de lijst is leeg', await page.locator('.admin-add-btn', { hasText: 'Vakantieperiode' }).count(), 1);
+    await page.evaluate(() => window.openAdmin());
+    await page.waitForTimeout(250);
+    check('Beheer telt nog altijd vijf secties', await page.locator('.admin-group-head').count(), 5);
+    check('  geen vakantiesectie', (await page.locator('#app').textContent()).includes('Vakantie'), false);
     await page.close();
   }
 

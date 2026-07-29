@@ -427,24 +427,23 @@ steps over it. Build log: **`docs/PLAN-v20-vakantie.md`**.
   is. Both `shiftPendingDay` and `shiftAutoDetachIfLapsed`/`shiftDetachPlan` run through it,
   so a turn falling in a vacation **slides to the first day after** instead of lapsing into a
   detached 🔁 one-off. A manual `override` still wins (an explicit parent choice).
-- **Two entry points**: the parent-only 🏖️ button in the card header (`toggleVrijeDag`, one
-  day) and **Beheer → 🏖️ Vakantie** (`renderAdminVakantie`) for a van–tot period in one
-  `rootUpdate` (`addVakantiePeriode`, capped at 92 days), with per-period kid chips
-  (`toggleVakantieKid`) and a delete (`removeVakantiePeriode`). Consecutive days with the
-  same kid-set are grouped for display by `vakantiePeriodes()`.
+- **One entry point, on purpose**: the parent-only 🏖️ button in the card header
+  (`toggleVrijeDag`), one day at a time. A Beheer → Vakantie section (van–tot periods) was
+  built and then **removed at the user's request** — Beheer is already crowded and a second
+  place to do the same thing didn't pay for itself. Don't re-add one without asking; the
+  removed code is in the v20 commit history.
 - **Server mirror** in `scripts/notify.js`: `isVrijeDag`, the same skip in
   `shiftNextScheduledDayFrom`, and an early `return []` in `openChoresFor` (no reminder).
 
 ### Admin & members screens
 No client-side password — access is the **parent role** (`isParent()`; children don't see
 the buttons and the `openAdmin`/`openMembers` routes are guarded). **Beheer**
-(`renderAdmin`) has six sections: **Taken** (`renderAdminTasks` — per task: participant
+(`renderAdmin`) has five sections: **Taken** (`renderAdminTasks` — per task: participant
 chips, interval toggle, pointer ⏮/⏭, label edit, recurring/one-off, delete; `fromShift`
 tasks are filtered out), one per shift (`renderAdminShifts`), **Beloningen**
-(`renderAdminRewards`), **🏖️ Vakantie** (`renderAdminVakantie`), **Instellingen**
-(`renderAdminSettings` — per-kid `magVerschuiven` chips (new per-kid flags belong here), the
-`notifyTime` dropdown, the `kidCheckScope` dropdown, and a per-kid diamond adjustment) and
-**Reeksen & badges** (`renderAdminStreak`).
+(`renderAdminRewards`), **Instellingen** (`renderAdminSettings` — per-kid `magVerschuiven`
+chips (new per-kid flags belong here), the `notifyTime` dropdown, the `kidCheckScope`
+dropdown, and a per-kid diamond adjustment) and **Reeksen & badges** (`renderAdminStreak`).
 The separate **Gezin** screen (`renderMembers`) manages children
 (add/rename/color/PIN/pause/delete) and shows the family code. All mutations are
 `prompt()`/`confirm()`-based to match the no-forms style; the exceptions are the weekday

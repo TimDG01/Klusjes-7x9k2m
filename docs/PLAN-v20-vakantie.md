@@ -83,17 +83,17 @@ dus de beurt **schuift op naar de eerste dag ná de vakantie** — zelfde kind, 
 Een `override` die een ouder handmatig op een vrije dag zet, blijft staan: dat is een
 expliciete keuze van een ouder en wint van het schema.
 
-### Bediening: twee ingangen
-1. **🏖️-knop rechts in de kaartkop** (ouder-only), voor één losse dag — het "vinkje per dag"
-   uit de vraag.
-2. **Beheer → 🏖️ Vakantie**: een periode van–tot in twee `prompt()`s (stijl van de rest van
-   Beheer), meteen voor alle actieve kinderen, in **één `rootUpdate`**. Aaneengesloten dagen
-   met dezelfde kind-set worden voor de weergave gegroepeerd tot een periode
-   (`vakantiePeriodes()`), met per periode kind-chips en een prullenbak. Voorbije periodes
-   blijven staan — ze dragen de historiek van de reeks.
+### Bediening: één ingang, bewust
+De **🏖️-knop rechts in de kaartkop** (ouder-only) zet één dag vrij of terug — het "vinkje per
+dag" uit de vraag.
 
-Grens van 92 dagen per periode: een typfout in het jaartal mag geen duizenden sleutels
-schrijven.
+Er is tijdens het bouwen ook een **Beheer → 🏖️ Vakantie** gemaakt (periode van–tot in twee
+`prompt()`s, kind-chips per periode, prullenbak) en die is **er weer uitgehaald** op vraag van
+de gebruiker: Beheer staat al vol, en een tweede plek om hetzelfde te doen betaalt die
+extra belasting niet terug. Een periode van twee weken is dus twee weken doorklikken met de
+dagknop. Komt dat er ooit toch, dan staat de verwijderde code in de commit-historiek van
+v20 (`renderAdminVakantie`, `addVakantiePeriode`, `toggleVakantieKid`,
+`removeVakantiePeriode`, `vakantiePeriodes`, `periodeLabel`, `dagenTussen`).
 
 ### Server (`scripts/notify.js`)
 De klusjeswiskunde staat daar bewust dubbel. Meegespiegeld: `isVrijeDag`, dezelfde `continue`

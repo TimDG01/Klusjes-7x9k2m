@@ -23,9 +23,9 @@ Console geplakt worden.
   badge én diamant.
 - Ook **geen push-herinnering** op een vrije dag, en een **beurt-taak** die in de vakantie valt
   vervalt niet: ze schuift door naar de eerste dag ná de vrije dagen, bij hetzelfde kind.
-- Twee manieren om het aan te duiden: de **🏖️-knop** rechts op de kaart van een kind (enkel
-  zichtbaar voor een ouder, voor één losse dag), en **Beheer → 🏖️ Vakantie** voor een hele
-  periode van–tot ineens, met per periode chips om een kind toe te voegen of weg te laten.
+- Aanduiden gebeurt met de **🏖️-knop** rechts op de kaart van een kind, enkel zichtbaar voor
+  een ouder: één tik = die dag vrij, nog een tik = terug een gewone dag. Bewust géén extra
+  sectie in Beheer — dat scherm staat al vol genoeg.
 - Een vakantie mag ook achteraf ingevuld worden — de reeks wordt elke keer opnieuw berekend,
   dus een reeks die door het verlof brak, wordt zo hersteld.
 - Geen rules-wijziging nodig.

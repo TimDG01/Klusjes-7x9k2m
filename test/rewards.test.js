@@ -619,7 +619,7 @@ async function tap(page, label){
     const { page } = await openApp(browser, { seed: winkel({ saldo: 5 }), user: PARENT });
     await page.evaluate(() => window.openAdmin());
     await page.waitForTimeout(250);
-    check('zes sectiekoppen', await page.locator('.admin-group-head').count(), 6);   // + 🏖️ Vakantie (v20)
+    check('vijf sectiekoppen', await page.locator('.admin-group-head').count(), 5);
     check('niets opengeklapt', await page.locator('.admin-group-body').count(), 0);
     check('geen beloningsrijen zichtbaar', (await page.locator('#app').textContent()).includes('Filmavond'), false);
     check('wel een samenvatting', (await page.locator('.admin-group-sub', { hasText: '2 beloningen' }).count()), 1);
