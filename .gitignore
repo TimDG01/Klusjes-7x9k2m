@@ -141,3 +141,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Screenshots gemaakt door test/screenshot.js — het script staat in git, de beelden niet
+# (dan kan er nooit een verouderde screenshot in de repo achterblijven).
+test/screenshots/

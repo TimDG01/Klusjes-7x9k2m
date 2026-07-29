@@ -112,7 +112,10 @@ test suite in **`test/`** (Node + Playwright; `node_modules` is gitignored).
 - **Testing gotchas**: the celebration popup overlays the card once a day is complete, so
   dismiss `.celebration-close` before the next click; Beheer sections are collapsed by
   default, so open the right `'sec:*'` row before asserting on its contents; for a visual
-  change, take a screenshot and *look* at it — green tests say nothing about how it reads.
+  change, take a screenshot and *look* at it — **`cd test && npm run shot`** does exactly that
+  (`test/screenshot.js`, same fake SDK, light **and** dark, output in the gitignored
+  `test/screenshots/`). Don't hand-roll a throwaway screenshot script: add a scenario to its
+  `SCENARIOS` map instead, so the next change can reuse it.
   Three seeding traps, each of which produced a wrong test before a wrong diagnosis:
   (1) **a seed without `settings/shifts` gets `DEFAULT_SHIFTS` written into it** ("Stofzuigen",
   Mon+Fri), so an extra row appears on some weekdays and the day is never complete — seed the

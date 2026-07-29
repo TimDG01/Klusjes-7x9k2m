@@ -66,6 +66,27 @@ diagnose):
 3. **Een voltooiingsvlag zonder de bijbehorende vinkjes verdwijnt weer.** `render()` haalt op
    vandaag een onverdiende vlag terecht weg; seed dus ook `days/{key}/checks/{uid}`.
 
+## Screenshots (`npm run shot`)
+
+Groene tests zeggen niets over hoe iets *leest*. `screenshot.js` opent dezelfde
+`index.html` met dezelfde nep-SDK en legt een scenario vast in **licht én donker** thema:
+
+```
+npm run shot                    # alle scenario's, beide thema's
+node screenshot.js eigen        # één scenario
+node screenshot.js eigen donker # één scenario, één thema
+node screenshot.js --uit=/tmp/x # andere uitvoermap
+```
+
+De PNG's komen in `test/screenshots/`, dat **gitignored** is: het script hoort in de repo, de
+beelden niet — zo kan er nooit een verouderde screenshot in git achterblijven. Het is een
+hulpmiddel, geen test: `run-all.js` pikt enkel `*.test.js` op, dus dit draait nooit mee in de
+suite.
+
+Een scenario toevoegen = één entry in `SCENARIOS` met `{ seed, user, query?, waitFor?,
+stappen? }`. `stappen(page)` loopt ná het laden en vóór de opname, zodat je eerst nog kunt
+klikken of (in `?test`) de klok kunt verzetten — zie `testbar-verzet`.
+
 ## Waarom de nep-SDK is zoals hij is
 
 Drie dingen zijn er de harde manier uit geleerd; ze staan als commentaar in

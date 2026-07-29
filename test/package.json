@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Headless tests voor index.html tegen een nep-Firebase-SDK (geen netwerk, geen echte data).",
   "scripts": {
-    "test": "node run-all.js"
+    "test": "node run-all.js",
+    "shot": "node screenshot.js"
   },
   "devDependencies": {
     "playwright": "^1.62.0"
