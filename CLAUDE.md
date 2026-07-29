@@ -4,18 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v20** (`VERSION` = `klusjes-pwa v20`): a Dutch-language family chores app —
+**Klusjes-PWA v21** (`VERSION` = `klusjes-pwa v21`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a reward shop,
-🏖️ vacation days, and push reminders. The app itself is **one static file, `index.html`** (inline CSS + one
+🏖️ vacation days, 📝 kid-added own chores (that count for nothing), and push reminders.
+The app itself is **one static file, `index.html`** (inline CSS + one
 `<script type="module">`), zero dependencies, no build step, hosted on GitHub Pages from
 `main`. Companion files: `manifest.json` + `icon-*.png` + `firebase-messaging-sw.js` (PWA +
 push), `firebase-rules-v16.json` (RTDB rules, paste-ready for the Console), `scripts/` +
 `.github/workflows/` (server half), and **`test/`** (headless suite + fake Firebase SDK).
 Docs live in **`docs/`**: `CHANGELOG.md` (what shipped per version) and `PLAN-v16.md` /
 `PLAN-v17-meldingen.md` / `PLAN-v18-beurten.md` / `PLAN-v19-beloningen.md` /
-`PLAN-v20-vakantie.md` (frozen build logs — the *why* behind big decisions; this file is the
-working summary).
+`PLAN-v20-vakantie.md` / `PLAN-v21-eigen-klusjes.md` (frozen build logs — the *why* behind
+big decisions; this file is the working summary).
 **`index.html`, `manifest.json`, `firebase-messaging-sw.js` and `icon-*.png` must stay at
 the repo root** — Pages serves the root and the service worker's scope depends on its
 location.
@@ -201,6 +202,8 @@ days/{yyyy-M-d}/shift/{shiftId}: { uid, line }         // frozen turn-task histo
 streaks/{uid}/days/{yyyy-M-d}: true                    // completion flag: that kid finished everything that day
 streaks/{uid}/badges/b{n}: 'yyyy-M-d'                  // n-th badge (ordinal key), value = earn-day; permanent
 streaks/{uid}/diamonds/{yyyy-M-d}: 1|4                 // earning ledger; 'bonus-{ts}': ±n for a manual parent adjustment
+streaks/{uid}/eigenTaken/{id}: { label, order, onDay?, gedaanOp?:{dayKey:true} }
+                                                       // 📝 klusje dat het kind zelf toevoegde; telt nergens mee
 streaks/{uid}/purchases/{id}: { rewardId, naam, diamanten, dag, icoon?, gegeven?, gemeld? }
                                                        // child buys directly; gegeven = day handed over; gemeld = server-written, alert sent
 
@@ -434,6 +437,42 @@ steps over it. Build log: **`docs/PLAN-v20-vakantie.md`**.
   removed code is in the v20 commit history.
 - **Server mirror** in `scripts/notify.js`: `isVrijeDag`, the same skip in
   `shiftNextScheduledDayFrom`, and an early `return []` in `openChoresFor` (no reminder).
+
+### 📝 Eigen klusjes (kind-eigen, telt nergens mee)
+A child adds its own chores for itself — things it wants to track — with **no consequences**
+for day completion, the streak 🔥, badges 🏆 or diamonds 💎. Build log:
+**`docs/PLAN-v21-eigen-klusjes.md`**.
+- Storage `streaks/{uid}/eigenTaken/{id}: { label, order, onDay?, gedaanOp? }`. **Deliberately
+  not in `settings/tasks`.** Two reasons: the `streaks/$childId` rule is already
+  parent-or-self and **cascades** (→ **no rules change**, same argument as v19.7 direct
+  buying), and — the real point — because an eigen klusje never enters `taskList()`, it is
+  excluded from `tasksForKidDay`, `kidScheduledCount`, `simulateStreak`,
+  `writeCompletionFlag`, the progress bar, `showCelebration`, `renderAdminTasks` and
+  `scripts/notify.js` **by structure, not by filters**. All of those files stayed literally
+  unchanged; don't "improve" this by folding eigen klusjes into the task machinery.
+- **No new listener**: the `/streaks` listener (no gate, non-fatal) already loads the branch
+  and covers the whole history. `streaksOf()` and the listener mapping each gained one key.
+- **The whole feature is one absence in `render()`**: `k.eigen = eigenTakenForDay(...)` is set
+  **after** the `k.vrij` branch (so eigen klusjes survive a 🏖️ vrije dag — vacation cancels
+  *chores*) and is deliberately **not** concatenated into `ids`. `ids` is what drives the
+  completion flag, badge, diamond, progress bar and celebration, so staying out of it *is* the
+  requirement.
+- **`onDay` absent = every day**; present = pinned to one day. `eigenEffIdx` slides an
+  unchecked pin forward to today (same self-healing as `onDayEffIdx`); on check-off
+  `toggleEigenTaak` rewrites `onDay` to the checked day **in the same atomic update** as
+  `gedaanOp/{key}`, or the row would jump back to the original pin and reappear unchecked.
+  `gedaanOp` sits **on the definition** rather than in `days/{key}/checks` because the day
+  listener holds only one day while this cache holds the whole history — that is what makes
+  the slide computable without a second listener.
+- **`checkBlockReason()` is deliberately NOT called** here: `settings/kidCheckScope` exists to
+  stop a kid gaming its streak/diamonds by checking past days, and an eigen klusje has no such
+  consequences. Also **no celebration/fanfare** — only `playChime()` as tap feedback.
+- **UI lives entirely on the card**: an `.own-sec` block with a grey `eigen` chip per row
+  (not the coloured `.vac-tag`), a 🗑 per row, and one `+ Eigen klusje` button. The header only
+  renders when there are rows, so an empty card stays quiet. Parent **and** child see and may
+  delete them; `mayEditEigen(uid)` guards the three handlers themselves, not just the buttons.
+  **No admin screen and no renaming** — the user's explicit choice (mistyped label = delete and
+  retype); don't add a Beheer section or a fourth screen without asking.
 
 ### Admin & members screens
 No client-side password — access is the **parent role** (`isParent()`; children don't see

@@ -162,4 +162,22 @@ section('10. De cron maakt geen beurten los tijdens de vakantie');
   check('  en de rotatie blijft staan', fam.settings.shifts.s1.lastDone, dk(-5));
 }
 
+// ---- v21: 📝 eigen klusjes komen nooit in een herinnering ----
+// Ze staan onder streaks/{uid}/eigenTaken en de ctx van familySendPlan leest enkel
+// settings/tasks + settings/shifts — er valt dus niets weg te filteren. Deze sectie zet
+// dat vast, zodat een latere refactor die streaks in de ctx trekt hier stukloopt.
+section('11. Geen herinnering voor een eigen klusje');
+{
+  const eigen = { k1: { eigenTaken: { e1: { label: 'Boek lezen', order: 1 } } } };
+
+  const met = familySendPlan({ ...gezin({}), streaks: eigen }, nu, dk(0), false);
+  check('het echte klusje geeft nog gewoon een herinnering', met.plan.length, 1);
+  check('  en het eigen klusje staat niet in de tekst', met.plan[0].body, 'Nog te doen: Afwas');
+
+  // echte klusje af, eigen klusje open → niets te melden
+  const fam = { ...gezin({}), days: { [dk(0)]: { checks: { k1: { t1: true } } } }, streaks: eigen };
+  check('alles echt af + een openstaand eigen klusje = geen herinnering',
+    familySendPlan(fam, nu, dk(0), false).plan.length, 0);
+}
+
 done();

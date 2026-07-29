@@ -14,6 +14,19 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v21 — juli 2026
+- **📝 Eigen klusjes.** Een kind kan nu zelf klusjes toevoegen voor zichzelf — dingen die het
+  voor zijn eigen wil bijhouden — via de knop **+ Eigen klusje** onderaan zijn kaart.
+- Bij het toevoegen kiest het kind **elke dag** of **enkel deze dag**. Een vergeten klusje van
+  "enkel deze dag" schuift mee naar vandaag i.p.v. te verdwijnen.
+- Ze staan in een apart blokje onder de gewone klusjes, met een grijze `eigen`-chip, en tellen
+  **niet** mee: geen invloed op de voortgangsbalk, de reeks 🔥, de badges 🏆 of de diamanten 💎.
+  Ze kunnen een reeks dus niet breken — en ook niet redden.
+- Er komt ook **geen herinnering** voor een eigen klusje, en geen proficiat-viering.
+- Kind én ouder zien ze op de kaart en mogen ze beide wissen (🗑 per rij). Bewust géén extra
+  scherm en niet in Beheer: vergist het kind zich in de tekst, dan wist het de rij en typt opnieuw.
+- Geen rules-wijziging nodig.
+
 ## v20 — juli 2026
 - **🏖️ Vrije dagen (vakantiemodus).** Een ouder kan een dag per kind vrij geven: op zo'n dag
   staan er geen klusjes op de kaart, maar een rustige vakantiebanner.

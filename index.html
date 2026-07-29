@@ -80,6 +80,15 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .postpone-btn{font-size:15px;padding:2px 4px;flex-shrink:0;color:var(--blue);}
 .postpone-btn svg{display:block;}
 
+/* 📝 Eigen klusjes (v21): het kind houdt hier zelf dingen bij. Bewust een apart blokje
+   onderaan de kaart, met een hairline erboven en een grijze chip i.p.v. de gekleurde
+   .vac-tag — het moet er lezen als "hoort niet bij de echte klusjes", want het telt
+   niet mee voor de reeks, de badges of de diamanten. */
+.own-sec{margin-top:10px;padding-top:8px;border-top:1px solid var(--border);}
+.own-head{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:2px;}
+.own-note{font-weight:400;color:var(--text3);}
+.own-tag{font-size:11px;font-weight:600;color:var(--text2);background:var(--track);padding:2px 7px;border-radius:6px;margin-left:6px;}
+
 .celebration{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
 .celebration-card{background:var(--card);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;}
 .celebration-emoji{font-size:56px;margin-bottom:12px;}
@@ -329,7 +338,7 @@ let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 let vrijeDagenCache = {};
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v20';
+const VERSION = 'klusjes-pwa v21';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -748,10 +757,15 @@ let vacuumLoaded = false; // (gate-naam behouden; dekt nu de shifts-listener)
 // mee met deze ene listener (geen extra leesverkeer) én vallen onder dezelfde rules-regel,
 // die een kind zijn eigen tak laat schrijven. Dat is ook precies waarom een kind sinds
 // v19.7 zelf kan kopen zonder dat de rules aangepast moesten worden.
-let streaksCache = {}; // { uid: { days, badges, diamonds, purchases } }
+// eigenTaken (v21) hoort in dezelfde categorie: het zijn klusjes die het KIND zelf
+// bijhoudt, en de rules laten een kind precies deze ene tak schrijven. Ze staan bewust
+// NIET onder settings/tasks — daardoor komen ze nergens in de klusjes-rekenkunde terecht
+// (taskList/tasksForKidDay/kidScheduledCount/notify.js) en kunnen ze dus onmogelijk een
+// reeks breken of een diamant opleveren. Uitsluiten door structuur, niet door filters.
+let streaksCache = {}; // { uid: { days, badges, diamonds, purchases, eigenTaken } }
 let streaksLoaded = false;
 function streaksOf(uid){
-  return streaksCache[uid] || { days: {}, badges: {}, diamonds: {}, purchases: {} };
+  return streaksCache[uid] || { days: {}, badges: {}, diamonds: {}, purchases: {}, eigenTaken: {} };
 }
 
 // Beloningen (v19). Eigen listeners, allemaal zonder laad-gate en niet-fataal: dit is een
@@ -1025,6 +1039,55 @@ function tasksForKidDay(uid, idx, dow){
     if (t.onDay){ const e = onDayEffIdx(t); return e != null && idx === e; }
     return taskWeekdays(t).includes(dow);
   });
+}
+
+// --- 📝 Eigen klusjes (v21) ---
+// Klusjes die een kind zelf toevoegt om iets voor zichzelf bij te houden. Ze staan onder
+// streaks/{uid}/eigenTaken/{id} en zijn met opzet GEEN gewone taak: ze komen nooit in
+// taskList(), dus ook nooit in tasksForKidDay, kidScheduledCount, simulateStreak,
+// writeCompletionFlag, de voortgangsbalk, de viering, Beheer of de herinnering in
+// scripts/notify.js. Uitsluiten door structuur — er valt nergens een filter te vergeten.
+//   { label, order, onDay?, gedaanOp? }
+// `onDay` afwezig = elke dag; aanwezig = gepind op één dag. `gedaanOp` is de afvinkstatus
+// per dagkey, en zit bewust OP de definitie i.p.v. in days/{key}/checks: de dag-listener
+// houdt maar één dag vast, terwijl deze cache de hele historiek bevat — precies wat het
+// meeschuiven hieronder mogelijk maakt. Dagsleutel = idempotent van vorm (zoals diamonds).
+function eigenTakenList(uid){
+  const v = streaksOf(uid).eigenTaken || {};
+  return Object.keys(v)
+    .map(id => ({ id, ...v[id] }))
+    .sort((a,b) => (a.order||0) - (b.order||0));
+}
+
+function eigenDone(t, key){
+  return !!(t.gedaanOp && t.gedaanOp[key]);
+}
+
+// Effectieve dag van een gepind eigen klusje. Zolang het nog nooit afgevinkt is schuift het
+// mee naar vandaag (zelfde zelf-herstel als onDayEffIdx) — een vergeten eigen to-do mag niet
+// uit het zicht verdwijnen. Is het wél afgevinkt, dan blijft het op zijn dag staan; toggleEigenTaak
+// herschrijft `onDay` daarom naar de dag van afvinken, anders sprong de rij terug naar de
+// oorspronkelijke pin en dook ze daar weer onafgevinkt op. `null` = geen pin (= elke dag).
+function eigenEffIdx(t){
+  const od = parseDayKey(t.onDay);
+  if (!od) return null;
+  const pinned = dayIndex(od);
+  const ooitGedaan = t.gedaanOp && Object.keys(t.gedaanOp).length > 0;
+  return ooitGedaan ? pinned : Math.max(pinned, dayIndex(clampedToday()));
+}
+
+function eigenTakenForDay(uid, idx){
+  return eigenTakenList(uid).filter(t => {
+    if (t.onDay){ const e = eigenEffIdx(t); return e != null && idx === e; }
+    return true; // geen pin = elke dag
+  });
+}
+
+// Wie mag de eigen klusjes van dit kind toevoegen/afvinken/wissen: een ouder altijd, en het
+// kind enkel voor zichzelf. Dezelfde check staat in de drie handlers zelf, niet alleen rond
+// de knoppen — de rules dwingen streaks/{uid} al af, dit houdt de UI eerlijk.
+function mayEditEigen(uid){
+  return isParent() || (isChild() && !!authUser && uid === authUser.uid);
 }
 
 // --- Migratie van de oude A/B-bucketvorm naar de platte rotatievorm ---
@@ -1302,7 +1365,8 @@ function initFamily(){
         days: v[uid].days || {},
         badges: v[uid].badges || {},
         diamonds: v[uid].diamonds || {},      // v19: verdiengrootboek per dag
-        purchases: v[uid].purchases || {}     // v19.7: wat het kind zelf gekocht heeft
+        purchases: v[uid].purchases || {},    // v19.7: wat het kind zelf gekocht heeft
+        eigenTaken: v[uid].eigenTaken || {}   // v21: klusjes die het kind zelf toevoegde
       };
     });
     streaksLoaded = true;
@@ -1642,6 +1706,11 @@ function render(){
     // blijft staan (de weghaal-tak hieronder eist `ids.length > 0`).
     k.vrij = isVrijeDag(k.key, cDay);
     if (k.vrij){ k.tasks = []; k.snaps = []; k.shifts = []; }
+    // 📝 Eigen klusjes (v21): bewust NA de vrije-dag-tak, dus ze blijven ook op een 🏖️ dag
+    // staan — vakantie schrapt de klúsjes, niet wat het kind voor zichzelf bijhoudt. En
+    // bewust NIET in `ids` hieronder: daaruit volgt vanzelf geen voltooiingsvlag, geen
+    // badge, geen diamant, buiten de voortgangsbalk en geen viering.
+    k.eigen = eigenTakenForDay(k.key, idx);
     const ids = k.tasks.map(t => t.id).concat(k.snaps.map(s => s.id));
     // een projectie (vooruitblik) telt niet mee voor de voltooiing van de dag
     k.shifts.forEach(({ sh, info }) => { if (info.mode !== 'projected') ids.push('shift-' + sh.id); });
@@ -1784,6 +1853,19 @@ function renderCard(k){
         <div class="free-sub">Geen klusjes vandaag — de reeks blijft staan.</div>
       </div>` : `${tasks}${shiftRows}`;
 
+  // 📝 Eigen klusjes: een apart blokje onderaan, met de + knop erin. Het blok verschijnt ook
+  // als de lijst leeg is (dan enkel de knop), zodat het kind de ingang altijd vindt; wie niets
+  // mag wijzigen (een ander kind kan deze kaart niet zien, dus in de praktijk: niemand) krijgt
+  // een leeg blok en dus niets. Het beheer zit volledig hier — geen Beheer-scherm voor kinderen.
+  const mag = mayEditEigen(k.key);
+  const eigenRijen = (k.eigen || []).map(t => eigenTaskRow(k.key, t, mag)).join('');
+  const eigenBlok = (eigenRijen || mag) ? `
+      <div class="own-sec">
+        ${eigenRijen ? '<div class="own-head">Eigen klusjes <span class="own-note">— telt niet mee voor 🔥 of 💎</span></div>' : ''}
+        ${eigenRijen}
+        ${mag ? `<button class="admin-add-btn" onclick="addEigenTaak('${k.key}')">+ Eigen klusje</button>` : ''}
+      </div>` : '';
+
   return `
     <div class="card">
       <div class="card-header">
@@ -1793,6 +1875,7 @@ function renderCard(k){
       </div>
       ${streakStrip(k)}
       ${inhoud}
+      ${eigenBlok}
     </div>
   `;
 }
@@ -1836,6 +1919,20 @@ function taskRow(uid, taskId, label, done, fixed){
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
       <div class="task-label ${done ? 'done' : ''}">${escapeHtml(label)}</div>
       ${fixed ? `<span class="fixed-mark" title="Vaste taak">${PERSON_ICON}</span>` : ''}
+    </div>
+  `;
+}
+
+// Rij voor een 📝 eigen klusje. Ziet uit als een gewone klusjesrij, maar met een grijze
+// "eigen"-chip en een prullenbak — en zonder enig gevolg voor de reeks of de diamanten.
+// Het label is vrije tekst van een kind, dus altijd door escapeHtml().
+function eigenTaskRow(uid, t, mag){
+  const done = eigenDone(t, dayKey(current));
+  return `
+    <div class="task" onclick="toggleEigenTaak('${uid}','${t.id}')">
+      <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
+      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(t.label || '')}<span class="own-tag">eigen</span></div>
+      ${mag ? `<button class="admin-icon-btn danger" onclick="event.stopPropagation();deleteEigenTaak('${uid}','${t.id}')" title="Eigen klusje verwijderen">${TRASH_ICON}</button>` : ''}
     </div>
   `;
 }
@@ -2114,6 +2211,44 @@ function toggleTask(uid, taskId){
       set(dbRef(`days/${key}/checks/${uid}/${taskId}`), false);
     }
   }
+}
+
+// --- 📝 Eigen klusjes: toevoegen / afvinken / wissen ---
+// Alle drie ouder-of-eigen-kind (mayEditEigen); de rules dwingen streaks/{uid} al af.
+// Bewust GEEN checkBlockReason() hier: die gezinsinstelling bestaat om te verhinderen dat
+// een kind zijn reeks of diamanten manipuleert door in het verleden te vinken. Een eigen
+// klusje heeft die gevolgen niet, dus dit mag altijd, op elke dag.
+
+function addEigenTaak(uid){
+  if (!mayEditEigen(uid)) return;
+  const label = prompt('Eigen klusje (telt niet mee voor 🔥 of 💎):');
+  if (!label || !label.trim()) return;
+  // zelfde keuze-patroon als addTaskAdmin: één confirm i.p.v. een formulier
+  const elkeDag = confirm('Elke dag?\nOK = elke dag\nAnnuleren = enkel deze dag');
+  const rec = { label: label.trim(), order: Date.now() };
+  if (!elkeDag) rec.onDay = dayKey(current);
+  push(dbRef(`streaks/${uid}/eigenTaken`), rec);
+}
+
+function toggleEigenTaak(uid, id){
+  if (!mayEditEigen(uid)) return;
+  const t = (streaksOf(uid).eigenTaken || {})[id];
+  if (!t) return; // rij bestaat niet meer (elders gewist): geen wees-vinkje schrijven
+  const key = dayKey(current);
+  const wordtGedaan = !eigenDone(t, key);
+  const upd = { [`streaks/${uid}/eigenTaken/${id}/gedaanOp/${key}`]: wordtGedaan ? true : null };
+  // Een gepind klusje verhuist naar de dag waarop het afgevinkt wordt (het kan meegeschoven
+  // zijn, zie eigenEffIdx) — atomisch samen met het vinkje, anders springt de rij terug.
+  if (wordtGedaan && t.onDay && t.onDay !== key) upd[`streaks/${uid}/eigenTaken/${id}/onDay`] = key;
+  if (wordtGedaan) playChime(); // gewone tik-feedback; géén viering/fanfare voor eigen klusjes
+  rootUpdate(upd);
+}
+
+function deleteEigenTaak(uid, id){
+  if (!mayEditEigen(uid)) return;
+  const t = (streaksOf(uid).eigenTaken || {})[id];
+  if (!confirm(`"${(t && t.label) || 'Eigen klusje'}" verwijderen?`)) return;
+  remove(dbRef(`streaks/${uid}/eigenTaken/${id}`));
 }
 
 function changeDay(delta){
@@ -3866,6 +4001,7 @@ Object.assign(window, {
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
   enableNotifications, setNotifyTime, setKidCheckScope,
   toggleVrijeDag,
+  addEigenTaak, toggleEigenTaak, deleteEigenTaak,
   addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
   openRewards, buyReward, toggleGiven, refundPurchase,
   pickRewardImage, removeRewardImage, setRewardIcon
