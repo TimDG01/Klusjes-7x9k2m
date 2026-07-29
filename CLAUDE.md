@@ -4,17 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v19** (`VERSION` = `klusjes-pwa v19.9`): a Dutch-language family chores app —
+**Klusjes-PWA v20** (`VERSION` = `klusjes-pwa v20`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
-and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a reward shop, and
-push reminders. The app itself is **one static file, `index.html`** (inline CSS + one
+and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a reward shop,
+🏖️ vacation days, and push reminders. The app itself is **one static file, `index.html`** (inline CSS + one
 `<script type="module">`), zero dependencies, no build step, hosted on GitHub Pages from
 `main`. Companion files: `manifest.json` + `icon-*.png` + `firebase-messaging-sw.js` (PWA +
 push), `firebase-rules-v16.json` (RTDB rules, paste-ready for the Console), `scripts/` +
 `.github/workflows/` (server half), and **`test/`** (headless suite + fake Firebase SDK).
 Docs live in **`docs/`**: `CHANGELOG.md` (what shipped per version) and `PLAN-v16.md` /
-`PLAN-v17-meldingen.md` / `PLAN-v18-beurten.md` / `PLAN-v19-beloningen.md` (frozen build
-logs — the *why* behind big decisions; this file is the working summary).
+`PLAN-v17-meldingen.md` / `PLAN-v18-beurten.md` / `PLAN-v19-beloningen.md` /
+`PLAN-v20-vakantie.md` (frozen build logs — the *why* behind big decisions; this file is the
+working summary).
 **`index.html`, `manifest.json`, `firebase-messaging-sw.js` and `icon-*.png` must stay at
 the repo root** — Pages serves the root and the service worker's scope depends on its
 location.
@@ -189,6 +190,7 @@ settings/shifts/{shiftId}: { name, weekdays[], lines[], members?[], next?:{uid,l
                              override?:'yyyy-M-d', lastDone?:'yyyy-M-d', order? }   // completion-driven turn task
 settings/streakStart: 'yyyy-M-d'                       // streak/badge launch floor; DEFAULT_STREAK_START (9 jul 2026) fallback
 settings/kidCheckScope: 'alles'|'geen-verleden'|'enkel-vandaag'|'nooit'   // which days a CHILD may (un)check; absent = 'alles'
+settings/vrijeDagen/{dayKey}/{uid}: true               // 🏖️ vacation: that kid has no chores that day; absent = normal day
 settings/notifyTime: 'HH:MM'|'uit'                     // per-family reminder hour; settings/lastNotified = server dedup flag
 settings/rewards/{id}: { naam, omschrijving, diamanten, order, icoon? }  // reward catalogue (parent-only)
 settings/rewardImages/{id}: 'data:image/jpeg;base64,…'            // separate path, lazily loaded
@@ -328,8 +330,8 @@ all active kids; the ring is always filtered to still-active kids. Key functions
 - Streak math (`simulateStreak`) is a **pure read-path forward walk** over the flags,
   recomputed every render: days where the kid has zero scheduled tasks (`kidScheduledCount`,
   which uses *current* settings for history and deliberately **excludes shift turns** — a
-  rolled-forward turn must not break a past streak) neither count nor break; today-in-progress
-  never breaks; one missed task-day per 7-day cycle is forgiven (the joker ❤️/💔, reset on
+  rolled-forward turn must not break a past streak) **or a 🏖️ vrije dag** neither count nor
+  break; today-in-progress never breaks; one missed task-day per 7-day cycle is forgiven (the joker ❤️/💔, reset on
   badge or break); a miss with no running streak burns nothing.
 - A **badge** is earned each time the streak count hits a multiple of 7, written in the
   **same root-level multi-path update as the completion flag**. Badges are permanent:
@@ -403,15 +405,46 @@ v19.7 replaced with direct buying — the text below is current).
 - **✅ No rules change was needed**: `settings` is node-wide parent-only and
   `streaks/$childId` is parent-or-self, and both **cascade** to the new sub-keys.
 
+### 🏖️ Vrije dagen (vakantie)
+A parent marks a day as free **per kid**: no chores, no reminder, no turn — and the streak
+steps over it. Build log: **`docs/PLAN-v20-vakantie.md`**.
+- Storage `settings/vrijeDagen/{dayKey}/{uid}: true`, absent = normal day. **Not** under
+  `days/{key}`: `simulateStreak` walks the *whole* history while the day listener holds one
+  day. Read via `isVrijeDag(uid, key)` from `vrijeDagenCache`, filled by a **no-gate,
+  non-fatal** listener (the `kidCheckScope` pattern), reset in `teardownFamily`.
+  **No rules change** — the node-wide parent-only `settings` rule cascades.
+- **The streak carries the whole feature**: one extra `|| isVrijeDag(...)` in
+  `simulateStreak`'s existing "zero scheduled tasks" branch. It sits **after** the flag
+  branch, so a day that was already complete and is *later* marked free keeps counting (and
+  keeps its badge + diamond). Because the walk is recomputed every render, filling in a
+  vacation **afterwards repairs** a streak that broke during it.
+- **Day screen**: `render()` sets `k.vrij` and empties `k.tasks`/`k.snaps`/`k.shifts`. The
+  empty id-set is what produces everything else — no completion flag (hence **no diamond**),
+  no celebration, out of the progress bar — while the existing `ids.length > 0` guard on the
+  un-flag branch keeps an already-earned flag + diamond intact. All kids free → the progress
+  bar is replaced by one vacation bar. The streak strip **stays** on the card on purpose.
+- **Shifts**: `shiftNextScheduledDayFrom` skips a day that is free for the uid whose turn it
+  is. Both `shiftPendingDay` and `shiftAutoDetachIfLapsed`/`shiftDetachPlan` run through it,
+  so a turn falling in a vacation **slides to the first day after** instead of lapsing into a
+  detached 🔁 one-off. A manual `override` still wins (an explicit parent choice).
+- **Two entry points**: the parent-only 🏖️ button in the card header (`toggleVrijeDag`, one
+  day) and **Beheer → 🏖️ Vakantie** (`renderAdminVakantie`) for a van–tot period in one
+  `rootUpdate` (`addVakantiePeriode`, capped at 92 days), with per-period kid chips
+  (`toggleVakantieKid`) and a delete (`removeVakantiePeriode`). Consecutive days with the
+  same kid-set are grouped for display by `vakantiePeriodes()`.
+- **Server mirror** in `scripts/notify.js`: `isVrijeDag`, the same skip in
+  `shiftNextScheduledDayFrom`, and an early `return []` in `openChoresFor` (no reminder).
+
 ### Admin & members screens
 No client-side password — access is the **parent role** (`isParent()`; children don't see
 the buttons and the `openAdmin`/`openMembers` routes are guarded). **Beheer**
-(`renderAdmin`) has five sections: **Taken** (`renderAdminTasks` — per task: participant
+(`renderAdmin`) has six sections: **Taken** (`renderAdminTasks` — per task: participant
 chips, interval toggle, pointer ⏮/⏭, label edit, recurring/one-off, delete; `fromShift`
 tasks are filtered out), one per shift (`renderAdminShifts`), **Beloningen**
-(`renderAdminRewards`), **Instellingen** (`renderAdminSettings` — per-kid `magVerschuiven`
-chips (new per-kid flags belong here), the `notifyTime` dropdown, the `kidCheckScope`
-dropdown, and a per-kid diamond adjustment) and **Reeksen & badges** (`renderAdminStreak`).
+(`renderAdminRewards`), **🏖️ Vakantie** (`renderAdminVakantie`), **Instellingen**
+(`renderAdminSettings` — per-kid `magVerschuiven` chips (new per-kid flags belong here), the
+`notifyTime` dropdown, the `kidCheckScope` dropdown, and a per-kid diamond adjustment) and
+**Reeksen & badges** (`renderAdminStreak`).
 The separate **Gezin** screen (`renderMembers`) manages children
 (add/rename/color/PIN/pause/delete) and shows the family code. All mutations are
 `prompt()`/`confirm()`-based to match the no-forms style; the exceptions are the weekday
@@ -504,7 +537,8 @@ half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
 - **⚠️ Logic duplication — keep in sync.** The DB stores task *definitions* + rotation *state*
   + `checks` (what's *done*), **not** a ready-made "today's chores" list — the app computes it
   each render, so `notify.js` must recompute it too. The pure helpers there (`dayIndex`,
-  `taskRing`/`taskAssignee`/`tasksForKidDay` + `onDay`, `shiftPendingDay`/`shiftEffectiveNext`/
+  `taskRing`/`taskAssignee`/`tasksForKidDay` + `onDay`, `isVrijeDag` +
+  `shiftNextScheduledDayFrom`, `shiftPendingDay`/`shiftEffectiveNext`/
   `shiftForDay`, `shiftDetachPlan`/`runShiftMaintenance` mirroring
   `shiftAutoDetachIfLapsed`/`detachShiftTurn`) are **verbatim copies** of the `index.html`
   versions, adapted to take a `ctx` object. Change the chore/shift math in `index.html` →

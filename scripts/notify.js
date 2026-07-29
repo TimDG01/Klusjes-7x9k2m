@@ -7,8 +7,9 @@
  * De DB bewaart taak-DEFINITIES + rotatie-STAND + wat AFGEVINKT is (checks), niet een
  * kant-en-klaar "taken van vandaag"-lijstje. Dat berekent de app elke render; hier moeten
  * we exact dezelfde berekening overdoen. De functies hieronder (dayIndex, taskRing,
- * taskAssignee, tasksForKidDay, onDayEffIdx, shiftPendingDay, shiftEffectiveNext,
- * shiftAdvance, shiftForDay) zijn VERBATIM overgenomen uit index.html, enkel aangepast
+ * taskAssignee, tasksForKidDay, onDayEffIdx, isVrijeDag, shiftNextScheduledDayFrom,
+ * shiftPendingDay, shiftEffectiveNext, shiftAdvance, shiftForDay) zijn VERBATIM
+ * overgenomen uit index.html, enkel aangepast
  * zodat ze hun state via een `ctx`-object krijgen i.p.v. module-globals. Wijzigt de
  * klusjes-/beurt-berekening in index.html? Pas ze hier mee aan (zie CLAUDE.md → Meldingen).
  */
@@ -105,13 +106,23 @@ function shiftLines(sh) {
 function shiftWeekdays(sh) {
   return Array.isArray(sh.weekdays) ? sh.weekdays : DEFAULT_VACUUM_WEEKDAYS;
 }
-function shiftNextScheduledDayFrom(sh, d) {
+// 🏖️ Vrije dagen (v20): settings/vrijeDagen/{dayKey}/{uid} = true. Afwezig = gewone dag.
+function isVrijeDag(uid, key, ctx) {
+  const d = (ctx.vrijeDagen || {})[key];
+  return !!(d && d[uid]);
+}
+function shiftNextScheduledDayFrom(sh, d, ctx) {
   const days = shiftWeekdays(sh);
   if (!days.length) return null;
+  // Valt de beurt in de vakantie van het kind dat aan de beurt is, dan is die dag geen
+  // geldige beurtdag: de beurt schuift door i.p.v. te vervallen tot een losgemaakte taak.
+  const n = shiftEffectiveNext(sh, ctx);
   const from = Math.max(0, dayIndex(d));
   for (let i = from; i < from + SEARCH_HORIZON; i++) {
     const dd = new Date(START); dd.setDate(dd.getDate() + i);
-    if (days.includes(dd.getDay())) return dd;
+    if (!days.includes(dd.getDay())) continue;
+    if (n && isVrijeDag(n.uid, dayKey(dd), ctx)) continue;
+    return dd;
   }
   return null;
 }
@@ -131,7 +142,7 @@ function shiftPendingDay(sh, ctx) {
   }
   // Zoek de eerste geplande dag ná de laatst-gedane beurt (niet enkel vanaf vandaag).
   const searchFrom = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : from;
-  const nd = shiftNextScheduledDayFrom(sh, searchFrom);
+  const nd = shiftNextScheduledDayFrom(sh, searchFrom, ctx);
   if (!nd) return null;
   const ndIdx = dayIndex(nd), tIdx = dayIndex(today);
   if (ndIdx >= tIdx) return dayKey(nd);              // vandaag of in de toekomst
@@ -194,6 +205,8 @@ function shiftForDay(sh, d, ctx) {
 function openChoresFor(uid, ctx) {
   const idx = dayIndex(ctx.today);
   const dow = ctx.today.getDay();
+  // 🏖️ vrije dag (vakantie): dit kind hoeft vandaag niets te doen → geen herinnering.
+  if (isVrijeDag(uid, dayKey(ctx.today), ctx)) return [];
   const checks = (ctx.daysToday.checks && ctx.daysToday.checks[uid]) || {};
   const out = [];
   for (const t of tasksForKidDay(uid, idx, dow, ctx)) {
@@ -220,7 +233,7 @@ function shiftDetachPlan(sh, ctx) {
   const today = clampedToday(ctx), tIdx = dayIndex(today);
   const ld = sh.lastDone ? parseDayKey(sh.lastDone) : null;
   const from = ld ? new Date(ld.getFullYear(), ld.getMonth(), ld.getDate() + 1) : today;
-  const nd = shiftNextScheduledDayFrom(sh, from);
+  const nd = shiftNextScheduledDayFrom(sh, from, ctx);
   if (!nd) return null;
   if (tIdx - dayIndex(nd) <= SHIFT_GRACE) return null; // nog binnen het venster (of toekomst)
   const n = shiftEffectiveNext(sh, ctx);
@@ -257,6 +270,7 @@ function runShiftMaintenance(familyData, now) {
     membersCache: familyData.members || {},
     tasksCache: settings.tasks,
     shiftsCache: settings.shifts,
+    vrijeDagen: settings.vrijeDagen || {},
     today: now.today
   };
   const writes = {};
@@ -318,6 +332,7 @@ function familySendPlan(familyData, now, todayKey, force) {
     membersCache,
     tasksCache: settings.tasks || {},
     shiftsCache: settings.shifts || {},
+    vrijeDagen: settings.vrijeDagen || {},
     daysToday,
     today: now.today
   };
@@ -369,7 +384,7 @@ function purchaseNotifyPlan(familyData) {
 }
 
 module.exports = {
-  dayIndex, dayKey, parseDayKey, openChoresFor, familySendPlan,
+  dayIndex, dayKey, parseDayKey, openChoresFor, familySendPlan, isVrijeDag,
   brusselsNow, timeToMinutes, activeKidUids, tasksForKidDay, shiftForDay,
   shiftPendingDay, shiftDetachPlan, runShiftMaintenance, purchaseNotifyPlan
 };

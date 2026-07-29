@@ -1,6 +1,7 @@
 // v19.9 — purchaseNotifyPlan (scripts/notify.js): welke aankopen moeten nog gemeld worden
 // aan de ouders, en naar welke tokens? Pure functie, dus gewoon Node — geen browser nodig.
-const { purchaseNotifyPlan } = require('../scripts/notify.js');
+// v20 — plus de 🏖️ vrije dagen in familySendPlan en runShiftMaintenance (sectie 9-10).
+const { purchaseNotifyPlan, familySendPlan, runShiftMaintenance, dayKey } = require('../scripts/notify.js');
 const { section, check, done } = require('./assert.js');
 
 function familyData({ members, streaks }){
@@ -116,6 +117,49 @@ section('8. Geen ouder-tokens: het plan blijft toch gewoon gevuld (aanroeper bes
   const { parentTokens, plan } = purchaseNotifyPlan(fam);
   check('geen ouder-tokens', parentTokens.length, 0);
   check('maar het item staat er wel — main() markeert het toch als gemeld', plan.length, 1);
+}
+
+// ---- v20: 🏖️ vrije dagen (vakantie) ----
+const vandaag = new Date();
+const dk = n => { const d = new Date(); d.setDate(d.getDate() + n); return dayKey(d); };
+const nu = { today: vandaag, minutes: 20 * 60 };   // ná de standaard 19:00
+const gezin = extraSettings => ({
+  members: {
+    p1: { rol: 'ouder', weergavenaam: 'Ouder' },
+    k1: { rol: 'kind', weergavenaam: 'Lien', fcmTokens: { a: 'tok1' } }
+  },
+  settings: { tasks: { t1: { label: 'Afwas', recurring: true, order: 0, members: ['k1'] } }, ...extraSettings }
+});
+
+section('9. Geen herinnering op een vrije dag');
+{
+  const zonder = familySendPlan(gezin({}), nu, dk(0), false);
+  check('regressie: normaal krijgt het kind een herinnering', zonder.plan.length, 1);
+  const met = familySendPlan(gezin({ vrijeDagen: { [dk(0)]: { k1: true } } }), nu, dk(0), false);
+  check('op een vrije dag niet', met.plan.length, 0);
+  const ander = familySendPlan(gezin({ vrijeDagen: { [dk(0)]: { k2: true } } }), nu, dk(0), false);
+  check('de vrije dag van een ánder kind verandert niets', ander.plan.length, 1);
+}
+
+section('10. De cron maakt geen beurten los tijdens de vakantie');
+{
+  const beurt = vrijeDagen => ({
+    members: { k1: { rol: 'kind', weergavenaam: 'Lien' } },
+    settings: {
+      tasks: {},
+      shifts: { s1: { name: 'Stofzuigen', weekdays: [0,1,2,3,4,5,6], lines: ['boven'], members: ['k1'], next: { uid: 'k1', lineIdx: 0 }, lastDone: dk(-5) } },
+      ...(vrijeDagen ? { vrijeDagen } : {})
+    }
+  });
+  const zonder = runShiftMaintenance(beurt(null), nu);
+  check('regressie: een vergeten beurt wordt wél losgemaakt', Object.keys(zonder).length > 0, true);
+
+  const vrij = {};
+  for (let i = -4; i <= 0; i++) vrij[dk(i)] = { k1: true };
+  const fam = beurt(vrij);
+  const met = runShiftMaintenance(fam, nu);
+  check('tijdens de vakantie niet', Object.keys(met).length, 0);
+  check('  en de rotatie blijft staan', fam.settings.shifts.s1.lastDone, dk(-5));
 }
 
 done();

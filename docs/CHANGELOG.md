@@ -14,6 +14,22 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v20 — juli 2026
+- **🏖️ Vrije dagen (vakantiemodus).** Een ouder kan een dag per kind vrij geven: op zo'n dag
+  staan er geen klusjes op de kaart, maar een rustige vakantiebanner.
+- **De reeks 🔥 blijft staan**: een vrije dag telt niet mee én breekt de reeks niet — ook de
+  joker blijft ongebruikt. De 💎 blijven uiteraard staan; er komen er alleen geen bij, want er
+  is niets te doen. Een dag die al afgewerkt wás en achteraf vrij wordt gezet, houdt zijn vlag,
+  badge én diamant.
+- Ook **geen push-herinnering** op een vrije dag, en een **beurt-taak** die in de vakantie valt
+  vervalt niet: ze schuift door naar de eerste dag ná de vrije dagen, bij hetzelfde kind.
+- Twee manieren om het aan te duiden: de **🏖️-knop** rechts op de kaart van een kind (enkel
+  zichtbaar voor een ouder, voor één losse dag), en **Beheer → 🏖️ Vakantie** voor een hele
+  periode van–tot ineens, met per periode chips om een kind toe te voegen of weg te laten.
+- Een vakantie mag ook achteraf ingevuld worden — de reeks wordt elke keer opnieuw berekend,
+  dus een reeks die door het verlof brak, wordt zo hersteld.
+- Geen rules-wijziging nodig.
+
 ## v19.10 — juli 2026
 - Nieuw beloningsicoon: 🚗 **Autoritje**, toegevoegd aan de iconenkeuze in Beheer → Beloningen.
 - Geen rules-wijziging nodig.

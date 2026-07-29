@@ -58,6 +58,17 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 .name{font-size:16px;font-weight:700;}
 .role-badge{margin-left:auto;font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;}
 
+/* 🏖️ Vrije dag (vakantie): knop in de kaartkop (enkel voor een ouder) + de banner
+   die de klusjesrijen vervangt. De reeks-strook blijft er bewust boven staan. */
+.free-btn{margin-left:auto;font-size:12px;font-weight:600;color:var(--text2);background:var(--track);padding:4px 10px;border-radius:999px;line-height:1.3;flex-shrink:0;}
+.free-btn.on{background:var(--blue);color:#fff;}
+.free-note{text-align:center;padding:16px 8px 6px;}
+.free-note .free-emoji{font-size:26px;display:block;margin-bottom:6px;}
+.free-note .free-title{font-size:15px;font-weight:700;}
+.free-note .free-sub{font-size:12.5px;color:var(--text2);margin-top:3px;}
+.free-bar{background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;text-align:center;font-size:14px;font-weight:600;}
+.free-bar small{display:block;font-size:12.5px;font-weight:400;color:var(--text2);margin-top:3px;}
+
 .task{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
 .task:last-child{border-bottom:none;}
 .check{width:24px;height:24px;border-radius:7px;border:2px solid var(--track);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:white;transition:all .15s ease;}
@@ -310,9 +321,15 @@ const DIAMANTEN_PER_BADGE = 3;
 const KID_CHECK_SCOPES = ['alles', 'geen-verleden', 'enkel-vandaag', 'nooit'];
 const DEFAULT_KID_CHECK_SCOPE = 'alles';
 let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
+// 🏖️ Vrije dagen (v20): dagen waarop een kind geen klusjes heeft — vakantie, een logeerweek,
+// een ziektedag. Bewaard als settings/vrijeDagen/{dayKey}/{uid}: true (afwezig = gewone dag).
+// Bewust onder settings en niet onder days/{key}: simulateStreak loopt de héle geschiedenis
+// af terwijl de dag-listener maar één dag tegelijk laadt. Ouder-only schrijfbaar via de
+// bestaande settings-rule, dus geen rules-wijziging nodig. Zie docs/PLAN-v20-vakantie.md.
+let vrijeDagenCache = {};
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v19.10';
+const VERSION = 'klusjes-pwa v20';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -799,13 +816,49 @@ function clampedToday(){
   return t < START ? new Date(START) : t;
 }
 
+// --- 🏖️ Vrije dagen (vakantie) ---
+// Heeft kind `uid` op dag `key` vrij? Puur lees-pad; afwezig = gewone dag.
+function isVrijeDag(uid, key){
+  const d = vrijeDagenCache[key];
+  return !!(d && d[uid]);
+}
+// De uids die op dag `key` vrij zijn (voor de samenvatting in Beheer).
+function vrijeKidsOp(key){
+  return Object.keys(vrijeDagenCache[key] || {}).filter(uid => vrijeDagenCache[key][uid]);
+}
+// Aaneengesloten vrije dagen met dezelfde kind-set samengevat tot periodes
+// [{ vanKey, totKey, uids }], op datum gesorteerd — de lijst in Beheer → Vakantie.
+function vakantiePeriodes(){
+  const keys = Object.keys(vrijeDagenCache)
+    .filter(k => vrijeKidsOp(k).length && parseDayKey(k))
+    .sort((a, b) => dayIndex(parseDayKey(a)) - dayIndex(parseDayKey(b)));
+  const out = [];
+  keys.forEach(k => {
+    const uids = vrijeKidsOp(k).slice().sort();
+    const vorige = out[out.length - 1];
+    const aansluitend = vorige &&
+      dayIndex(parseDayKey(k)) === dayIndex(parseDayKey(vorige.totKey)) + 1 &&
+      vorige.uids.join(',') === uids.join(',');
+    if (aansluitend) vorige.totKey = k;
+    else out.push({ vanKey: k, totKey: k, uids });
+  });
+  return out;
+}
+
 function shiftNextScheduledDayFrom(sh, d){
   const days = shiftWeekdays(sh);
   if (!days.length) return null;
+  // Wie aan de beurt is bepaalt welke vrije dagen tellen: valt de beurt in de vakantie
+  // van dát kind, dan is die dag geen geldige beurtdag en schuift de beurt door naar de
+  // eerstvolgende dag erna. Zo vervalt een beurt niet tot een losgemaakte 🔁-taak terwijl
+  // het gezin weg is — de rotatie blijft staan waar hij stond (v20).
+  const n = shiftEffectiveNext(sh);
   const from = Math.max(0, dayIndex(d));
   for (let i = from; i < from + SEARCH_HORIZON; i++){
     const dd = new Date(START); dd.setDate(dd.getDate() + i);
-    if (days.includes(dd.getDay())) return dd;
+    if (!days.includes(dd.getDay())) continue;
+    if (n && isVrijeDag(n.uid, dayKey(dd))) continue;
+    return dd;
   }
   return null;
 }
@@ -1077,8 +1130,11 @@ function simulateStreak(kidKey, extraDayKey){
     if (flags[key] || key === extraDayKey){
       count++;
       if (count % 7 === 0){ earnDays.push(key); jokerUsed = false; }
-    } else if (kidScheduledCount(kidKey, dd) === 0){
-      // vrije dag: geen taken ingepland — telt niet, breekt niet
+    } else if (kidScheduledCount(kidKey, dd) === 0 || isVrijeDag(kidKey, key)){
+      // lege dag (geen taken ingepland) of een 🏖️ vrije dag die een ouder aanduidde
+      // (vakantie): telt niet mee, maar breekt de reeks ook niet. Deze tak staat bewust
+      // ná de vlag-tak: een dag die al voltooid was en achteráf vrij wordt gezet, blijft
+      // gewoon meetellen (en houdt zijn badge en diamant).
     } else if (i === todayIdx){
       // vandaag is nog bezig — niet-af betekent nog niets
     } else if (count === 0){
@@ -1306,6 +1362,14 @@ function initFamily(){
     render();
   }, () => {}));
 
+  // --- 🏖️ vrije dagen / vakantie (aangeduid door een ouder) ---
+  // Zelfde patroon: geen laad-gate, niet-fataal. Ontbreekt de tak of faalt het lezen, dan
+  // is er gewoon geen enkele vrije dag en gedraagt de app zich als vóór v20.
+  familyUnsubs.push(onValue(dbRef('settings/vrijeDagen'), snap => {
+    vrijeDagenCache = snap.val() || {};
+    render();
+  }, () => { vrijeDagenCache = {}; render(); }));
+
   // --- beloningen: catalogus + het grootboek van goedgekeurde inwisselingen (v19) ---
   // Zelfde patroon: geen laad-gate, niet-fataal. Ontbreekt de tak of faalt het lezen, dan
   // is er gewoon geen winkel — de klusjes, reeksen en badges blijven onaangeroerd werken.
@@ -1384,6 +1448,7 @@ function teardownFamily(){
   dayState = {};
   streakStartKey = DEFAULT_STREAK_START;
   kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
+  vrijeDagenCache = {};
   rewardsCache = {};
   rewardClaimsCache = {};
   rewardImagesCache = {};
@@ -1589,6 +1654,13 @@ function render(){
     k.snaps = daySnapsFor(k.key, state).filter(s => !k.tasks.some(t => t.id === s.id));
     // beurt-taken waarvan dit kind vandaag aan de beurt is
     k.shifts = shiftsForKid(k.key);
+    // 🏖️ Vrije dag (v20): een ouder duidde deze dag aan als vrij voor dit kind. De dag
+    // bestaat dan gewoon niet in het schema — geen rijen op de kaart en een lege id-lijst.
+    // Al de rest volgt daaruit vanzelf: geen voltooiingsvlag, geen diamant, geen viering,
+    // en het kind telt niet mee in de voortgangsbalk. Een eerder verdiende vlag/diamant
+    // blijft staan (de weghaal-tak hieronder eist `ids.length > 0`).
+    k.vrij = isVrijeDag(k.key, cDay);
+    if (k.vrij){ k.tasks = []; k.snaps = []; k.shifts = []; }
     const ids = k.tasks.map(t => t.id).concat(k.snaps.map(s => s.id));
     // een projectie (vooruitblik) telt niet mee voor de voltooiing van de dag
     k.shifts.forEach(({ sh, info }) => { if (info.mode !== 'projected') ids.push('shift-' + sh.id); });
@@ -1659,6 +1731,9 @@ function render(){
     }
   });
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
+  // Staat iederéén op de dagweergave vrij, dan zegt "Voortgang 0/0" niets: toon in de
+  // plaats daarvan één rustige vakantiebalk.
+  const iedereenVrij = kids.length > 0 && kids.every(k => k.vrij);
 
   const app = document.getElementById('app');
   app.innerHTML = `
@@ -1672,10 +1747,13 @@ function render(){
       <button onclick="changeDay(1)">›</button>
     </div>
 
+    ${iedereenVrij ? `
+    <div class="free-bar">🏖️ Vakantie — geen klusjes<small>de reeksen en 💎 blijven gewoon staan</small></div>
+    ` : `
     <div class="progress-wrap">
       <div class="progress-label"><span>Voortgang</span><span>${doneCount}/${allTasks.length}</span></div>
       <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
-    </div>
+    </div>`}
 
     ${kids.map(k => renderCard(k)).join('')}
     ${kids.length === 0 ? '<div class="card"><div class="loading" style="padding:20px;">Nog geen kinderen in het gezin.<br>Voeg ze toe via 👨‍👩‍👧 Gezin hieronder.</div></div>' : ''}
@@ -1713,17 +1791,38 @@ function renderCard(k){
 
   // kleuren komen uit het ledenrecord (hex); de kaart-tint is dezelfde kleur met
   // lage dekking zodat hij in licht én donker thema leesbaar blijft
+  // 🏖️ Vrije dag: de klusjesrijen maken plaats voor een banner, maar de reeks-strook
+  // blijft er bewust boven staan — dat 🔥 en 💎 gewoon blijven doorlopen is net de
+  // geruststelling. De knop om een dag vrij te zetten is ouder-only (zoals de rule).
+  const vrijKnop = isChild() ? '' :
+    `<button class="free-btn${k.vrij ? ' on' : ''}" onclick="toggleVrijeDag('${k.key}')" title="${k.vrij ? 'Toch een gewone dag maken' : 'Deze dag vrij geven'}">🏖️${k.vrij ? ' vrij' : ''}</button>`;
+  const inhoud = k.vrij ? `
+      <div class="free-note">
+        <span class="free-emoji">🏖️</span>
+        <div class="free-title">Vrije dag</div>
+        <div class="free-sub">Geen klusjes vandaag — de reeks blijft staan.</div>
+      </div>` : `${tasks}${shiftRows}`;
+
   return `
     <div class="card">
       <div class="card-header">
         <div class="dot" style="background:${k.kleur}"></div>
         <div class="name">${escapeHtml(k.name)}</div>
+        ${vrijKnop}
       </div>
       ${streakStrip(k)}
-      ${tasks}
-      ${shiftRows}
+      ${inhoud}
     </div>
   `;
+}
+
+// Een dag vrij zetten of terugdraaien voor één kind (ouder-only; settings is al
+// ouder-only in de rules). Dag-gesleuteld en idempotent van vorm: twee keer hetzelfde
+// schrijven maakt geen verschil, en een lege dag verdwijnt vanzelf uit de database.
+function toggleVrijeDag(uid){
+  if (!isParent()) return;
+  const key = dayKey(current);
+  set(dbRef(`settings/vrijeDagen/${key}/${uid}`), isVrijeDag(uid, key) ? null : true);
 }
 
 // Compacte reeks-strook op de kind-kaart: vlam + aantal dagen op rij, zeven
@@ -3158,6 +3257,7 @@ function renderAdmin(){
     ${adminSection('sec:taken', 'Taken', `${taskList().filter(t => !t.fromShift).length} taken`, renderAdminTasks)}
     ${adminSection('sec:beurten', 'Beurt-taken', `${shiftsArray().length} beurt-taken`, renderAdminShifts)}
     ${adminSection('sec:beloningen', '🎁 Beloningen', `${rewardsArray().length} beloningen`, renderAdminRewards)}
+    ${adminSection('sec:vakantie', '🏖️ Vakantie', vakantieSamenvatting(), renderAdminVakantie)}
     ${adminSection('sec:instellingen', 'Instellingen', `melding ${notifyTimeKey} · kinderen: ${KID_CHECK_SCOPE_LABELS[kidCheckScopeKey] || 'elke dag'}`, renderAdminSettings)}
     ${adminSection('sec:reeksen', 'Reeksen &amp; badges', reeksenSamenvatting(), renderAdminStreak)}
     ${versionLine()}
@@ -3279,6 +3379,129 @@ function kidCheckScopeOptions(){
 function setKidCheckScope(value){
   if (!isParent()) return;
   if (KID_CHECK_SCOPES.includes(value)) set(dbRef('settings/kidCheckScope'), value);
+}
+
+// --- 🏖️ Beheer → Vakantie ---
+// Alle dagkeys van vanKey t/m totKey (grens meegerekend).
+function dagenTussen(vanKey, totKey){
+  const van = parseDayKey(vanKey), tot = parseDayKey(totKey);
+  if (!van || !tot) return [];
+  const out = [];
+  for (let i = dayIndex(van); i <= dayIndex(tot); i++){
+    const d = new Date(START); d.setDate(d.getDate() + i);
+    out.push(dayKey(d));
+  }
+  return out;
+}
+
+// "8 augustus" bij één dag, "3 – 17 augustus" binnen dezelfde maand, anders
+// "30 juli – 5 augustus". Het jaar staat er enkel bij als het niet dit jaar is.
+function periodeLabel(vanKey, totKey){
+  const a = parseDayKey(vanKey), b = parseDayKey(totKey);
+  if (!a || !b) return '—';
+  const jaar = j => j === new Date().getFullYear() ? '' : ` ${j}`;
+  if (vanKey === totKey) return `${a.getDate()} ${MN[a.getMonth()]}${jaar(a.getFullYear())}`;
+  if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear())
+    return `${a.getDate()} – ${b.getDate()} ${MN[b.getMonth()]}${jaar(b.getFullYear())}`;
+  return `${a.getDate()} ${MN[a.getMonth()]}${jaar(a.getFullYear())} – ${b.getDate()} ${MN[b.getMonth()]}${jaar(b.getFullYear())}`;
+}
+
+// Samenvatting voor de ingeklapte sectiekop: enkel wat nog komt (of bezig is).
+function vakantieSamenvatting(){
+  const vandaag = dayIndex(clampedToday());
+  const komend = vakantiePeriodes().filter(p => dayIndex(parseDayKey(p.totKey)) >= vandaag);
+  if (!komend.length) return 'geen vrije dagen gepland';
+  return komend.length === 1
+    ? `${periodeLabel(komend[0].vanKey, komend[0].totKey)}`
+    : `${komend.length} periodes gepland`;
+}
+
+// Per periode: de dagen, wie er vrij heeft (chips, aanklikbaar voor de hele periode) en
+// een prullenbak. Voorbije periodes blijven staan — ze dragen de historiek van de reeks.
+function renderAdminVakantie(){
+  const kids = activeKids();
+  const vandaag = dayIndex(clampedToday());
+  const rows = vakantiePeriodes().map(p => {
+    const voorbij = dayIndex(parseDayKey(p.totKey)) < vandaag;
+    const chips = kids.map(k =>
+      `<button class="admin-day-btn admin-kid-btn ${p.uids.includes(k.uid) ? 'active' : ''}" style="--kidkleur:${k.kleur}" onclick="toggleVakantieKid('${p.vanKey}','${p.totKey}','${k.uid}')">${escapeHtml(k.name)}</button>`
+    ).join('');
+    const dagen = dagenTussen(p.vanKey, p.totKey).length;
+    return `
+      <div class="admin-task-row"${voorbij ? ' style="opacity:.6;"' : ''}>
+        <div class="admin-task-top">
+          <div class="admin-task-label">${periodeLabel(p.vanKey, p.totKey)}</div>
+          <span class="admin-task-actions">
+            <button class="admin-icon-btn danger" onclick="removeVakantiePeriode('${p.vanKey}','${p.totKey}')" title="Vakantie verwijderen">${TRASH_ICON}</button>
+          </span>
+        </div>
+        <div class="admin-collapse-sub">${dagen} ${dagen === 1 ? 'dag' : 'dagen'}${voorbij ? ' · voorbij' : ''}</div>
+        <div class="admin-weekday-row" style="flex-wrap:wrap;margin-top:6px;">${chips || '<span class="admin-vacuum-note">Nog geen kinderen.</span>'}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="admin-section">
+      <div class="admin-role-title">Vrije dagen</div>
+      ${rows || '<div class="admin-vacuum-note">Nog geen vrije dagen ingesteld.</div>'}
+      <button class="admin-add-btn" onclick="addVakantiePeriode()">+ Vakantieperiode toevoegen</button>
+      <div class="admin-vacuum-note">Op een vrije dag hoeft een kind geen klusjes te doen: de reeks 🔥 telt die dag niet mee én breekt niet, de 💎 blijven staan, er komt geen herinnering en een beurt schuift door naar de eerste dag erna. Tik op een kind om het voor die hele periode aan of uit te zetten, of gebruik de 🏖️-knop op het dagscherm voor één losse dag.</div>
+    </div>
+  `;
+}
+
+// Nieuwe periode: van–tot in twee prompts (stijl van de rest van Beheer), meteen voor
+// alle actieve kinderen — fijnstellen doe je daarna met de chips of op het dagscherm.
+// Alle dagen gaan in één rootUpdate weg (nooit dag per dag schrijven).
+function addVakantiePeriode(){
+  if (!isParent()) return;
+  const kids = activeKids();
+  if (!kids.length){ alert('Voeg eerst kinderen toe via 👨‍👩‍👧 Gezin.'); return; }
+  const pad = n => String(n).padStart(2, '0');
+  const toonbaar = d => `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+  const lees = (vraag, preset) => {
+    const inp = prompt(vraag, preset);
+    if (!inp) return null;
+    const m = inp.trim().match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+    if (!m){ alert('Ongeldige datum. Gebruik dd-mm-jjjj, bijvoorbeeld 03-08-2026.'); return null; }
+    const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    if (isNaN(d.getTime()) || d.getDate() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1){
+      alert('Ongeldige datum. Controleer dag en maand.'); return null;
+    }
+    return d;
+  };
+  const van = lees('Vakantie vanaf welke dag? (dd-mm-jjjj)', toonbaar(clampedToday()));
+  if (!van) return;
+  const tot = lees('Tot en met welke dag? (dd-mm-jjjj)', toonbaar(van));
+  if (!tot) return;
+  if (dayIndex(tot) < dayIndex(van)){ alert('De einddatum ligt vóór de startdatum.'); return; }
+  const dagen = dagenTussen(dayKey(van), dayKey(tot));
+  if (dagen.length > 92){ alert('Dat is meer dan 92 dagen. Zet de vakantie in kortere stukken.'); return; }
+  const upd = {};
+  dagen.forEach(key => kids.forEach(k => { upd[`settings/vrijeDagen/${key}/${k.uid}`] = true; }));
+  rootUpdate(upd);
+}
+
+// Eén kind over de hele periode aan- of uitzetten (chips in Beheer).
+function toggleVakantieKid(vanKey, totKey, uid){
+  if (!isParent()) return;
+  const dagen = dagenTussen(vanKey, totKey);
+  if (!dagen.length) return;
+  const aan = !dagen.every(key => isVrijeDag(uid, key));   // niet overal aan → overal aanzetten
+  const upd = {};
+  dagen.forEach(key => { upd[`settings/vrijeDagen/${key}/${uid}`] = aan ? true : null; });
+  rootUpdate(upd);
+}
+
+// Hele periode wissen. De dagen worden in hun geheel verwijderd (voor alle kinderen);
+// een lege node verdwijnt vanzelf uit de database.
+function removeVakantiePeriode(vanKey, totKey){
+  if (!isParent()) return;
+  if (!confirm(`Vakantie van ${periodeLabel(vanKey, totKey)} verwijderen?\n\nDeze dagen tellen daarna weer als gewone klusjesdagen.`)) return;
+  const upd = {};
+  dagenTussen(vanKey, totKey).forEach(key => { upd[`settings/vrijeDagen/${key}`] = null; });
+  rootUpdate(upd);
 }
 
 // Reeks-startdatum: dagen vóór deze datum tellen niet mee voor reeksen & badges.
@@ -3785,6 +4008,7 @@ Object.assign(window, {
   openMembers, addChildMember, changeChildPin, renameMember, renameFamily, cycleMemberColor,
   toggleMemberActive, deleteMember, copyFamilyCode, explainAddParent,
   enableNotifications, setNotifyTime, setKidCheckScope,
+  toggleVrijeDag, addVakantiePeriode, toggleVakantieKid, removeVakantiePeriode,
   addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
   openRewards, buyReward, toggleGiven, refundPurchase,
   pickRewardImage, removeRewardImage, setRewardIcon
