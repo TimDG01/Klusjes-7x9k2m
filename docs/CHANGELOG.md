@@ -14,6 +14,14 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v21.2 — juli 2026
+- **Bij een eigen klusje zie je nu of het terugkeert.** Het grijze labeltje achter de naam
+  zegt **elke dag** of **eenmalig** in plaats van "eigen" — dat laatste stond al in de
+  kopregel van het blok, dus het onderscheid kost geen extra plaats.
+- De vraag bij het toevoegen gebruikt dezelfde twee woorden, zodat de keuze en het labeltje
+  elkaar herkennen.
+- Geen rules-wijziging nodig.
+
 ## v21.1 — juli 2026
 - **🧪 Testmodus: "vandaag" zelf kiezen.** Met `?test` in de URL staat er nu bovenaan een
   datumveld. Zet je dat op een andere dag, dan doet de hele app alsof dát vandaag is —

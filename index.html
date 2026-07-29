@@ -354,7 +354,7 @@ let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 let vrijeDagenCache = {};
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v21.1';
+const VERSION = 'klusjes-pwa v21.2';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -1964,15 +1964,22 @@ function taskRow(uid, taskId, label, done, fixed){
   `;
 }
 
-// Rij voor een 📝 eigen klusje. Ziet uit als een gewone klusjesrij, maar met een grijze
-// "eigen"-chip en een prullenbak — en zonder enig gevolg voor de reeks of de diamanten.
-// Het label is vrije tekst van een kind, dus altijd door escapeHtml().
+// Rij voor een 📝 eigen klusje. Ziet uit als een gewone klusjesrij, maar met een grijze chip
+// en een prullenbak — en zonder enig gevolg voor de reeks of de diamanten. Het label is vrije
+// tekst van een kind, dus altijd door escapeHtml().
+// De chip draagt de FREQUENTIE ('elke dag' vs 'eenmalig') en niet het woord "eigen": dat zegt
+// de kopregel van het blok al, en zo kost het onderscheid geen extra ruimte op de rij. Bewust
+// tekst en niet CALENDAR_ICON/CALENDAR_DAYS_ICON (zoals de interval-schakelaar in Beheer):
+// die twee kalenders verschillen enkel in hun stippen en zijn op chipformaat niet te
+// onderscheiden op een telefoon. 'eenmalig' is het woord dat de app elders ook gebruikt voor
+// recurring:false.
 function eigenTaskRow(uid, t, mag){
   const done = eigenDone(t, dayKey(current));
+  const soort = t.onDay ? 'eenmalig' : 'elke dag';
   return `
     <div class="task" onclick="toggleEigenTaak('${uid}','${t.id}')">
       <div class="check ${done ? 'done' : ''}">${done ? '✓' : ''}</div>
-      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(t.label || '')}<span class="own-tag">eigen</span></div>
+      <div class="task-label ${done ? 'done' : ''}">${escapeHtml(t.label || '')}<span class="own-tag" title="${t.onDay ? 'Enkel deze dag' : 'Staat er elke dag'}">${soort}</span></div>
       ${mag ? `<button class="admin-icon-btn danger" onclick="event.stopPropagation();deleteEigenTaak('${uid}','${t.id}')" title="Eigen klusje verwijderen">${TRASH_ICON}</button>` : ''}
     </div>
   `;
@@ -2265,7 +2272,9 @@ function addEigenTaak(uid){
   const label = prompt('Eigen klusje (telt niet mee voor 🔥 of 💎):');
   if (!label || !label.trim()) return;
   // zelfde keuze-patroon als addTaskAdmin: één confirm i.p.v. een formulier
-  const elkeDag = confirm('Elke dag?\nOK = elke dag\nAnnuleren = enkel deze dag');
+  // dezelfde twee woorden als de chip op de rij ('elke dag' / 'eenmalig'), zodat de keuze
+  // hier en het label daar elkaar herkennen
+  const elkeDag = confirm('Hoe vaak?\nOK = elke dag\nAnnuleren = eenmalig (enkel deze dag)');
   const rec = { label: label.trim(), order: Date.now() };
   if (!elkeDag) rec.onDay = dayKey(current);
   push(dbRef(`streaks/${uid}/eigenTaken`), rec);

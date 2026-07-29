@@ -82,7 +82,7 @@ const gepind = (n, extra = {}) => ({ e1: { label: 'Kamer opruimen', order: 1, on
     check('  "elke dag" = geen onDay-pin', e[ids[0]].onDay, undefined);
     check('  nog niets afgevinkt', e[ids[0]].gedaanOp, undefined);
     check('de rij staat op de kaart', await page.locator('.own-sec .task').count(), 1);
-    check('  met de eigen-chip', (await page.locator('.own-tag').first().innerText()).trim(), 'eigen');
+    check('  met "elke dag" op de chip', (await page.locator('.own-tag').first().innerText()).trim(), 'elke dag');
     check('  en nu wél een kopregel', await page.locator('.own-head').count(), 1);
     check('  en niets is er in settings/tasks bijgekomen',
       await page.evaluate(f => Object.keys(window.__store.root.families[f].settings.tasks).length, FID), 1);
@@ -96,6 +96,24 @@ const gepind = (n, extra = {}) => ({ e1: { label: 'Kamer opruimen', order: 1, on
     await page.waitForTimeout(300);
     const e = await eigenVan(page);
     check('"enkel deze dag" pint op vandaag', e[Object.keys(e)[0]].onDay, dk(0));
+    check('  en de chip zegt "eenmalig"', (await page.locator('.own-tag').first().innerText()).trim(), 'eenmalig');
+    await page.close();
+  }
+  {
+    // de twee soorten naast elkaar: het onderscheid moet op de rij zelf te zien zijn
+    const { page } = await open(browser, {
+      eigen: {
+        e1: { label: 'Gitaar oefenen', order: 1 },
+        e2: { label: 'Zwemzak klaarzetten', order: 2, onDay: dk(0) }
+      }
+    }, KID, '.task');
+    check('twee eigen klusjes van verschillende soort',
+      await page.locator('.own-sec .task').count(), 2);
+    check('  chips vertellen welke welke is',
+      (await page.locator('.own-tag').allInnerTexts()).map(s => s.trim()).join('|'), 'elke dag|eenmalig');
+    check('  geen enkele chip zegt nog "eigen" (dat zegt de kopregel al)',
+      (await page.locator('.own-tag').allInnerTexts()).some(s => s.trim() === 'eigen'), false);
+    check('  de kopregel zegt het wel', (await page.locator('.own-head').innerText()).startsWith('Eigen klusjes'), true);
     await page.close();
   }
 

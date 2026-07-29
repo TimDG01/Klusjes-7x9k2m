@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v21.1** (`VERSION` = `klusjes-pwa v21.1`): a Dutch-language family chores app —
+**Klusjes-PWA v21.2** (`VERSION` = `klusjes-pwa v21.2`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a reward shop,
 🏖️ vacation days, 📝 kid-added own chores (that count for nothing), and push reminders.
@@ -492,8 +492,13 @@ for day completion, the streak 🔥, badges 🏆 or diamonds 💎. Build log:
 - **`checkBlockReason()` is deliberately NOT called** here: `settings/kidCheckScope` exists to
   stop a kid gaming its streak/diamonds by checking past days, and an eigen klusje has no such
   consequences. Also **no celebration/fanfare** — only `playChime()` as tap feedback.
-- **UI lives entirely on the card**: an `.own-sec` block with a grey `eigen` chip per row
-  (not the coloured `.vac-tag`), a 🗑 per row, and one `+ Eigen klusje` button. The header only
+- **UI lives entirely on the card**: an `.own-sec` block with a grey chip per row (not the
+  coloured `.vac-tag`), a 🗑 per row, and one `+ Eigen klusje` button. The chip carries the
+  **frequency** — `elke dag` / `eenmalig` (v21.2) — not the word "eigen", which the block
+  header already says; that way the distinction costs no extra room on the row. Deliberately
+  text rather than `CALENDAR_ICON`/`CALENDAR_DAYS_ICON` (the Beheer interval toggle): those
+  two differ only in their dot pattern and are indistinguishable at chip size on a phone.
+  Keep the creation `confirm()` wording and the chip wording in sync. The header only
   renders when there are rows, so an empty card stays quiet. Parent **and** child see and may
   delete them; `mayEditEigen(uid)` guards the three handlers themselves, not just the buttons.
   **No admin screen and no renaming** — the user's explicit choice (mistyped label = delete and
