@@ -36,6 +36,18 @@ body{
   padding-bottom:max(16px,env(safe-area-inset-bottom));
 }
 #app{max-width:420px;margin:0 auto;padding:0 14px 40px;}
+
+/* 🧪 Testbalk (?test): "vandaag" verzetten om over meerdere dagen te kunnen testen.
+   Leeg — en dus onzichtbaar — buiten testmodus. Staat de klok verzet, dan kleurt het
+   datumveld op, zodat je nooit vergeet dat je niet op de echte dag kijkt. */
+#testbar{max-width:420px;margin:0 auto;padding:14px 14px 0;}
+#testbar:empty{display:none;}
+.testbar{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:12px;padding:8px 10px;}
+.testbar-tag{font-size:14px;flex-shrink:0;}
+.testbar-lab{font-size:12px;color:var(--text2);flex-shrink:0;}
+.testbar-date{font-family:inherit;font-size:14px;font-weight:600;color:var(--text);background:var(--track);border:1px solid var(--border);border-radius:8px;padding:5px 8px;flex:1;min-width:0;}
+#testbar.shifted .testbar-date{background:var(--vac-bg);color:var(--vac);border-color:var(--vac);}
+.testbar-reset{font-size:16px;color:var(--blue);padding:2px 6px;flex-shrink:0;}
 button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transparent;border:none;background:none;cursor:pointer;}
 
 .today-row{display:flex;justify-content:center;margin-bottom:10px;}
@@ -231,6 +243,10 @@ button{font-family:inherit;font-size:inherit;-webkit-tap-highlight-color:transpa
 </style>
 </head>
 <body>
+<!-- 🧪 Testbalk (?test): staat bewust BUITEN #app, dat bij elke render() volledig
+     hertekend wordt — zo houdt het datumveld zijn focus terwijl je een datum kiest.
+     Buiten testmodus blijft dit element leeg en onzichtbaar. -->
+<div id="testbar"></div>
 <div id="app"></div>
 
 <script type="module">
@@ -338,7 +354,7 @@ let kidCheckScopeKey = DEFAULT_KID_CHECK_SCOPE;
 let vrijeDagenCache = {};
 const SEARCH_HORIZON = 370; // zoeklimiet (dagen) voor vooruitzoeken naar een stofzuigdag, tegen eindeloze lussen bij rare configuraties
 const SHIFT_GRACE = 0; // genadevenster (dagen) vóór een vergeten beurt automatisch een gewone (verschuifbare) taak wordt. 0 = de dag ná de geplande dag al (v18.1); >0 zou ze zoveel dagen als beurt op vandaag laten staan
-const VERSION = 'klusjes-pwa v21';
+const VERSION = 'klusjes-pwa v21.1';
 
 // Sandbox-basis: met ?test in de URL leeft álles onder /test/... in de database,
 // zodat je kunt experimenteren zonder de echte data te raken. In v16 is dit de
@@ -360,6 +376,31 @@ const rootUpdate = obj => update(ref(db), Object.fromEntries(
 // ?test ook hen sandboxt. Bare, niet-gezins-geprefixte toegang: de bewuste
 // uitzondering op de dbRef-regel (zie PLAN-v16 §3).
 const baseRef = path => ref(db, BASE_ROOT + path);
+
+// --- 🧪 ?test: de klok verzetten (v21.1, ENKEL in de sandbox) ---
+// In testmodus mag je zelf kiezen welke dag "vandaag" is, zodat je vakanties, reeksen,
+// badges, diamanten en beurten over meerdere dagen kunt uitproberen zonder te moeten
+// wachten. Bewaard in localStorage, zodat het een herlaad overleeft (handig op een
+// telefoon). Buiten ?test bestaat dit niet: testTodayKey blijft null, todayDate() geeft
+// gewoon de echte datum en er wordt geen balk getekend — nul effect op de live app.
+const TEST_TODAY_LS = 'klusjes-test-today';
+let testTodayKey = null;
+if (BASE_ROOT){
+  try {
+    const bewaard = localStorage.getItem(TEST_TODAY_LS);
+    if (bewaard && parseDayKey(bewaard)) testTodayKey = bewaard;
+  } catch (e) {} // privémodus e.d.: dan gewoon de echte datum
+}
+
+// De ENE bron van "vandaag" in de app. Alle datum-rekenkunde loopt hierlangs —
+// clampedToday, simulateStreak, de diamant-poort in writeCompletionFlag, isToday,
+// goToday, de badge-"nieuw"-markering — zodat een verzette klok overal consequent
+// doorwerkt in plaats van half. Gebruik dit nooit voor een tijdstempel die de échte
+// wereld beschrijft (zoals meta/aangemaakt bij het aanmaken van een gezin).
+function todayDate(){
+  return (testTodayKey && parseDayKey(testTodayKey)) || new Date();
+}
+
 const WD = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 const MN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 const FLOORS = ['gelijkvloers','Verdiep ouders','Verdiep kinderen']; // fallback zolang settings/vacuum/floors ontbreekt
@@ -709,7 +750,7 @@ function nextFreeColor(){
   return KID_COLORS.find(c => !used.includes(c)) || KID_COLORS[Object.keys(membersCache).length % KID_COLORS.length];
 }
 
-let current = new Date();
+let current = todayDate();
 if (current < START) current = new Date(START);
 
 let screen = 'auth'; // 'auth' | 'day' | 'admin' | 'badges' | 'members'
@@ -826,7 +867,7 @@ function parseDayKey(key){
 }
 
 function clampedToday(){
-  const t = new Date();
+  const t = todayDate();
   return t < START ? new Date(START) : t;
 }
 
@@ -1162,7 +1203,7 @@ function kidScheduledCount(kidKey, d){
 // extraDayKey: een vlag die net geschreven wordt maar nog niet in de cache zit.
 function simulateStreak(kidKey, extraDayKey){
   const flags = streaksOf(kidKey).days;
-  const todayIdx = dayIndex(new Date());
+  const todayIdx = dayIndex(todayDate());
   // pas vanaf de reeks-startdatum tellen — oudere dagen laten we volledig buiten de
   // walk, zodat oude /days-historiek nooit een reeks kan toekennen (zie streakStartKey)
   const fromIdx = streakStartIdx();
@@ -1294,7 +1335,7 @@ function writeCompletionFlag(kidKey, key){
   // Bewust sim.earnDays (en NIET newRanks): newRanks is leeg zodra de badge al bestaat,
   // dus na uitvinken-en-hervinken zou de dag zijn 3 badgediamanten kwijtraken terwijl het
   // kind de badge — die permanent is — gewoon houdt.
-  if (key === dayKey(new Date())){
+  if (key === dayKey(todayDate())){
     const badgeDag = sim.earnDays.includes(key) ? 1 : 0;
     upd[`streaks/${kidKey}/diamonds/${key}`] = DIAMANTEN_PER_DAG + badgeDag * DIAMANTEN_PER_BADGE;
   }
@@ -1689,7 +1730,7 @@ function render(){
       tasks: tasksForKidDay(k.uid, idx, dow).map(t => ({ ...t, fixed: isFixedTask(t) }))
     }));
 
-  const isToday = dayIndex(current) === dayIndex(new Date());
+  const isToday = dayIndex(current) === dayIndex(todayDate());
   const cDay = dayKey(current);
   let allTasks = [];
   let doneCount = 0;
@@ -1733,7 +1774,7 @@ function render(){
     const complete = ids.length > 0 && kidDone === ids.length;
     // enkel dagen vanaf de reeks-startdatum krijgen/verliezen een voltooiingsvlag —
     // oudere dagen blijven buiten de reeks, hoe vaak je er ook naartoe terugbladert
-    if (dayIndex(current) >= streakStartIdx() && dayIndex(current) <= dayIndex(new Date())){
+    if (dayIndex(current) >= streakStartIdx() && dayIndex(current) <= dayIndex(todayDate())){
       const flagged = !!streaksOf(k.key).days[cDay];
       if (complete && !flagged){
         k.newBadges = writeCompletionFlag(k.key, cDay);
@@ -2262,11 +2303,61 @@ function changeDay(delta){
 }
 
 function goToday(){
-  let today = new Date();
+  let today = todayDate();
   if (dayIndex(today) < 0) today = new Date(START);
   current = today;
   attachDayListener(current);
   render();
+}
+
+// --- 🧪 Testbalk: "vandaag" verzetten (enkel ?test) ---
+// Eén keer opgebouwd, want de structuur verandert nooit; enkel de waarde wordt bijgewerkt.
+// Alles hier is no-op buiten testmodus, dus de live app draagt er niets van mee.
+const isoVan = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function buildTestBar(){
+  if (!BASE_ROOT) return;
+  const el = document.getElementById('testbar');
+  if (!el) return;
+  // `min` op de startdatum van het schema: eerder kan de app niet rekenen (dayIndex < 0).
+  el.innerHTML = `
+    <div class="testbar">
+      <span class="testbar-tag" title="Testmodus: kies zelf welke dag de app als vandaag ziet">🧪</span>
+      <label class="testbar-lab" for="testdate">vandaag</label>
+      <input type="date" id="testdate" class="testbar-date" min="${isoVan(START)}" onchange="setTestToday(this.value)">
+      <button class="testbar-reset" onclick="setTestToday('')" title="Terug naar de echte datum">↺</button>
+    </div>`;
+  refreshTestBar();
+}
+
+function refreshTestBar(){
+  if (!BASE_ROOT) return;
+  const bar = document.getElementById('testbar');
+  const inp = document.getElementById('testdate');
+  if (!bar || !inp) return;
+  const iso = isoVan(todayDate());
+  if (inp.value !== iso) inp.value = iso;
+  bar.classList.toggle('shifted', !!testTodayKey);
+}
+
+// Zet de gesimuleerde dag (leeg = terug naar de echte datum). Het datumveld levert
+// 'yyyy-mm-dd', de app rekent met 'yyyy-M-d' — vandaar de omzetting.
+function setTestToday(iso){
+  if (!BASE_ROOT) return;
+  let key = null;
+  if (iso){
+    const [y, m, d] = String(iso).split('-').map(Number);
+    if (y && m && d) key = `${y}-${m}-${d}`;
+  }
+  testTodayKey = key;
+  try { key ? localStorage.setItem(TEST_TODAY_LS, key) : localStorage.removeItem(TEST_TODAY_LS); } catch (e) {}
+  // De viering-guard is gesleuteld op dagkey:uid, maar een reeds gevierde dag die nu
+  // "vandaag" wordt zou anders stil blijven — schoon starten is hier het eerlijkste.
+  celebratedDays.clear();
+  // Naar de nieuwe "vandaag" springen (met een verse dag-listener). Op het auth-scherm is
+  // er nog geen gezin en dus geen dag om naar te luisteren: dan enkel opnieuw tekenen.
+  if (familyId) goToday(); else render();
+  refreshTestBar();
 }
 
 // Geluid: gesynthetiseerd via Web Audio (geen extern geluidsbestand — de app moet
@@ -2692,7 +2783,7 @@ function renderBadgeSection(kidKey, name, color){
   const st = simulateStreak(kidKey);
   const filled = st.count === 0 ? 0 : ((st.count - 1) % 7) + 1;
   const toGo = 7 - (filled % 7); // 7/7 vol = badge net binnen, dus weer 7 tot de volgende
-  const todayKey = dayKey(new Date());
+  const todayKey = dayKey(todayDate());
 
   const earnedCards = earned.map(b => {
     const design = badgeDesign(b.rank);
@@ -2886,6 +2977,8 @@ async function submitCreateFamily(){
     const code = await generateUniqueFamilyCode();
     // (1) bootstrap — hierna is de aanmaker een vastgelegd ouder-lid
     const bootstrap = {};
+    // `aangemaakt` is bewust de ECHTE datum (geen todayDate()): het beschrijft wanneer dit
+    // gezin werkelijk gemaakt is, niet een dag in het schema.
     bootstrap[BASE_ROOT + `families/${newFid}/meta`] = { naam, gezinscode: code, aangemaakt: dayKey(new Date()) };
     bootstrap[BASE_ROOT + `families/${newFid}/members/${user.uid}`] = { rol: 'ouder', weergavenaam: defaultDisplayName(email), actief: true };
     bootstrap[BASE_ROOT + 'familyCodes/' + code] = newFid;
@@ -4002,11 +4095,13 @@ Object.assign(window, {
   enableNotifications, setNotifyTime, setKidCheckScope,
   toggleVrijeDag,
   addEigenTaak, toggleEigenTaak, deleteEigenTaak,
+  setTestToday,
   addReward, renameReward, editRewardText, editRewardCost, deleteReward, adjustDiamonds,
   openRewards, buyReward, toggleGiven, refundPurchase,
   pickRewardImage, removeRewardImage, setRewardIcon
 });
 
+buildTestBar(); // no-op buiten ?test
 render();
 </script>
 </body>

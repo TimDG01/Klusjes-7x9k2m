@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The app in one paragraph
 
-**Klusjes-PWA v21** (`VERSION` = `klusjes-pwa v21`): a Dutch-language family chores app —
+**Klusjes-PWA v21.1** (`VERSION` = `klusjes-pwa v21.1`): a Dutch-language family chores app —
 multi-family, Firebase Auth (parent + child login), rotating tasks (flat ring+pointer model)
 and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a reward shop,
 🏖️ vacation days, 📝 kid-added own chores (that count for nothing), and push reminders.
@@ -94,7 +94,9 @@ test suite in **`test/`** (Node + Playwright; `node_modules` is gitignored).
   network, no real family data. **Reuse `test/fake-firebase.js` — do not rewrite it.**
   `openApp(browser, { seed, user })` opens a page with the fake in place, where `seed` is
   the whole database tree and `user` the already-logged-in uid; it returns `{ page, dialogs }`
-  (`dialogs` collects every `alert()`/`confirm()` text). Inside the page,
+  (`dialogs` collects every `alert()`/`confirm()` text). Pass `query: 'test'` to open the
+  sandbox variant — the seed then has to be nested under a `test` key, because `BASE_ROOT`
+  prefixes every path (see `test/testmodus-datum.test.js`). Inside the page,
   `window.__store.root` is the database and `window.__flushDb()` fires listeners after a
   direct poke. Add a test as `test/*.test.js` using `test/assert.js`; `test/README.md` has
   the details. Four fake-SDK properties were learned the hard way and must not be
@@ -111,11 +113,31 @@ test suite in **`test/`** (Node + Playwright; `node_modules` is gitignored).
   dismiss `.celebration-close` before the next click; Beheer sections are collapsed by
   default, so open the right `'sec:*'` row before asserting on its contents; for a visual
   change, take a screenshot and *look* at it — green tests say nothing about how it reads.
+  Three seeding traps, each of which produced a wrong test before a wrong diagnosis:
+  (1) **a seed without `settings/shifts` gets `DEFAULT_SHIFTS` written into it** ("Stofzuigen",
+  Mon+Fri), so an extra row appears on some weekdays and the day is never complete — seed the
+  node explicitly, e.g. `weekdays: [7]` (a non-existent weekday: the node exists but never
+  yields a turn); (2) **`weekdays: []` cannot be seeded** — RTDB and the fake SDK don't store
+  an empty array, so the field reads as *absent* = "every day"; build an empty day via
+  `members` instead; (3) **seeding a completion flag for a day whose chores aren't checked**
+  is correctly removed again by the un-flag branch in `render()` — seed the matching
+  `days/{key}/checks/{uid}` too.
 - **Manual acceptance on a real device**: append `?test` to the URL. `BASE_ROOT` becomes
   `'test/'` and **every** database path — the family subtree, the two top-level pointers,
   and the keys of root-level multi-path updates — lives under `/test/...`, self-seeded by
   the normal flows; the footer shows a red TESTMODUS marker. `?test` only works if the RTDB
   rules include the `/test` rule. Cleanup = delete `/test`.
+- **🧪 Moving the clock (`?test` only, v21.1).** In the sandbox a bar at the top (`#testbar`,
+  outside `#app` so the `<input type="date">` keeps focus across renders) lets you pick which
+  day the app treats as **today** — the way to exercise streaks, badges, diamonds, vacations
+  and shift turns across days without waiting. Kept in `localStorage`
+  (`klusjes-test-today`), the field turns amber while shifted, ↺ restores the real date.
+  **`todayDate()` is the single source of "today"** and everything routes through it
+  (`clampedToday`, `simulateStreak`, the diamond gate in `writeCompletionFlag`, `isToday`,
+  `goToday`, the badge "new" marker) — a new `new Date()` that means *today* is a bug; use
+  `todayDate()`. The one deliberate exception is `meta/aangemaakt` at family creation, which
+  records a real-world fact. Outside `?test` the whole thing is inert: `testTodayKey` stays
+  `null`, no bar is drawn, and `setTestToday` is a no-op.
 - Outbound network to `gstatic.com`/Firebase may be blocked in sandboxed environments
   (proxy 403) — the fake-backend and Node approaches never hit the network.
 

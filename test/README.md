@@ -44,6 +44,28 @@ verzamelt elke `alert()`/`confirm()`-tekst, zodat je kunt controleren dát een g
 uitleg kreeg. In de pagina kun je via `window.__store.root` de database uitlezen en met
 `window.__flushDb()` de listeners laten vuren na een rechtstreekse wijziging.
 
+Twee optionele velden: `waitFor` (de selector waarop `openApp` wacht, standaard `.task` —
+een seed zonder zichtbare klusjesrijen heeft er een andere nodig, bv. `.card`) en `query`,
+dat een querystring aan de URL hangt. `query: 'test'` opent de **sandboxmodus**; `BASE_ROOT`
+prefixt dan elk pad met `test/`, dus de seed moet onder een `test`-sleutel genest staan:
+`{ test: { families: {...}, userIndex: {...} } }`. Zie `testmodus-datum.test.js`.
+
+### Valkuilen bij het seeden
+
+Elk van deze drie heeft al eens een verkeerde test opgeleverd (en bijna een verkeerde
+diagnose):
+
+1. **Laat `settings/shifts` niet weg.** Ontbreekt die node, dan schrijft de app er
+   `DEFAULT_SHIFTS` in ("Stofzuigen", ma+vr) en verschijnt er op sommige weekdagen een
+   tweede rij — waardoor de dag nooit af is en de test flaky wordt naargelang de dag waarop
+   je hem draait. Seed de node expliciet; `weekdays: [7]` (een onbestaande weekdag) bestaat
+   wel maar levert nooit een beurt op.
+2. **`weekdays: []` kun je niet seeden.** RTDB — en dus ook de nep-SDK — bewaart een lege
+   array niet, waardoor het veld *afwezig* is en "elke dag" betekent. Bouw een lege dag via
+   `members` (de taak aan een ánder kind geven).
+3. **Een voltooiingsvlag zonder de bijbehorende vinkjes verdwijnt weer.** `render()` haalt op
+   vandaag een onverdiende vlag terecht weg; seed dus ook `days/{key}/checks/{uid}`.
+
 ## Waarom de nep-SDK is zoals hij is
 
 Drie dingen zijn er de harde manier uit geleerd; ze staan als commentaar in

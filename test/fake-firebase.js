@@ -204,7 +204,9 @@ async function launchBrowser(){
 // Opent index.html met de nep-SDK ervoor. `seed` is de volledige databaseboom,
 // `user` de uid die al ingelogd is. Geeft { page, dialogs } terug — dialogs verzamelt
 // elke alert()/confirm()-tekst, zodat een test kan controleren dát er uitleg kwam.
-async function openApp(browser, { seed = {}, user = null, waitFor = '.task' } = {}){
+// `query` hangt een querystring aan de URL (bv. 'test' voor de sandboxmodus); de seed
+// moet dan onder de sleutel `test` genest staan, want BASE_ROOT prefixt alle paden.
+async function openApp(browser, { seed = {}, user = null, waitFor = '.task', query = '' } = {}){
   const page = await browser.newPage();
   await page.addInitScript(([s, u]) => { window.__seed = s; window.__seedUser = u; }, [seed, user]);
   const mod = body => route => route.fulfill({ status: 200, contentType: 'application/javascript', body });
@@ -215,7 +217,7 @@ async function openApp(browser, { seed = {}, user = null, waitFor = '.task' } = 
   const dialogs = [];
   page.on('dialog', d => { dialogs.push(d.message()); d.dismiss(); });
   page.on('pageerror', e => console.error('  PAGINA-FOUT:', e.message));
-  await page.goto('file://' + APP_PATH);
+  await page.goto('file://' + APP_PATH + (query ? '?' + query : ''));
   if (waitFor) await page.waitForSelector(waitFor, { timeout: 10000 });
   return { page, dialogs };
 }

@@ -14,6 +14,15 @@ Console geplakt worden.
 - ⚠️ rules: alleen vermelden als firebase-rules-v16.json wijzigde.
 -->
 
+## v21.1 — juli 2026
+- **🧪 Testmodus: "vandaag" zelf kiezen.** Met `?test` in de URL staat er nu bovenaan een
+  datumveld. Zet je dat op een andere dag, dan doet de hele app alsof dát vandaag is —
+  handig om reeksen, badges, diamanten, vakanties en beurten over meerdere dagen uit te
+  proberen zonder te moeten wachten. Met ↺ ga je terug naar de echte datum.
+- De keuze blijft bewaard na een herlaad, en het veld kleurt op zolang de klok verzet staat.
+- **Alleen in `?test`**: zonder die parameter bestaat de balk niet en verandert er niets.
+- Geen rules-wijziging nodig.
+
 ## v21 — juli 2026
 - **📝 Eigen klusjes.** Een kind kan nu zelf klusjes toevoegen voor zichzelf — dingen die het
   voor zijn eigen wil bijhouden — via de knop **+ Eigen klusje** onderaan zijn kaart.
