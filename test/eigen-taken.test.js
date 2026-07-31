@@ -28,7 +28,14 @@ function seed({ eigen = null, taakVoor = KID, kids = 1, streakStart = dk(0), day
     families: { [FID]: {
       meta: { naam: 'Testgezin', code: 'ABC123' },
       members,
-      settings: { streakStart, tasks: { t1 } },
+      settings: {
+      streakStart, tasks: { t1 },
+      // De shifts-node moet BESTAAN, anders zaait de app DEFAULT_SHIFTS erin ("Stofzuigen",
+      // ma+vr) en staat er op maandag en vrijdag een extra rij op de kaart — dan is de dag
+      // nooit af en klopt geen enkele telling hier. weekdays:[7] is een onbestaande weekdag
+      // (getDay is 0..6): de node bestaat, maar levert nooit een beurt op.
+      shifts: { s0: { name: 'Nooit', weekdays: [7], lines: ['x'], members: [KID] } }
+    },
       streaks: { [KID]: { days, diamonds, ...(eigen ? { eigenTaken: eigen } : {}) } },
       ...(checks ? { days: checks } : {})
     }},

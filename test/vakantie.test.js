@@ -36,7 +36,11 @@ function seed({ vrij = null, kids = 1, streakStart = dk(0), days = {}, diamonds 
       members,
       settings: {
         streakStart, tasks,
-        ...(shifts ? { shifts } : {}),
+        // Geen eigen beurt meegegeven? Dan tóch een node zetten, anders zaait de app
+        // DEFAULT_SHIFTS erin ("Stofzuigen", ma+vr) en staat er op maandag en vrijdag een
+        // extra rij op de kaart. weekdays:[7] is een onbestaande weekdag (getDay is 0..6):
+        // de node bestaat, maar levert nooit een beurt op. Zie de seed-valkuilen in README.md.
+        shifts: shifts || { s0: { name: 'Nooit', weekdays: [7], lines: ['x'], members: [KID] } },
         ...(vrij ? { vrijeDagen: vrij } : {})
       },
       streaks: { [KID]: { days, diamonds } }

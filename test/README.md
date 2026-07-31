@@ -56,10 +56,15 @@ Elk van deze drie heeft al eens een verkeerde test opgeleverd (en bijna een verk
 diagnose):
 
 1. **Laat `settings/shifts` niet weg.** Ontbreekt die node, dan schrijft de app er
-   `DEFAULT_SHIFTS` in ("Stofzuigen", ma+vr) en verschijnt er op sommige weekdagen een
-   tweede rij — waardoor de dag nooit af is en de test flaky wordt naargelang de dag waarop
-   je hem draait. Seed de node expliciet; `weekdays: [7]` (een onbestaande weekdag) bestaat
-   wel maar levert nooit een beurt op.
+   `DEFAULT_SHIFTS` in ("Stofzuigen", **ma+vr**) en verschijnt er op die twee weekdagen een
+   tweede rij — waardoor de dag nooit af is, er geen diamant volgt en de test dus enkel
+   faalt *op maandag en vrijdag*. Seed de node expliciet; `weekdays: [7]` (een onbestaande
+   weekdag, want `getDay()` is 0..6) bestaat wel maar levert nooit een beurt op.
+
+   Dit is geen theorie: `rewards.test.js`, `vakantie.test.js` en `eigen-taken.test.js`
+   stonden hierdoor rood zodra de suite op een vrijdag draaide, terwijl er niets aan de app
+   veranderd was. **De suite hoort op elke dag van de week hetzelfde te doen** — bouwt een
+   test op "welke dag is het vandaag", dan is dat een fout in de test.
 2. **`weekdays: []` kun je niet seeden.** RTDB — en dus ook de nep-SDK — bewaart een lege
    array niet, waardoor het veld *afwezig* is en "elke dag" betekent. Bouw een lege dag via
    `members` (de taak aan een ánder kind geven).

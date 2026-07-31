@@ -8,7 +8,9 @@ const FID = 'f1', PARENT = 'p1', KID = 'k1';
 const dayKey = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 const shift = n => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
 
-// gezin met één kind, één vaste dagelijkse taak en één beurt-taak (elke dag)
+// gezin met één kind, één vaste dagelijkse taak, één beurt-taak (elke dag) en — voor
+// sectie 9 — één eigen klusje van het kind zelf. Dat laatste heeft bewust géén `onDay`,
+// zodat het elke dag op de kaart staat en dus ook op −1 en +1 aanklikbaar is.
 function seed(scope){
   const fam = {
     meta: { naam: 'Testgezin', code: 'ABC123' },
@@ -19,7 +21,8 @@ function seed(scope){
     settings: {
       tasks: { t1: { label: 'Afwas', recurring: true, order: 0, members: [KID] } },
       shifts: { s1: { name: 'Stofzuigen', weekdays: [0,1,2,3,4,5,6], lines: ['boven'], next: { uid: KID, lineIdx: 0 } } }
-    }
+    },
+    streaks: { [KID]: { eigenTaken: { e1: { label: 'Gitaar oefenen', order: 1 } } } }
   };
   if (scope) fam.settings.kidCheckScope = scope;
   return { families: { [FID]: fam }, userIndex: { [PARENT]: FID, [KID]: FID }, familyCodes: { ABC123: FID } };
@@ -36,6 +39,25 @@ const readCheck = (page, dk, id) => page.evaluate(
     const days = window.__store.root.families[f].days || {};
     return !!(days[d] && days[d].checks && days[d].checks[k] && days[d].checks[k][i]);
   }, [FID, dk, KID, id]);
+
+// Een 📝 eigen klusje bewaart zijn vinkje NIET in days/{dag}/checks maar op de definitie
+// zelf, in streaks/{uid}/eigenTaken/{id}/gedaanOp/{dagkey} — vandaar een eigen lezer.
+const readEigen = (page, dk, id = 'e1') => page.evaluate(
+  ([f, k, i, d]) => {
+    const et = (((window.__store.root.families[f].streaks || {})[k] || {}).eigenTaken || {})[i] || {};
+    return !!(et.gedaanOp && et.gedaanOp[d]);
+  }, [FID, KID, id, dk]);
+
+// zusje van attempt() voor een eigen klusje: zelfde open/klik, andere lezer
+async function attemptEigen(browser, { scope, user, offset }){
+  const { page, dialogs } = await open(browser, scope, user);
+  if (offset !== 0) await page.evaluate(n => window.changeDay(n), offset);
+  await page.waitForTimeout(150);
+  await clickRow(page, 'Gitaar oefenen');
+  const written = await readEigen(page, dayKey(shift(offset)));
+  await page.close();
+  return { written, alerted: dialogs.length > 0 };
+}
 
 // probeer op dag `offset` af te vinken; geeft { written, alerted }
 async function attempt(browser, { scope, user, offset, label, checkId }){
@@ -141,6 +163,36 @@ async function attempt(browser, { scope, user, offset, label, checkId }){
     await clickRow(page, 'Kamer opruimen');                 // uitvinken = ouder-only
     check('uitvinken blijft geblokkeerd', await readCheck(page, dayKey(shift(0)), 't2'), true);
     check('  met de bestaande uitleg', /alleen een ouder/.test(dialogs[0] || ''), true);
+    await page.close();
+  }
+
+  // Deze instelling bestaat om te verhinderen dat een kind zijn REEKS of DIAMANTEN
+  // manipuleert door in het verleden te vinken. Aan een 📝 eigen klusje hangt geen van beide
+  // (het staat niet in de id-lijst van de dag), dus toggleEigenTaak roept checkBlockReason()
+  // bewust niet aan. Dat is een uitzondering die er als inconsistentie uitziet en die iemand
+  // dus ooit zal willen "opruimen" — deze sectie staat er om dat te laten omvallen.
+  section('9. Eigen klusjes vallen buiten deze instelling (bewuste uitzondering)');
+  for (const [scope, lbl] of [[null, 'afwezig'], ['geen-verleden', 'geen-verleden'],
+                              ['enkel-vandaag', 'enkel-vandaag'], ['nooit', 'nooit']]){
+    for (const [n, dag] of [[-1, 'gisteren'], [0, 'vandaag'], [1, 'morgen']]){
+      const r = await attemptEigen(browser, { scope, user: KID, offset: n });
+      check(`scope=${lbl}, ${dag}: eigen klusje mag`, r.written, true);
+      check('  en zonder uitleg-popup', r.alerted, false);
+    }
+  }
+  {
+    // Het contrast op één scherm: dezelfde stand, dezelfde dag, hetzelfde kind.
+    const { page, dialogs } = await open(browser, 'nooit', KID);
+    await clickRow(page, 'Afwas');
+    check("'nooit': het échte klusje blijft geblokkeerd", await readCheck(page, dayKey(shift(0)), 't1'), false);
+    check('  mét uitleg', /alleen een ouder/.test(dialogs[0] || ''), true);
+    dialogs.length = 0;
+    await clickRow(page, 'Gitaar oefenen');
+    check('  maar zijn eigen klusje vinkt gewoon af', await readEigen(page, dayKey(shift(0))), true);
+    check('  zonder uitleg-popup', dialogs.length, 0);
+    // uitvinken mag ook — anders dan bij een bevroren eenmalige taak (sectie 8)
+    await clickRow(page, 'Gitaar oefenen');
+    check('  en kan weer uitgevinkt worden', await readEigen(page, dayKey(shift(0))), false);
     await page.close();
   }
 

@@ -491,7 +491,10 @@ for day completion, the streak 🔥, badges 🏆 or diamonds 💎. Build log:
   the slide computable without a second listener.
 - **`checkBlockReason()` is deliberately NOT called** here: `settings/kidCheckScope` exists to
   stop a kid gaming its streak/diamonds by checking past days, and an eigen klusje has no such
-  consequences. Also **no celebration/fanfare** — only `playChime()` as tap feedback.
+  consequences. So even at `'nooit'` a kid can always tick its **own** chores, on any day.
+  That exception looks like an inconsistency someone will want to "clean up", so **section 9
+  of `test/kid-check-scope.test.js` pins it** across all four scopes — adding the guard makes
+  14 checks fail. Also **no celebration/fanfare** — only `playChime()` as tap feedback.
 - **UI lives entirely on the card**: an `.own-sec` block with a grey chip per row (not the
   coloured `.vac-tag`), a 🗑 per row, and one `+ Eigen klusje` button. The chip carries the
   **frequency** — `elke dag` / `eenmalig` (v21.2) — not the word "eigen", which the block

@@ -21,6 +21,12 @@ function seed({ streakStart = dk(-1), days = {}, diamonds = {}, claims = {}, che
       settings: {
         streakStart,
         tasks: { t1: { label: 'Afwas', recurring: true, order: 0, members: [KID] } },
+        // De shifts-node moet BESTAAN, anders zaait de app DEFAULT_SHIFTS erin
+        // ("Stofzuigen", ma+vr) en staat er op maandag en vrijdag een tweede rij op de
+        // kaart — waardoor de dag nooit af is en er geen diamant volgt. weekdays:[7] is
+        // een onbestaande weekdag (getDay is 0..6): de node bestaat, maar levert nooit
+        // een beurt op. Zie de seed-valkuilen in README.md.
+        shifts: { s0: { name: 'Nooit', weekdays: [7], lines: ['x'], members: [KID] } },
         ...(Object.keys(claims).length ? { rewardClaims: claims } : {})
       },
       streaks: { [KID]: { days, diamonds } },
