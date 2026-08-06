@@ -11,8 +11,9 @@ and completion-driven "shift" turn tasks, streaks & badges, 💎 diamonds + a re
 The app itself is **one static file, `index.html`** (inline CSS + one
 `<script type="module">`), zero dependencies, no build step, hosted on GitHub Pages from
 `main`. Companion files: `manifest.json` + `icon-*.png` + `firebase-messaging-sw.js` (PWA +
-push), `firebase-rules-v16.json` (RTDB rules, paste-ready for the Console), `scripts/` +
-`.github/workflows/` (server half), and **`test/`** (headless suite + fake Firebase SDK).
+push), `firebase-rules-v16.json` (RTDB rules, paste-ready for the Console), `scripts/`
+(server half: `notify.js` + the Apps Script runner that drives it) + `.github/workflows/`
+(manual fallback), and **`test/`** (headless suite + fake Firebase SDK).
 Docs live in **`docs/`**: `CHANGELOG.md` (what shipped per version) and `PLAN-v16.md` /
 `PLAN-v17-meldingen.md` / `PLAN-v18-beurten.md` / `PLAN-v19-beloningen.md` /
 `PLAN-v20-vakantie.md` / `PLAN-v21-eigen-klusjes.md` (frozen build logs — the *why* behind
@@ -108,7 +109,9 @@ test suite in **`test/`** (Node + Playwright; `node_modules` is gitignored).
   (3) child-account creation uses a **second app instance**, so fake auth keeps per-instance
   state; (4) `push(ref, value)` must **write** the value, not just mint a key — otherwise
   every "add" button silently does nothing in tests. Pure helpers in `scripts/notify.js` are
-  testable in plain Node (see `test/notify.test.js`) — no browser needed.
+  testable in plain Node (see `test/notify.test.js`) — no browser needed;
+  `test/appsscript-loader.test.js` additionally loads that file the way Apps Script does, so
+  a change that would break the live reminders shows up as a red test.
 - **Testing gotchas**: the celebration popup overlays the card once a day is complete, so
   dismiss `.celebration-close` before the next click; Beheer sections are collapsed by
   default, so open the right `'sec:*'` row before asserting on its contents; for a visual
@@ -591,12 +594,19 @@ half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
   (`notifyTimeOptions`/`setNotifyTime` — native wheel picker on mobile; only `:00`/`:30` for
   simplicity), read via a no-gate/non-fatal listener. `settings/lastNotified` (`"yyyy-M-d"`)
   is a server-written dedup flag.
-- **Server half (`scripts/notify.js` + `.github/workflows/klusjes-herinnering.yml`):** a
-  GitHub Action runs the script (Firebase Admin SDK), which on **every** run does shift
-  maintenance (`runShiftMaintenance`) and purchase alerts, and additionally sends the daily
-  reminder for each family where Brussels-now ≥ `notifyTime` and it hasn't sent today.
-  **No Blaze/credit card** — FCM + RTDB reads are free on Spark. The service-account JSON is
-  the GitHub secret `FIREBASE_SERVICE_ACCOUNT`.
+- **Server half — `scripts/notify.js`, driven by Google Apps Script.** The script does, on
+  **every** run, shift maintenance (`runShiftMaintenance`) and purchase alerts, and
+  additionally sends the daily reminder for each family where Brussels-now ≥ `notifyTime`
+  and it hasn't sent today. **No Blaze/credit card** — FCM + RTDB reads are free on Spark.
+  Two entry points run that same file:
+  - **Apps Script (`scripts/notify-appsscript.gs`) — the live one.** Talks to Firebase over
+    REST (RTDB + FCM HTTP v1), authenticating with a service-account JWT it signs via
+    `Utilities.computeRsaSha256Signature`. Service-account JSON lives in a **Script
+    Property** `FIREBASE_SERVICE_ACCOUNT`; time-driven trigger every 30 min (enough —
+    `notifyTime` is only on the hour/half hour). Install steps are in the file's header.
+  - **GitHub Action (`.github/workflows/klusjes-herinnering.yml`) — manual fallback only.**
+    `workflow_dispatch`, no cron (see below). Uses the Firebase Admin SDK and the GitHub
+    secret `FIREBASE_SERVICE_ACCOUNT`.
 - **Purchase alert**: `purchaseNotifyPlan(familyData)` (pure, tested in
   `test/notify.test.js` — no browser needed) scans every `streaks/{kidUid}/purchases/{id}`
   without a `gemeld` flag and returns them with the fcmTokens of all members with
@@ -615,26 +625,42 @@ half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
   `shiftAutoDetachIfLapsed`/`detachShiftTurn`) are **verbatim copies** of the `index.html`
   versions, adapted to take a `ctx` object. Change the chore/shift math in `index.html` →
   update `notify.js` too.
-- **Gotcha:** GitHub scheduled workflows (`on: schedule`) only fire from the **default branch
-  (`main`)**; on a feature branch only `workflow_dispatch` (manual run, pick the branch) works.
-- **External triggers — GitHub's own schedule proved unreliable.** In practice `on: schedule`
-  on this public repo runs far slower than the configured ~15 min (sometimes hours apart —
-  it is best-effort and may drop or delay runs). Two external triggers therefore call the
-  existing `workflow_dispatch` (`POST .../actions/workflows/klusjes-herinnering.yml/dispatches`,
-  body `{"ref":"main"}` — deliberately **no** `force`, so the normal per-family/per-kid check
-  in `notify.js` still applies and nothing is ever sent blindly):
-  - **iOS Shortcuts** (personal automation) on the parent's phone: daily around `notifyTime`,
-    and tappable by hand for an instant test.
-  - **Google Apps Script** (script.google.com): time-driven trigger every 30 minutes — enough,
-    since `notifyTime` can only be on the hour/half hour. The GitHub token lives there as a
-    Script Property (`GITHUB_TOKEN`), not hardcoded.
-  - Both use a **fine-grained GitHub PAT** scoped to this repo + **Actions: Read and write**
-    only — a leak could at worst start a harmless, double-checked run.
-  - Neither lives in the repo (pure account/device configuration); this paragraph is the only
-    record of the setup. **Bus-factor:** the Apps Script runs on Tim's personal Google
-    account — the same one that administers the Firebase project (`klusjesv2`).
-  - GitHub's own `on: schedule` stays as a free third safety net — idempotent via
-    `lastNotified`, so overlapping triggers can't double-send.
+- **⚠️ `notify.js` must stay loadable by Apps Script — this is what keeps the copy count at
+  two.** Apps Script does **not** hold its own copy of the chore/shift math: it fetches
+  `scripts/notify.js` as **text** from GitHub Pages and runs it through a CommonJS shim
+  (`laadKern_`), so the live reminders execute the exact file the test suite tests. That
+  rests on four properties of `notify.js` — keep all four:
+  1. it stays **CommonJS** (`module.exports = {…}` at the end), never ESM;
+  2. **no `require()` at the top level** — only inside `main()`, which never runs there;
+  3. `main()` is reached only via the `require.main === module` guard at the bottom;
+  4. the exported planner names stay as they are.
+  `test/appsscript-loader.test.js` enforces all of this by loading the file through the same
+  shim, so breaking it turns the suite red instead of silently killing everyone's reminders.
+  Change the logic freely — push to `main`, Pages publishes, the next run picks it up. Only
+  a change to the *setup* (URLs, auth, quotas) means re-pasting the `.gs` file.
+- **Why not GitHub Actions any more.** `on: schedule` was always best-effort and often ran
+  hours late, but in Aug 2026 it got worse: GitHub accepted the dispatches and then **never
+  assigned a runner** — jobs sat ~15 min in the queue and were auto-cancelled with
+  `runner_id: 0`, zero steps executed and no logs, so `notify.js` never even started. The
+  cron is therefore removed; the workflow survives as a manual noodknop. Related gotcha
+  worth remembering: scheduled workflows only ever fire from the **default branch (`main`)**,
+  so on a feature branch only `workflow_dispatch` works.
+- **Where the schedule lives now.** A single Apps Script time-driven trigger (every 30 min)
+  on Tim's personal Google account calls `klusjesHerinnering()`. The old GitHub PAT is gone
+  — nothing calls the GitHub API any more. `klusjesHerinneringNu()` is the by-hand instant
+  test (force: sends regardless of the hour, and deliberately does **not** set
+  `lastNotified`, so the real evening reminder still goes out).
+  - **iOS Shortcut**: it used to POST to the GitHub dispatch API and no longer works. To keep
+    it, deploy the Apps Script project as a web app and set a `RUN_KEY` Script Property — the
+    included `doGet` then accepts `…/exec?key=<RUN_KEY>` and refuses without it. Optional:
+    the 30-min trigger already covers the daily reminder on its own.
+  - Overlapping runs still can't double-send — `lastNotified` makes the daily reminder
+    idempotent, and `gemeld` does the same for purchase alerts.
+  - **Bus-factor:** the Apps Script runs on Tim's personal Google account — the same one that
+    administers the Firebase project (`klusjesv2`) — and now holds the **service-account
+    JSON** (not just a repo-scoped PAT), so it is worth more than it used to be. The script
+    body itself is version-controlled at `scripts/notify-appsscript.gs`; only the two Script
+    Properties live outside the repo.
 
 ### Other conventions worth knowing
 - The schedule is **open-ended with a fixed lower bound**: `START` (26 juni 2026) anchors
