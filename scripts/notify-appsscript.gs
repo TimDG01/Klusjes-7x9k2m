@@ -21,16 +21,36 @@
  * het vanzelf op. Alleen als de opzet zelf verandert (URL's, auth, quota) moet je hier nog
  * iets doen.
  *
- * EENMALIGE INSTALLATIE
- *  1. script.google.com → Nieuw project → plak dit bestand erin.
- *  2. Projectinstellingen → Scripteigenschappen → voeg toe:
- *       FIREBASE_SERVICE_ACCOUNT = de volledige service-account-JSON (dezelfde inhoud als
- *                                  de GitHub-secret met die naam).
+ * EENMALIGE INSTALLATIE (op een pc — de Apps Script-editor laat plakken op gsm niet toe)
+ *  1. Projectinstellingen → Scripteigenschappen → voeg toe:
+ *       FIREBASE_SERVICE_ACCOUNT = de volledige service-account-JSON. Die kan je NIET meer
+ *                                  uit de GitHub-secret halen; maak een verse sleutel via
+ *                                  Firebase Console → Projectinstellingen → Serviceaccounts
+ *                                  → "Nieuwe privésleutel genereren".
  *       RUN_KEY                  = (optioneel) een zelfgekozen wachtwoord; alleen nodig als
  *                                  je de iOS-Snelkoppeling wil blijven gebruiken.
- *  3. Voer één keer de functie `installeerTrigger` uit (⏱ elke 30 minuten).
- *  4. Controleer met `klusjesHerinneringNu` (stuurt meteen, negeert het uur) of de
- *     uitvoeringslogboeken groen zijn.
+ *  2. Zet de code in het project — kies één van twee:
+ *
+ *     A. MINI-LADER (aanbevolen). Vervang de body van je bestaande
+ *        `triggerKlusjesReminder()` door de drie regels hieronder en laat je huidige
+ *        trigger gewoon staan. Dan hoef je dit bestand NOOIT te plakken, en ook latere
+ *        wijzigingen aan de opzet zelf komen vanzelf mee — alles blijft in de repo.
+ *
+ *          function triggerKlusjesReminder() {
+ *            eval(UrlFetchApp.fetch('https://raw.githubusercontent.com/TimDG01/Klusjes-7x9k2m/main/scripts/notify-appsscript.gs').getContentText());
+ *            run_(false);
+ *            scheduleNextRun();   // jouw bestaande zelf-herplannende trigger blijft werken
+ *          }
+ *
+ *        (Werkt omdat dit bestand niet in strict mode staat: bij een directe eval komen de
+ *        functies hieronder in de scope van de aanroeper terecht.)
+ *
+ *     B. Of plak dit hele bestand als Code.gs en voer `installeerTrigger` één keer uit
+ *        (⏱ elke 30 minuten). Gebruik dan NIET ook nog de mini-lader.
+ *
+ *  3. Controleer met `klusjesHerinneringNu` (stuurt meteen, negeert het uur) of de
+ *     uitvoeringslogboeken groen zijn. Bij variant A: draai die functie na de eval, of
+ *     test gewoon door `triggerKlusjesReminder` één keer met de hand te starten.
  *
  * De service-account-JSON is een geheim: hij staat in Scripteigenschappen, niet in dit
  * bestand en niet in de repo.
