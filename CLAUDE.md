@@ -606,7 +606,10 @@ half. Full build log + manual-setup steps: **`docs/PLAN-v17-meldingen.md`**.
     `notifyTime` is only on the hour/half hour). Install steps are in the file's header.
   - **GitHub Action (`.github/workflows/klusjes-herinnering.yml`) — manual fallback only.**
     `workflow_dispatch`, no cron (see below). Uses the Firebase Admin SDK and the GitHub
-    secret `FIREBASE_SERVICE_ACCOUNT`.
+    secret `FIREBASE_SERVICE_ACCOUNT`. ⚠️ That secret holds an **older service-account key**
+    than the one in Apps Script — two keys are deliberately alive at once. Deleting the old
+    key in the Firebase Console silently kills this fallback (the UI still offers "Run
+    workflow"; it just fails on auth). Rotate the secret first if you ever do remove it.
 - **Purchase alert**: `purchaseNotifyPlan(familyData)` (pure, tested in
   `test/notify.test.js` — no browser needed) scans every `streaks/{kidUid}/purchases/{id}`
   without a `gemeld` flag and returns them with the fcmTokens of all members with
